@@ -1,0 +1,27 @@
+name: CI Facilito
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout del codigo
+      uses: actions/checkout@v4
+
+    # comandos
+    - name: Instalar dependencias y Probar
+      run: |
+        echo "Instalando dependencias..."
+        #
+        # ESTO ES UNA COMPUTADORA, ASI QUE PODEMOS INSTALAR COSAS, PROBAR COSAS, ETC
+        #
+        # CUANDO TENGAMOS EL CODIGO, METEMOS COMANDOS PARA INSTALAR DEPENDENCIAS
+        # Y CUANDO TENGAMOS LOS TESTS, METEMOS LOS COMANDOS PARA PROBAR EL CODIGO
+        #
+        echo "Todo bien"

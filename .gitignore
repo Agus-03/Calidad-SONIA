@@ -1,16 +1,5 @@
-# Variables de entorno
-.env 
+# Environment Variables
+.env
 
-# APIKEYs
-
-# Tests
-
-# IA Trabajo
-.claude
-CLAUDE.md
-
-#
-
-#
-
-#
+# Help Files
+z_helps/

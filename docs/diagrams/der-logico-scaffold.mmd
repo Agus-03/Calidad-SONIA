@@ -1,0 +1,129 @@
+%% SONIA — Andamio de verificación del DER lógico · 2026-08-09 · 35 entidades
+%% ---------------------------------------------------------------------------
+%% ESTO NO ES EL ENTREGABLE DEL PASO 5.
+%% El DER se dibuja en Miro (C10: con 35 entidades el layout automático
+%% produce un diagrama que se puede generar pero no leer).
+%% ---------------------------------------------------------------------------
+%% Este archivo existe para dos cosas:
+%%   1. Verificar que el grafo de relaciones cierra ANTES de invertir horas
+%%      de layout manual en el tablero.
+%%   2. Dejar un respaldo versionable de la estructura — el costo que C10
+%%      aceptaba al elegir Miro ("Miro no se versiona").
+%% ---------------------------------------------------------------------------
+%% FUENTE DE VERDAD: docs/design/DER/entidades.md + relaciones.md (ADR-0013).
+%% Este andamio se REGENERA desde el catálogo; no se edita a mano.
+%% Sólo relaciones: los atributos viven en el catálogo.
+%% ---------------------------------------------------------------------------
+%% Cardinalidades Mermaid usadas acá:
+%%   ||--o{  = 1 — 0..*         |o--o{  = 0..1 — 0..*
+%%   ||--|{  = 1 — 1..*         ||--o|  = 1 — 0..1
+%%   |o--o|  = 0..1 — 0..1
+%% ---------------------------------------------------------------------------
+%% CUIDADO al editar: una línea de comentario VACÍA (sólo los dos signos de
+%% porcentaje, sin texto después) rompe el parser de Mermaid — no las elimina
+%% y quedan como basura antes de erDiagram. Toda línea de comentario tiene que
+%% llevar al menos un carácter después del prefijo.
+
+erDiagram
+
+    %% === BLOQUE 5 — Raíz organizativa (ADR-0012) ===========================
+    %% accounts opera con UNA SOLA FILA durante todo el proyecto.
+    accounts ||--o{ contacts      : account_id
+    accounts ||--o{ ai_agents     : account_id
+    accounts ||--o{ operators     : account_id
+    accounts ||--o{ labels        : account_id
+    accounts ||--o{ quick_replies : account_id
+    accounts ||--o{ inboxes       : account_id
+
+    %% === BLOQUE 1 — Núcleo =================================================
+    contacts      ||--o{ conversations : contact_id
+    inboxes       ||--o{ conversations : inbox_id
+    ai_agents     |o--o{ conversations : ai_agent_id
+    operators     |o--o{ conversations : operator_id
+    operators     |o--o{ conversations : scored_by_operator_id
+    operators     |o--o{ conversations : resolved_by_operator_id
+
+    conversations   ||--o{ messages : conversation_id
+    message_batches |o--o{ messages : message_batch_id
+    operators       |o--o{ messages : sender_operator_id
+    ai_agents       |o--o{ messages : sender_ai_agent_id
+
+    %% === BLOQUE 2 — Identidad del agente IA ================================
+    ai_agents         ||--o{ prompt_components         : ai_agent_id
+    prompt_components ||--|{ prompt_component_versions : prompt_component_id
+    operators         |o--o{ prompt_component_versions : changed_by_operator_id
+    ai_agents         ||--o{ transfer_policies         : ai_agent_id
+
+    %% === BLOQUE 3 — Ejecución por turno ====================================
+    conversations   ||--o{ message_batches               : conversation_id
+    message_batches ||--o{ detected_intents              : message_batch_id
+    conversations   ||--o| conversation_contexts         : conversation_id
+    conversations   ||--o{ conversation_context_versions : conversation_id
+
+    conversations                 ||--o{ generations : conversation_id
+    generations                   |o--o| messages    : message_id
+    message_batches               |o--o{ generations : message_batch_id
+    conversation_context_versions |o--o{ generations : context_version_id
+    operators                     |o--o{ generations : reviewed_by_operator_id
+
+    generations               ||--|{ generation_components : generation_id
+    prompt_component_versions ||--o{ generation_components : component_version_id
+
+    %% === BLOQUE 4 — Conocimiento (RAG) =====================================
+    ai_agents       ||--o| knowledge_bases : ai_agent_id
+    knowledge_bases ||--o{ documents       : knowledge_base_id
+    operators       ||--o{ documents       : uploaded_by_operator_id
+    documents       ||--o{ document_chunks : document_id
+    generations     ||--o{ retrieval_logs  : generation_id
+    document_chunks ||--o{ retrieval_logs  : document_chunk_id
+
+    %% === BLOQUE 5 — Operación ==============================================
+    conversations ||--o{ conversation_assignments : conversation_id
+    operators     |o--o{ conversation_assignments : from_operator_id
+    operators     ||--o{ conversation_assignments : to_operator_id
+    operators     |o--o{ conversation_assignments : assigned_by_operator_id
+
+    conversations ||--o{ internal_notes : conversation_id
+    operators     ||--o{ internal_notes : operator_id
+
+    operators     ||--o{ labels              : created_by_operator_id
+    contacts      ||--o{ contact_labels      : contact_id
+    labels        ||--o{ contact_labels      : label_id
+    operators     |o--o{ contact_labels      : assigned_by_operator_id
+    conversations ||--o{ conversation_labels : conversation_id
+    labels        ||--o{ conversation_labels : label_id
+    operators     |o--o{ conversation_labels : assigned_by_operator_id
+
+    contacts      ||--o{ reminders : contact_id
+    conversations |o--o{ reminders : conversation_id
+    operators     ||--o{ reminders : operator_id
+
+    conversations ||--o{ sales : conversation_id
+    operators     ||--o{ sales : operator_id
+    ai_agents     |o--o{ sales : ai_agent_id
+
+    operators ||--o{ quick_replies : created_by_operator_id
+
+    %% === BLOQUE 6 — Canal e integración ====================================
+    %% NOTA: webhook_events y messages NO tienen FK entre sí. Se correlacionan
+    %% por el valor de wamid (relaciones.md §6). No agregar esa línea.
+    ai_agents |o--o{ inboxes        : default_ai_agent_id
+    inboxes   ||--o{ webhook_events : inbox_id
+    inboxes   ||--o{ meta_templates : inbox_id
+
+    %% === BLOQUE 7 — Evaluación =============================================
+    %% NOTA: conversation_annotations NO se relaciona con labels. Son el ground
+    %% truth de evaluación y el catálogo operativo del negocio, sin vínculo.
+    conversations ||--o{ transfer_events          : conversation_id
+    operators     |o--o{ transfer_events          : to_operator_id
+    conversations ||--o{ conversation_annotations : conversation_id
+    operators     ||--o{ conversation_annotations : annotated_by_operator_id
+    conversations ||--o{ tone_evaluations         : conversation_id
+    generations   |o--o{ tone_evaluations         : generation_id
+
+    %% === BLOQUE 8 — Cumplimiento y auditoría ===============================
+    %% NOTA: audit_logs.entity_id NO es FK — deliberado. El registro debe
+    %% sobrevivir al borrado de lo que audita.
+    contacts  ||--o{ contact_attributes : contact_id
+    messages  |o--o{ contact_attributes : source_message_id
+    operators ||--o{ audit_logs         : operator_id

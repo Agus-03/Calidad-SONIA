@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/guia-de-dibujo.md` |
 | **Estado** | Vigente — Paso 5 |
-| **Fecha** | 2026-08-09 |
+| **Fecha** | 2026-08-09 · regenerada 2026-08-10 (Paso 6 — `signal_evaluations`, ADR-0014) |
 | **Deriva de** | [entidades.md](entidades.md) y [relaciones.md](relaciones.md), que son la **fuente de verdad** ([ADR-0013](../02-decisiones/0013-fuente-de-verdad-del-modelo.md)) |
 
 ---
@@ -28,7 +28,7 @@ Este documento no agrega nada al modelo: **reordena el catálogo para que dibuja
 | **`operators`** | 21 | 1, 2, 3, 4, 5, 7, 8 |
 | **`conversations`** | 19 | 1, 3, 5, 6, 7 |
 
-*(Grados medidos sobre el andamio; les siguen `ai_agents` y `generations` con 8, y `accounts` y `messages` con 6. El modelo tiene **69 relaciones** en total.)*
+*(Grados medidos sobre el andamio; les siguen `ai_agents` y `generations` con 8, y `accounts` y `messages` con 6. El modelo tiene **71 relaciones** en total.)*
 
 Recomendación de layout: **`conversations` en el centro** del tablero y **`operators` en un lateral con espacio libre alrededor**. `operators` es autor o destinatario de casi todo (calificó, resolvió, asignó, editó, subió, anotó), así que sus líneas van a cruzar todo el diagrama sin importar dónde se ponga; darle un carril propio evita que se mezclen con la estructura conversacional.
 
@@ -239,6 +239,7 @@ FK  prompt_component_version_id → prompt_component_versions  ⇄ B2
 | `prompt_component_versions` | 1 — 0..* | `generation_components` | `.prompt_component_version_id` | B2 |
 | `generations` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.generation_id` | B4 |
 | `generations` | 0..1 — 0..* | `tone_evaluations` | `tone_evaluations.generation_id` | B7 |
+| `message_batches` | 1 — 0..* | `signal_evaluations` | `signal_evaluations.message_batch_id` | B7 |
 
 > **`generations ↔ messages`: la FK va sólo en `generations`.** Es opcional en ambos sentidos y es tentador ponerla en las dos tablas — sería el mismo error que el Anexo C cometió entre `agents` y `knowledge_base`. Ver la nota de [relaciones.md §3](relaciones.md).
 
@@ -476,16 +477,26 @@ FK  inbox_id              → inboxes
 
 ---
 
-## 8. Bloque 7 — Evaluación (3 entidades)
+## 8. Bloque 7 — Evaluación (4 entidades)
+
+### `signal_evaluations`  — inmutable
+```
+PK  id
+FK  message_batch_id      → message_batches     ⇄ B3
+    signal_type «TransferSignalType», score, threshold_used,
+    classifier_version, fired, created_at
+```
+> **Cuatro filas por bloque procesado**, una por cada señal de F12 — **incluidas las que no dispararon**. Es lo que vuelve medible a OE4 (H-18, ADR-0014). Conviene dibujarla pegada a `transfer_events`: son causa y efecto.
 
 ### `transfer_events`  — inmutable
 ```
 PK  id
 FK  conversation_id       → conversations       ⇄ B1
+FK  signal_evaluation_id  → signal_evaluations
 FK  to_operator_id   NULL → operators           ⇄ B5
-    trigger_type «TransferSignalType», confidence, threshold_used,
-    classifier_version, turn_number, created_at
+    turn_number, created_at
 ```
+> **Ya no lleva `trigger_type`, `confidence`, `threshold_used` ni `classifier_version`** (ADR-0014): se mudaron a `signal_evaluations`. El evento **apunta a la evidencia, no la copia**. Si al dibujar aparecen esos cuatro atributos, la caja está desactualizada.
 
 ### `conversation_annotations`  — inmutable
 ```
@@ -504,11 +515,16 @@ FK  generation_id    NULL → generations         ⇄ B3
 ```
 
 ### Relaciones internas del bloque
-Ninguna. **Las tres entidades cuelgan de `conversations` y no se relacionan entre sí.**
+| Origen | Card. | Destino | FK vive en |
+|---|---|---|---|
+| `signal_evaluations` | 1 — **0..1** | `transfer_events` | `transfer_events.signal_evaluation_id` |
+
+> Es la única del bloque. Las otras tres entidades cuelgan de `conversations` y no se relacionan entre sí.
 
 ### Relaciones que cruzan ⇄
 | Origen | Card. | Destino | FK vive en | Bloque |
 |---|---|---|---|---|
+| `message_batches` | 1 — 0..* | `signal_evaluations` | `.message_batch_id` | B3 |
 | `conversations` | 1 — 0..* | `transfer_events` | `.conversation_id` | B1 |
 | `conversations` | 1 — 0..* | `conversation_annotations` | `.conversation_id` | B1 |
 | `conversations` | 1 — 0..* | `tone_evaluations` | `.conversation_id` | B1 |
@@ -567,6 +583,7 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 - Un contacto tiene **como máximo una conversación no resuelta** a la vez (ADR-0002).
 - Un `prompt_component` tiene **un solo tipo activo por agente** (F01: seis componentes, uno de cada tipo).
 - **`transfer_policies` manda sobre `rules`.** La decisión de transferir la toma el clasificador según sus umbrales; el componente `rules` no puede habilitarla ni inhibirla. Sin esta nota, las dos entidades parecen configurar lo mismo por dos vías.
+- **El clasificador evalúa las cuatro señales de F12 en cada bloque, dispare o no** (ADR-0014). Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: lo que no se evalúa no deja fila, y el detector de frustración deja de ser medible.
 - `sender_operator_id` y `sender_ai_agent_id` son **excluyentes** y deben coincidir con `sender_type` (`CHECK`).
 - La suma de `documents.size_bytes` de una base **no supera 100 MB** (F06).
 - `messages` **no admite borrado** de ninguna clase (F29 · C09).
@@ -577,16 +594,16 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 
 ## 12. Checklist antes de dar por cerrado el Paso 5
 
-- [ ] Las 35 entidades dibujadas, repartidas en los 8 bloques.
+- [ ] Las 36 entidades dibujadas, repartidas en los 8 bloques.
 - [ ] Las 21 enumeraciones declaradas con «enumeration» (C07).
 - [ ] Las FK se representan **de la misma manera en todas las entidades** — atributo en la caja **y** línea de relación, sin mezclar criterios (C10).
 - [ ] Las cinco cardinalidades de [relaciones.md §10](relaciones.md) revisadas explícitamente: son las que la lectura ingenua del anteproyecto equivoca.
 - [ ] Ninguna línea entre `webhook_events` y `messages`, ni entre `conversation_annotations` y `labels`, ni desde `audit_logs.entity_id`.
-- [ ] Las ocho reglas de §11 anotadas en el tablero.
+- [ ] Las once reglas de §11 anotadas en el tablero.
 - [ ] Título, fecha y nota de propósito en el diagrama (C10).
 - [ ] Exportado a `docs/diagrams/` en PNG y PDF **con la fecha en el nombre**: `der-logico-AAAA-MM-DD.png` (C10).
 - [ ] Verificado contra el andamio Mermaid (`docs/diagrams/der-logico-scaffold.mmd`): mismo conjunto de relaciones, sin sobrantes ni faltantes.
 
-> **Estado del andamio al 2026-08-09:** parsea correctamente y cruza limpio contra el catálogo — 35 entidades en ambos, ninguna faltante ni sobrante, 69 relaciones. Si al dibujar aparece una relación que el andamio no tiene, **el error puede estar en cualquiera de los dos**: se resuelve mirando el catálogo, que es la fuente de verdad (ADR-0013).
+> **Estado del andamio al 2026-08-10:** regenerado con `signal_evaluations` (ADR-0014) — 36 entidades en ambos, ninguna faltante ni sobrante, 71 relaciones. Si al dibujar aparece una relación que el andamio no tiene, **el error puede estar en cualquiera de los dos**: se resuelve mirando el catálogo, que es la fuente de verdad (ADR-0013).
 >
 > **Al editar el andamio, cuidado con una trampa de Mermaid:** una línea de comentario vacía —sólo `%%`, sin texto— **rompe el parser**. Mermaid elimina los comentarios con al menos un carácter después del prefijo, pero deja los vacíos, y quedan como basura antes de `erDiagram`. Toda línea de comentario tiene que llevar texto.

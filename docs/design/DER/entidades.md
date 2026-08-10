@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 
@@ -608,21 +608,49 @@ Una bandeja por número de WhatsApp. Meta permite varios números bajo una misma
 
 ## 8. Bloque 7 — Evaluación
 
+### `signal_evaluations`
+
+> **Origen:** F12 (las cuatro señales) · **OE4** — *"detectar señales de frustración y cambios de intención con precisión ≥ 85 %"* · F36 (*"tasa de transferencia **por tipo de señal**"*) · **H-18**
+
+Una fila **por cada señal evaluada en cada bloque procesado**, haya disparado la transferencia o no.
+
+| Atributo | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK |
+| `message_batch_id` | uuid | FK. El turno en que se evaluó la señal |
+| `signal_type` | `TransferSignalType` | Las cuatro de F12. **No requiere enumeración nueva** (C07) |
+| `score` | numeric | Salida del clasificador, **siempre**. Es el atributo que justifica la entidad: hasta ahora el puntaje sólo existía si superaba el umbral |
+| `threshold_used` | numeric | **El umbral que rigió esta evaluación.** `transfer_policies` es mutable y guarda sólo el valor actual: sin congelarlo acá, mover el umbral a mitad de las 200 conversaciones de OE3 vuelve incomparables las mediciones anteriores — el mismo argumento que justificó versionar los componentes del prompt para OE2 |
+| `classifier_version` | varchar | **Sin esto, ajustar el clasificador invalida las mediciones previas** |
+| `fired` | boolean | Si esta señal disparó la transferencia. **No es derivable de `score >= threshold_used`**: una señal puede superar el umbral y no disparar, porque `transfer_policies.enabled = false` o porque otra señal transfirió primero |
+| `created_at` | timestamptz | **Inmutable: sin `updated_at` ni `deleted_at`** (C09) |
+
+> **Por qué existe esta entidad.** OE4 mide la precisión del detector de frustración, y un detector sólo es medible si su salida se persiste **con independencia de si disparó una acción**. `transfer_events` registra la acción y por lo tanto conserva únicamente las señales que ganaron: es una muestra filtrada justamente por el umbral que se quiere evaluar. Medir precisión sobre ella da un número que **sube al subir el umbral**, sin que el clasificador haya mejorado.
+>
+> Es el mismo razonamiento que ya justificó `message_batches.timer_ms_used` —*sin persistir el bloque, F10 es una afirmación sin evidencia*— aplicado al otro clasificador del Módulo 2. Formulado como principio: **todo clasificador cuya precisión es un objetivo específico tiene que persistir su salida aunque esa salida no dispare nada.** El de transferencia lo cumple por accidente, porque su salida *es* una acción; el de frustración no lo cumplía.
+>
+> **Sin `conversation_id`.** Se llega por `message_batch_id → message_batches.conversation_id`. Es la misma regla que ADR-0012 aplicó a `account_id`: la pertenencia se hereda por la cadena de FK, y duplicarla crea dos caminos hacia el mismo dato. Si las consultas de OE3/OE4 justificaran desnormalizarlo, se decide en el Paso 7 con la medición en la mano.
+>
+> **`score` y `threshold_used` no son nullable**, ni siquiera para señales deterministas como `explicit_request`: `transfer_policies` ya asigna un `threshold` a las cuatro, así que el modelo ya asume que todas puntúan. Una señal booleana escribe 0 o 1.
+>
+> **Reclasificación fuera de línea.** Volver a correr una versión nueva del clasificador sobre bloques históricos escribe filas con `fired = false` — nada dispara fuera de línea. Para comparar versiones se usa `score >= threshold_used`, no `fired`.
+
 ### `transfer_events`
 
-> **Origen:** F12 · F36 (*"tasa de transferencia **por tipo de señal**"*) · OE3 · H-04
+> **Origen:** F12 · F36 (*"tasa de transferencia **por tipo de señal**"*) · OE3 · H-04 · H-18 (traslado de atributos)
 
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
-| `trigger_type` | `TransferSignalType` | Las cuatro señales de F12 |
-| `confidence` | numeric | |
-| `threshold_used` | numeric | **El umbral que efectivamente rigió al disparar esta transferencia.** `transfer_policies` es mutable y guarda sólo el valor actual: sin congelarlo acá, mover el umbral a mitad de las 200 conversaciones de OE3 vuelve incomparables las mediciones anteriores — el mismo argumento que justificó versionar los componentes del prompt para OE2 |
-| `classifier_version` | varchar | **Sin esto, ajustar el clasificador invalida las mediciones previas** |
+| `signal_evaluation_id` | uuid | FK. **La evidencia que causó la transferencia** |
 | `turn_number` | integer | |
 | `to_operator_id` | uuid | Nullable |
 | `created_at` | timestamptz | Inmutable |
+
+> **Cuatro atributos se mudaron a `signal_evaluations`** (H-18): `trigger_type`, `confidence`, `threshold_used` y `classifier_version`. No se copian acá: el evento **apunta a la evidencia, no la duplica** — la misma separación que ya existe entre `generations` (la acción) y `generation_components` (con qué se armó). F36 alcanza el tipo de señal por join.
+>
+> **Falta declarar la regla de atribución.** Si dos señales superan el umbral en el mismo turno hay una sola transferencia, y `signal_evaluation_id` apunta a una sola fila. F12 no dice cuál gana: hay que fijar el criterio —mayor `score / threshold_used`, o un orden de prioridad entre las cuatro señales— y dejarlo escrito.
 
 ### `conversation_annotations`
 
@@ -635,10 +663,20 @@ Una bandeja por número de WhatsApp. Meta permite varios números bajo una misma
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
 | `annotation_type` | `AnnotationType` | Qué se está etiquetando |
-| `gold_value` | varchar | La etiqueta correcta |
+| `gold_value` | varchar | La etiqueta correcta. **Dominio declarado por `annotation_type`** — ver abajo (ADR-0014) |
 | `annotated_by_operator_id` | uuid | Quién etiquetó — permite medir acuerdo entre etiquetadores |
 | `notes` | text | Nullable |
 | `created_at` | timestamptz | Inmutable |
+
+> **Dominio de `gold_value`.** Es `varchar` y no una enumeración porque su conjunto de valores **depende de `annotation_type`**, y C07 no admite una enumeración cuyo dominio cambie según otra columna. Se declara acá y se valida por regla de aplicación:
+>
+> | `annotation_type` | Valores admitidos | Contra qué se compara |
+> |---|---|---|
+> | `transfer` | `no_resolution` · `frustration` · `out_of_domain` · `explicit_request` · `none` | `signal_evaluations.signal_type` de la evaluación que disparó (`none` = no había que transferir) |
+> | `frustration` | `frustration` · `none` | `signal_evaluations` con `signal_type = 'frustration'` |
+> | `intent` | *pendiente* | Depende de la definición de "cambio de intención", abierta en ADR-0014 §6 |
+>
+> Reutilizar los valores de `TransferSignalType` en el caso `transfer` no es cosmético: permite medir **dos precisiones con el mismo dato** — la gruesa (`gold_value <> 'none'`: ¿había que transferir?) y la fina (`= signal_type`: ¿además acertó *por qué*?), que es la que le da sustancia a la *"tasa de transferencia por tipo de señal"* de F36.
 
 ### `tone_evaluations`
 
@@ -706,7 +744,7 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 
 ## 11. Resumen
 
-**35 entidades** en el modelo, más 2 condicionadas.
+**36 entidades** en el modelo, más 2 condicionadas.
 
 | Bloque | Entidades | Cantidad |
 |---|---|---|
@@ -716,10 +754,10 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 | 4 — Conocimiento | `knowledge_bases`, `documents`, `document_chunks`, `retrieval_logs` | 4 |
 | 5 — Operación | `accounts`, `operators`, `conversation_assignments`, `internal_notes`, `labels`, `contact_labels`, `conversation_labels`, `reminders`, `sales`, `quick_replies` | 10 |
 | 6 — Canal e integración | `inboxes`, `webhook_events`, `meta_templates` | 3 |
-| 7 — Evaluación | `transfer_events`, `conversation_annotations`, `tone_evaluations` | 3 |
+| 7 — Evaluación | `signal_evaluations`, `transfer_events`, `conversation_annotations`, `tone_evaluations` | 4 |
 | 8 — Cumplimiento | `contact_attributes`, `audit_logs` | 2 |
 
-De las 35, **9 provienen del Anexo C** (con renombres y correcciones) y **26 son nuevas**.
+De las 36, **9 provienen del Anexo C** (con renombres y correcciones) y **27 son nuevas**.
 
 ---
 
@@ -727,7 +765,7 @@ De las 35, **9 provienen del Anexo C** (con renombres y correcciones) y **26 son
 
 ### El criterio
 
-Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y 25 de las 26 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido.
+Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y 25 de las 27 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido. La vigesimosexta, `signal_evaluations`, nace de un hallazgo posterior —**H-18**, de la validación del Paso 6— y también traza a requisitos: OE4, F12 y F36.
 
 **La excepción es `accounts`, y conviene declararla.** No nace de ningún requisito ni de ningún hallazgo: nace de la auditoría del catálogo y de una decisión de previsión estructural (ADR-0012). Es la única entidad del modelo que no responde a una fila del anteproyecto, y por eso lleva una regla escrita que la acota a una sola fila en operación. Fingir que deriva de un requisito sería más cómodo y menos honesto.
 
@@ -736,7 +774,7 @@ Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilid
 El Anexo C tenía **nueve** entidades y el modelo necesita **treinta y cinco**. Pero lo interesante no es el número, sino **dónde** se concentran las que faltaban:
 
 - Las nueve del Anexo C cubren **la operación**: contactos, conversaciones, mensajes, etiquetas, ventas, recordatorios, respuestas rápidas. Es el territorio que Chatwoot ya resolvió.
-- Las veinticinco nuevas se concentran en **la composición de prompts, la ejecución por turno, la clasificación de transferencia y la evaluación**. Es decir: casi exactamente la lista del aporte original que declara la sección 6.3 del anteproyecto.
+- Las veintiséis nuevas se concentran en **la composición de prompts, la ejecución por turno, la clasificación de transferencia y la evaluación**. Es decir: casi exactamente la lista del aporte original que declara la sección 6.3 del anteproyecto.
 
 **Estaba modelado lo que SONIA comparte con el estado del arte, y no estaba modelado lo que la diferencia de él.** Los bloques 2, 3 y 7 —catorce entidades— existen para sostener el aporte original y su medición.
 
@@ -748,7 +786,7 @@ El Anexo C tenía **nueve** entidades y el modelo necesita **treinta y cinco**. 
 
 3. **El registro por turno es una entidad aparte de `messages`** (`generations`). `messages` va a ser la tabla más grande del sistema y F22 lista **todos** los chats: arrastrar el prompt renderizado y el razonamiento en cada render de bandeja es un problema de rendimiento garantizado. Además sólo los salientes generados por IA tienen esos datos. Como beneficio secundario, `generations` da **costo y latencia por turno**, insumo directo de la viabilidad económica ante el cooperante.
 
-4. **La capa de evaluación existe desde el diseño, no después** (`conversation_annotations`, `tone_evaluations`, `transfer_events`, `retrieval_logs`). Cinco de los siete objetivos específicos son métricas, y ninguna era calculable con el Anexo C. `conversation_annotations` en particular es el ground truth de OE3 y OE4: si esas 200 y 500 conversaciones se etiquetan en una planilla suelta, la precisión ≥85 % no es reproducible ante el tribunal.
+4. **La capa de evaluación existe desde el diseño, no después** (`conversation_annotations`, `tone_evaluations`, `transfer_events`, `signal_evaluations`, `retrieval_logs`). Cinco de los siete objetivos específicos son métricas, y ninguna era calculable con el Anexo C. `conversation_annotations` en particular es el ground truth de OE3 y OE4: si esas 200 y 500 conversaciones se etiquetan en una planilla suelta, la precisión ≥85 % no es reproducible ante el tribunal.
 
 5. **`messages.sender_type` es el atributo más crítico de todo el modelo.** No es una entidad, pero merece mención: `direction` sólo dice entrante o saliente. Sin distinguir si respondió la IA o el humano, **OE7 —la tasa de resolución autónoma, el objetivo de producción del proyecto— no existe**.
 

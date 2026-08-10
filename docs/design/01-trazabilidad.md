@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/01-trazabilidad.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-06 |
+| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) |
 | **Etapa** | Diseño — Paso 2 (Fundaciones) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01–F39), Anexo B (roles), Anexo C (modelo de datos), sección 7.2 (OE1–OE7) |
 | **Depende de** | [00-convenciones.md](00-convenciones.md) |
@@ -149,6 +149,17 @@ Estos cuatro no se resuelven modelando: hay que elegir cuál de las dos versione
 | **H-14** | F28 vincula los recordatorios **a contactos**; el modelo los vincula a conversaciones — y F32 exige llegar a ellos desde el contacto | ¿`contact_id` obligatorio con `conversation_id` opcional? |
 | **H-16** | `contacts.tags_json` convive con el catálogo `labels` que administra el admin (F19): si renombra o borra una etiqueta, los JSON quedan huérfanos | ¿JSON o relación? |
 
+### 5.3. Hallazgos del recorrido del Paso 6 → contra el modelo nuevo
+
+Los dieciocho anteriores nacen de comparar el texto de un requisito con el **Anexo C**. Estos nacen de otra cosa: de **intentar escribir la consulta SQL de cada métrica** contra el catálogo ya construido en el Paso 5. Es el control que anticipa el punto 4 de §7, y encuentra una clase distinta de hueco — no entidades que faltan, sino **datos que el modelo no permite calcular**.
+
+| # | Hallazgo | Afecta a | Estado |
+|---|---|---|---|
+| **H-18** | **La salida del clasificador de frustración no se persiste.** `transfer_events` sólo tiene fila cuando la transferencia se dispara. Para el clasificador de transferencia alcanza, porque su salida positiva *es* la acción; para el detector de frustración no, porque su salida es una percepción que sólo deja rastro si además cruzó el umbral. **El conjunto que OE4 mide es un superconjunto del que la base guarda**, y medir precisión sobre lo guardado da un número que sube al subir el umbral | OE3, OE4, F36 | ✅ **Resuelto** — entidad `signal_evaluations` ([ADR-0014](02-decisiones/0014-medicion-de-oe3-y-oe4.md)) |
+| **H-19** | **`message_batches` no tiene `turn_number`**, pese a que [03-capa-prompts.md](03-capa-prompts.md) define *"turno = un `message_batch` cerrado y procesado"*. Hoy `conversation_contexts` y `transfer_events` llevan cada uno el suyo por su cuenta, sin un origen común. Lo natural sería que el turno viva en el bloque y los demás lo deriven | F10, F11, OE3 | ⚠️ Abierto — ver `02-decisiones/README.md` |
+
+> **Lo que revela el patrón.** H-18 no era detectable con la matriz: la fila de OE4 decía *"faltan el bloque, el evento de transferencia y el ground truth"*, y las tres cosas se agregaron en el Paso 5. La matriz encuentra **entidades faltantes**; sólo escribir la consulta encuentra **combinaciones imposibles**. Es la misma lección que ya había dejado el hueco de los campos de medios en `messages` (§12 de `DER/entidades.md`), ahora en su versión más cara.
+
 ---
 
 ## 6. Resumen
@@ -175,5 +186,7 @@ Dos lecturas que conviene tener presentes:
 2. **Los catorce de §5.1 van al Paso 5** como entidades y atributos nuevos, distribuidos en los ocho bloques del modelo de datos lógico.
 3. **H-01, H-02 y H-11 se diseñan aparte, en el Paso 4** (`03-capa-prompts.md`): son el núcleo conceptual de la tesina y merecen tratamiento propio, no un rincón del DER.
 4. **Esta matriz se vuelve a recorrer en el Paso 6**, ya contra el modelo nuevo. En esa pasada ninguna fila puede quedar en ❌, y cada métrica de OE1–OE7 tiene que poder escribirse como consulta SQL.
+
+> **Estado del recorrido del Paso 6 al 2026-08-10.** Hecho: **OE3 y OE4**, que produjeron H-18 y H-19 (§5.3) y ADR-0014. Pendientes: OE1, OE2, OE5, OE6, OE7 y F34–F38. Los estados ❌ y ⚠️ de las tablas de §2 a §4 **no se corrigen retroactivamente**: describen el Anexo C, que es contra lo que se hizo esta matriz. La cobertura del modelo nuevo se registra en esta sección y en el entregable del Paso 6.
 
 Los hallazgos de §5.2 —las contradicciones internas del propio anteproyecto— merecen un párrafo en el informe final. Detectarlas y resolverlas es trabajo de ingeniería que suma; que aparezcan sin resolver en la defensa, no.

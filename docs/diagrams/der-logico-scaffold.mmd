@@ -1,7 +1,7 @@
-%% SONIA — Andamio de verificación del DER lógico · 2026-08-09 · 35 entidades
+%% SONIA — Andamio de verificación del DER lógico · 2026-08-10 · 36 entidades
 %% ---------------------------------------------------------------------------
 %% ESTO NO ES EL ENTREGABLE DEL PASO 5.
-%% El DER se dibuja en Miro (C10: con 35 entidades el layout automático
+%% El DER se dibuja en Miro (C10: con 36 entidades el layout automático
 %% produce un diagrama que se puede generar pero no leer).
 %% ---------------------------------------------------------------------------
 %% Este archivo existe para dos cosas:
@@ -114,6 +114,12 @@ erDiagram
     %% === BLOQUE 7 — Evaluación =============================================
     %% NOTA: conversation_annotations NO se relaciona con labels. Son el ground
     %% truth de evaluación y el catálogo operativo del negocio, sin vínculo.
+    %% NOTA: signal_evaluations cuelga de message_batches (B3). Una fila por
+    %% señal de F12 por bloque procesado, dispare o no (H-18, ADR-0014).
+    %% transfer_events ya NO lleva trigger_type, confidence, threshold_used ni
+    %% classifier_version: viven en signal_evaluations.
+    message_batches    ||--o{ signal_evaluations : message_batch_id
+    signal_evaluations ||--o| transfer_events    : signal_evaluation_id
     conversations ||--o{ transfer_events          : conversation_id
     operators     |o--o{ transfer_events          : to_operator_id
     conversations ||--o{ conversation_annotations : conversation_id

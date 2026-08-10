@@ -39,16 +39,19 @@ Dos reglas que conviene sostener:
 | [0011](0011-acceso-a-datos-sensibles.md) | Acceso a datos sensibles: acotado por asignación, no por rol | — | Aceptada |
 | [0012](0012-cuenta-y-bandejas-de-entrada.md) | Cuenta y bandejas de entrada: previsión estructural para el trabajo futuro declarado | Auditoría del DER | Aceptada |
 | [0013](0013-fuente-de-verdad-del-modelo.md) | La fuente de verdad del modelo es el catálogo, no el tablero | Enmienda C10 | Aceptada |
+| [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
 **ADR-0012 es posterior y de otra naturaleza:** no resuelve un hallazgo de la matriz, sino uno de la auditoría del catálogo de entidades (Paso 5). Es además la única decisión que **toca el alcance declarado** en la sección 7.3 del anteproyecto, y por eso conviene que el equipo la lea completa antes de darla por firmada.
 
+**ADR-0014 abre la serie del Paso 6.** Nace de intentar escribir la consulta SQL de una métrica y descubrir que no se podía — que es exactamente para lo que existe ese paso. Es previsible que aparezcan más: la validación de OE1, OE2, OE6 y OE7 todavía no se hizo.
+
 ---
 
 ## Decisiones pendientes
 
-Ninguna bloquea el avance a los Pasos 4 y 5, pero conviene cerrarlas antes de terminar la etapa.
+Ninguna de las primeras bloqueaba el avance a los Pasos 4 y 5. De las tres que abrió ADR-0014, **la regla de atribución sí toca el Paso 6**: sin ella no se puede escribir la consulta de precisión fina de F36. Las otras dos esperan al Paso 11.
 
 ### Derivadas de las decisiones tomadas
 
@@ -62,6 +65,12 @@ Ninguna bloquea el avance a los Pasos 4 y 5, pero conviene cerrarlas antes de te
   Dos salidas aparentemente obvias **no sirven metodológicamente**, y conviene tenerlo escrito antes de llegar al Paso 11: repartir por bandeja (un número por proveedor) es autoselección, no aleatorización — el cliente elige a qué número escribe; y repartir por período (una semana cada modelo) confunde el efecto del modelo con el del período. Ambas invalidarían la comparación que sostiene OE2.
 
   Si el protocolo termina exigiendo trazabilidad del criterio de asignación, se resuelve con **una columna** en `conversations` (`ai_agent_assignment_reason`), no con un motor de ruteo. Un motor de reglas se descartó explícitamente: ningún requisito de F01–F39 lo pide, y reabriría [ADR-0009](0009-horario-de-atencion.md), que ya declaró el ruteo por horario fuera de alcance con el argumento de que *"construir capacidad sin requisito es alcance no justificado"*.
+
+### Abiertas por ADR-0014 (Paso 6)
+
+- [ ] **Regla de atribución entre señales simultáneas.** Si dos señales de F12 superan el umbral en el mismo turno hay una sola transferencia, y `transfer_events.signal_evaluation_id` apunta a una sola fila. F12 no dice cuál gana. Candidatos: mayor `score / threshold_used`, u orden de prioridad fijo. **Se resuelve en el modelo** — es la única de las tres que no puede esperar al Paso 11.
+- [ ] **Definición de "cambio de intención"** (la otra mitad de OE4). Los datos existen: `detected_intents` permite derivar el cambio comparando bloques consecutivos. Pero bajo la lectura ingenua *toda* conversación tiene cambios de intención y la métrica se degrada a la tasa base. Hay que definir qué cuenta como cambio **disruptivo**. Paso 11.
+- [ ] **`message_batches` no tiene `turn_number`** (**H-19**), pese a que `03-capa-prompts.md` define el turno como el bloque cerrado y procesado. Hoy `conversation_contexts` y `transfer_events` llevan cada uno el suyo por su cuenta. Lo natural sería que el turno viva en el bloque y los demás lo deriven.
 
 ### Heredadas de la sección 8.4 del anteproyecto
 

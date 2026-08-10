@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/relaciones.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo · ADR-0012) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo · ADR-0012) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) |
 | **Complemento** | [entidades.md](entidades.md) — atributos de cada entidad |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 
@@ -118,7 +118,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 
 > **El origen del contacto no aparece en `sales`** (ADR-0001). F14 pide vincular la venta al canal de origen, y eso se resuelve con `sales → conversations → contacts.source_channel`. Duplicarlo sería crear dos versiones del mismo dato.
 
-> **`account_id` va en seis entidades, no en las 35** (ADR-0012). Un `message` pertenece a la cuenta de su `conversation`, que pertenece a la de su `contact`: la pertenencia se hereda por la cadena de FK. Poner `account_id` también en `messages` crearía **dos caminos hacia el mismo dato**, que es la definición exacta de la inconsistencia que prohíbe la regla 1 de §0. Si la consulta de bandeja de F22/F23 justificara desnormalizarlo, esa decisión se toma en el Paso 7 (modelo físico) con la medición en la mano, y se documenta como desnormalización deliberada — no se cuela como parte del modelo lógico.
+> **`account_id` va en seis entidades, no en las 36** (ADR-0012). Un `message` pertenece a la cuenta de su `conversation`, que pertenece a la de su `contact`: la pertenencia se hereda por la cadena de FK. Poner `account_id` también en `messages` crearía **dos caminos hacia el mismo dato**, que es la definición exacta de la inconsistencia que prohíbe la regla 1 de §0. Si la consulta de bandeja de F22/F23 justificara desnormalizarlo, esa decisión se toma en el Paso 7 (modelo físico) con la medición en la mano, y se documenta como desnormalización deliberada — no se cuela como parte del modelo lógico.
 
 ---
 
@@ -140,12 +140,18 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 
 | Origen | Cardinalidad | Destino | FK vive en | Por qué |
 |---|---|---|---|---|
+| `message_batches` | 1 — 0..* | `signal_evaluations` | `signal_evaluations.message_batch_id` | `0..*`: un bloque procesado con el agente en modo `off` no se clasifica. En operación normal son cuatro filas, una por señal de F12 |
+| `signal_evaluations` | 1 — 0..1 | `transfer_events` | `transfer_events.signal_evaluation_id` | **Obligatoria.** Toda transferencia registrada la dispara el clasificador: las cuatro señales de F12 son automáticas, incluida `explicit_request`. Ver la nota de abajo |
 | `conversations` | 1 — 0..* | `transfer_events` | `transfer_events.conversation_id` | `0..*`: una conversación resuelta de forma autónoma no tiene ninguno — **y esa ausencia es la métrica de OE7** |
 | `operators` | 0..1 — 0..* | `transfer_events` | `transfer_events.to_operator_id` | **Nullable.** La transferencia deja la conversación en el pool si nadie la toma todavía (ADR-0004) |
 | `conversations` | 1 — 0..* | `conversation_annotations` | `conversation_annotations.conversation_id` | Varias por conversación: una por tipo de anotación (transferencia, frustración, intención) |
 | `operators` | 1 — 0..* | `conversation_annotations` | `.annotated_by_operator_id` | Permite medir el acuerdo entre etiquetadores |
 | `conversations` | 1 — 0..* | `tone_evaluations` | `tone_evaluations.conversation_id` | |
 | `generations` | 0..1 — 0..* | `tone_evaluations` | `tone_evaluations.generation_id` | **Nullable.** La evaluación puede ser de una respuesta puntual o de la conversación completa |
+
+> **Por qué `transfer_events.signal_evaluation_id` no es nullable.** Una toma de control manual del operador **no es un `transfer_event`**: es un cambio de `conversations.mode` (F27) o una fila de `conversation_assignments` (F26). `transfer_events` registra exclusivamente la derivación automática de F12, y toda derivación automática tiene detrás una evaluación de señal. **Consecuencia a vigilar:** si más adelante decidieran registrar también las escaladas manuales acá, esta FK pasa a nullable — conviene decidirlo ahora y no descubrirlo durante la implementación.
+
+> **`signal_evaluations` no duplica a `transfer_events`: están a distinta granularidad.** La evaluación es por *(turno, señal)* —cuatro filas por bloque— y el evento es por *transferencia* —a lo sumo una por turno—. Una registra lo que el clasificador **observó**; la otra, lo que el sistema **hizo**. Es la misma relación que hay entre `generations` y `generation_components`, y por eso los atributos del clasificador viven en un solo lado (ver [entidades.md](entidades.md), Bloque 7).
 
 > **`conversation_annotations` y `labels` no se relacionan, y no deben confundirse.** `labels` es el catálogo operativo del negocio (F19, F24, F33); `conversation_annotations` es el **ground truth de evaluación** de OE3 y OE4. Comparten la palabra "etiqueta" en castellano y nada más: una la usa el operador para organizar su trabajo, la otra el equipo para medir un clasificador.
 
@@ -181,6 +187,8 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 | Un `prompt_component` tiene un solo tipo activo por agente | F01 — seis componentes, uno de cada tipo | Índice único parcial sobre `(ai_agent_id, type) WHERE active AND deleted_at IS NULL` |
 | **La decisión de transferir la toma el clasificador según `transfer_policies`. El componente `rules` NO puede habilitar ni inhibir una transferencia** — sólo describe el comportamiento conversacional alrededor de ella | F01, F12 | Regla de aplicación + nota en el diagrama. Sin esto, el comportamiento de transferencia queda definido en dos lugares —texto blando que lee el LLM y umbral duro que lee el clasificador— y ante divergencia gana el clasificador **en silencio**, sin que el admin sepa por qué se ignoró lo que escribió |
 | `messages` no admite borrado de ninguna clase | F29 · C09 | Ausencia de `deleted_at` + regla de aplicación |
+| **El clasificador evalúa las cuatro señales de F12 en cada bloque procesado, aunque una ya haya disparado.** Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: las señales que no llegan a evaluarse no dejan fila, y el detector de frustración deja de ser medible | OE4 · H-18 | Regla de aplicación + nota en el diagrama. Si se decide cortocircuitar por rendimiento, hay que registrar explícitamente cuáles se saltearon |
+| Una sola evaluación por bloque, señal y versión de clasificador | OE3, OE4 · H-18 | Índice único sobre `signal_evaluations (message_batch_id, signal_type, classifier_version)`. **Permite reclasificar con una versión nueva sin duplicar dentro de una misma corrida** — que es lo que habilita el barrido de umbral sin volver a correr las 200 y las 500 conversaciones |
 | **La búsqueda RAG sólo considera `document_chunks` con `deleted_at IS NULL`**, cuyo documento tampoco esté borrado | OE6 · ADR-0010 | Regla de aplicación. `retrieval_logs` los sigue referenciando para siempre: son el registro de lo que se recuperó **cuando se recuperó**, y borrarlos destruiría la evidencia de mediciones ya hechas |
 | **`contact_labels` y `conversation_labels` admiten borrado físico**, por excepción a C09 | F24, F33 · ADR-0003 | Desetiquetar es una operación operativa normal y ninguna métrica de F34–F38 ni de OE1–OE7 cuenta etiquetados históricos. **Costo asumido:** al quitar una etiqueta se pierde el registro de quién la había asignado y cuándo |
 | **`knowledge_bases.collection_name` y `document_chunks.vector_id` apuntan fuera de PostgreSQL** — son referencias a Qdrant y **no pueden ser FK** | ADR-0010 | Nota en el diagrama. **No dibujar línea de relación.** La integridad no está garantizada por la base: la consistencia con Qdrant es **eventual**, y el orden de escritura en la ingesta se define en el Paso 7 |
@@ -209,5 +217,8 @@ El criterio es binario: **si una métrica del anteproyecto no se puede escribir 
 
 1. **OE7 — resolución autónoma:** `conversations` resueltas sin `transfer_events`, filtrando por `messages.sender_type = 'ai_agent'`.
 2. **OE2 — consistencia de tono:** `tone_evaluations` agrupadas por las versiones de componente que realmente se usaron, vía `generations → generation_components → prompt_component_versions`.
-3. **OE3 y OE4 — precisión de los clasificadores:** `transfer_events` contra `conversation_annotations`, agrupando por `classifier_version`.
-4. **OE6 — resolución dentro del dominio:** `retrieval_logs` con su `similarity_score` contra la ausencia de `transfer_events` de tipo `out_of_domain`.
+3. **OE3 — precisión del clasificador de transferencia:** `transfer_events` contra `conversation_annotations` (`annotation_type = 'transfer'`), **unidad = conversación** y agrupando por `signal_evaluations.classifier_version`.
+4. **OE4 — precisión del detector de frustración:** `signal_evaluations` con `signal_type = 'frustration'` —**todas**, no sólo las que dispararon— contra `conversation_annotations`. Es la cadena que H-18 hizo posible.
+5. **OE6 — resolución dentro del dominio:** `retrieval_logs` con su `similarity_score` contra la ausencia de transferencia por `signal_type = 'out_of_domain'`.
+
+> **Estado de esta verificación (2026-08-10).** El recorrido del Paso 6 está en curso. Produjo hasta ahora **H-18** —la salida del clasificador de frustración no se persistía, y sin ella OE4 no era medible—, ya resuelto con `signal_evaluations`. La cadena 1 (OE7) y la 2 (OE2) todavía no se verificaron.

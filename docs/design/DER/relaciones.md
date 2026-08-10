@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/relaciones.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo · ADR-0012) |
 | **Complemento** | [entidades.md](entidades.md) — atributos de cada entidad |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 
@@ -29,6 +29,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 | Origen | Cardinalidad | Destino | FK vive en | Por qué |
 |---|---|---|---|---|
 | `contacts` | 1 — 0..* | `conversations` | `conversations.contact_id` | Un contacto puede existir sin conversaciones: F30 permite el alta manual |
+| `inboxes` | 1 — 0..* | `conversations` | `conversations.inbox_id` | **Por qué bandeja —y por lo tanto por qué número de WhatsApp— entró** (ADR-0012) |
 | `conversations` | 1 — 0..* | `messages` | `messages.conversation_id` | |
 | `operators` | 0..1 — 0..* | `conversations` | `conversations.operator_id` | **Nullable.** Pool sin asignar (ADR-0004) o modo autónomo (F02) |
 | `ai_agents` | 0..1 — 0..* | `conversations` | `conversations.ai_agent_id` | **Nullable.** En modo `off` no hay agente asignado |
@@ -94,6 +95,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 
 | Origen | Cardinalidad | Destino | FK vive en | Por qué |
 |---|---|---|---|---|
+| `accounts` | 1 — 0..* | `contacts` · `ai_agents` · `operators` · `labels` · `quick_replies` · `inboxes` | `.account_id` en cada una | **Las seis entidades raíz** (ADR-0012). El resto del modelo hereda la pertenencia por su padre — ver la nota de abajo |
 | `conversations` | 1 — 0..* | `conversation_assignments` | `conversation_assignments.conversation_id` | `0..*`: una conversación en el pool todavía no fue asignada |
 | `operators` | 0..1 — 0..* | `conversation_assignments` | `.from_operator_id` | **Nullable.** Nulo en la primera asignación desde el pool (ADR-0004) |
 | `operators` | 1 — 0..* | `conversation_assignments` | `.to_operator_id` | Siempre hay destinatario |
@@ -116,14 +118,19 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 
 > **El origen del contacto no aparece en `sales`** (ADR-0001). F14 pide vincular la venta al canal de origen, y eso se resuelve con `sales → conversations → contacts.source_channel`. Duplicarlo sería crear dos versiones del mismo dato.
 
+> **`account_id` va en seis entidades, no en las 35** (ADR-0012). Un `message` pertenece a la cuenta de su `conversation`, que pertenece a la de su `contact`: la pertenencia se hereda por la cadena de FK. Poner `account_id` también en `messages` crearía **dos caminos hacia el mismo dato**, que es la definición exacta de la inconsistencia que prohíbe la regla 1 de §0. Si la consulta de bandeja de F22/F23 justificara desnormalizarlo, esa decisión se toma en el Paso 7 (modelo físico) con la medición en la mano, y se documenta como desnormalización deliberada — no se cuela como parte del modelo lógico.
+
 ---
 
 ## 6. Bloque 6 — Canal e integración
 
 | Origen | Cardinalidad | Destino | FK vive en | Por qué |
 |---|---|---|---|---|
-| `channel_configs` | 1 — 0..* | `webhook_events` | `webhook_events.channel_config_id` | F20 — log de eventos |
-| `channel_configs` | 1 — 0..* | `meta_templates` | `meta_templates.channel_config_id` | F08, F37 |
+| `inboxes` | 1 — 0..* | `webhook_events` | `webhook_events.inbox_id` | F20 — log de eventos |
+| `inboxes` | 1 — 0..* | `meta_templates` | `meta_templates.inbox_id` | F08, F37 |
+| `ai_agents` | 0..1 — 0..* | `inboxes` | `inboxes.default_ai_agent_id` | **Nullable.** El agente que atiende las conversaciones nuevas de la bandeja; nulo si opera sin IA (ADR-0012) |
+
+> **`inboxes` conserva los campos de WhatsApp, sin generalizar** (ADR-0012). Es un renombre de `channel_configs`, no una abstracción de canal: no hay `channel_type` ni tablas por canal, porque Instagram y email están fuera de alcance (7.3). Cambia el vocabulario, no la estructura.
 
 > **`webhook_events` y `messages` no tienen FK entre sí.** Se correlacionan por el valor de `wamid`, que ambas guardan. El motivo: un evento de webhook se registra **antes** de saber si producirá un mensaje —y muchos no lo producen, como los de estado de entrega o los que llegan con firma inválida—. Forzar una FK obligaría a crear el mensaje antes de haber validado el evento, que es exactamente lo contrario del orden correcto.
 
@@ -162,6 +169,8 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 
 | Regla | Origen | Cómo se implementa |
 |---|---|---|
+| **`accounts` tiene exactamente una fila durante todo el proyecto.** La gestión multi-empresa —alta de cuentas, aislamiento entre cuentas, permisos por cuenta— **sigue fuera de alcance** (7.3) y no se implementa | ADR-0012 · sección 7.3 | Regla de aplicación + nota en el diagrama. **Es la regla que impide que la previsión estructural se lea como funcionalidad prometida** |
+| Toda conversación entra por una bandeja, y su agente inicial es el `default_ai_agent_id` de esa bandeja | ADR-0012 | Regla de aplicación. `conversations.ai_agent_id` puede cambiar después (F27 permite apagar el agente en un chat) |
 | Sólo un `admin` puede crear respuestas rápidas y etiquetas | F09, F19 · Anexo B | Regla de aplicación + nota en el diagrama. No es expresable como relación |
 | El módulo de contactos (F30, F32, F33) es exclusivo de `admin` | ADR-0011 | Regla de aplicación |
 | Un `operator` sólo alcanza las conversaciones que tiene asignadas | Anexo B · ADR-0011 | Regla de aplicación sobre `conversations.operator_id` |
@@ -170,7 +179,11 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 | `phone_whatsapp`, `email` de operador y `name` de etiqueta son únicos **entre los no borrados** | C09 | Índice único parcial `WHERE deleted_at IS NULL` |
 | La suma de `documents.size_bytes` de una base no supera 100 MB | F06 | Regla de aplicación; `knowledge_bases.size_bytes_total` la materializa |
 | Un `prompt_component` tiene un solo tipo activo por agente | F01 — seis componentes, uno de cada tipo | Índice único parcial sobre `(ai_agent_id, type) WHERE active AND deleted_at IS NULL` |
+| **La decisión de transferir la toma el clasificador según `transfer_policies`. El componente `rules` NO puede habilitar ni inhibir una transferencia** — sólo describe el comportamiento conversacional alrededor de ella | F01, F12 | Regla de aplicación + nota en el diagrama. Sin esto, el comportamiento de transferencia queda definido en dos lugares —texto blando que lee el LLM y umbral duro que lee el clasificador— y ante divergencia gana el clasificador **en silencio**, sin que el admin sepa por qué se ignoró lo que escribió |
 | `messages` no admite borrado de ninguna clase | F29 · C09 | Ausencia de `deleted_at` + regla de aplicación |
+| **La búsqueda RAG sólo considera `document_chunks` con `deleted_at IS NULL`**, cuyo documento tampoco esté borrado | OE6 · ADR-0010 | Regla de aplicación. `retrieval_logs` los sigue referenciando para siempre: son el registro de lo que se recuperó **cuando se recuperó**, y borrarlos destruiría la evidencia de mediciones ya hechas |
+| **`contact_labels` y `conversation_labels` admiten borrado físico**, por excepción a C09 | F24, F33 · ADR-0003 | Desetiquetar es una operación operativa normal y ninguna métrica de F34–F38 ni de OE1–OE7 cuenta etiquetados históricos. **Costo asumido:** al quitar una etiqueta se pierde el registro de quién la había asignado y cuándo |
+| **`knowledge_bases.collection_name` y `document_chunks.vector_id` apuntan fuera de PostgreSQL** — son referencias a Qdrant y **no pueden ser FK** | ADR-0010 | Nota en el diagrama. **No dibujar línea de relación.** La integridad no está garantizada por la base: la consistencia con Qdrant es **eventual**, y el orden de escritura en la ingesta se define en el Paso 7 |
 
 ---
 

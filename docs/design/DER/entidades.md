@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 
@@ -49,11 +49,15 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `PromptComponentType` | `objective` · `personality` · `behavior` · `tone` · `brand_voice` · `rules` | F01 |
 | `TransferSignalType` | `no_resolution` · `frustration` · `out_of_domain` · `explicit_request` | F12 |
 | `BatchCloseReason` | `silence` · `max_messages` · `max_duration` | F10 (`silence` es el único textual; los otros dos son guardas ⚙) |
-| `GenerationStatus` | `sent` · `pending_review` · `accepted` · `edited` · `rejected` | F02 (modo sugerencia) |
+| `GenerationStatus` | `auto_sent` · `pending_review` · `accepted` · `edited` · `rejected` | F02 (modo sugerencia). **`sent` renombrado a `auto_sent`**: colisionaba con `MessageStatus.sent` con otro significado, que C07 prohíbe expresamente |
 | `DocumentStatus` | `pending` · `processing` · `indexed` · `failed` | ADR-0005 |
 | `MetaTemplateStatus` | `approved` · `pending` · `rejected` | F08, F37 |
 | `AttributeSource` | `manual` · `llm` | F31 |
 | `AnnotationType` | `transfer` · `frustration` · `intent` | OE3, OE4 |
+| `WebhookEventType` | `message` · `status` · `unknown` | F20 · §8.5 ⚙ — el payload de la Cloud API trae mensajes entrantes o cambios de estado; `unknown` cubre lo que llegue sin reconocer |
+| `WebhookEventStatus` | `received` · `processed` · `failed` · `discarded` | F20 (*"reintentos y log de eventos"*). `discarded` = firma inválida (§8.5) |
+| `InboxStatus` | `active` · `inactive` · `error` | F20 ⚙ — estado de la conexión de la bandeja con el canal |
+| `MetaTemplateCategory` | `marketing` · `utility` · `authentication` | F08, F37 — **el conjunto lo fija Meta**, no el proyecto |
 
 ---
 
@@ -66,6 +70,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `phone_whatsapp` | varchar | Único **parcial** (`WHERE deleted_at IS NULL`), por C09 |
 | `name` | varchar | |
 | `lastname` | varchar | |
@@ -79,6 +84,8 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `cbu_encrypted` | bytea | ADR-0006 |
 | `consent_given_at` | timestamptz | Anexo C; sección 7.3 |
 | `consent_revoked_at` | timestamptz | Nullable. Derecho de supresión de la Ley 25.326 (C09) |
+| `opt_out` | boolean | ⚙ El contacto pidió no recibir más mensajes. **Distinto de `consent_revoked_at`**: revocar el consentimiento alcanza al tratamiento de sus datos; el opt-out alcanza al envío. Se pueden dar por separado |
+| `blocked` | boolean | ⚙ Bloqueado por el equipo (spam, abuso). Decisión nuestra, no del contacto |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | |
 
 ### `conversations`
@@ -89,13 +96,14 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 |---|---|---|
 | `id` | uuid | PK |
 | `contact_id` | uuid | FK |
-| `ai_agent_id` | uuid | **Nullable** — en modo `off` no hay agente |
+| `inbox_id` | uuid | FK. **Por qué bandeja —y por lo tanto por qué número— entró** (ADR-0012) |
+| `ai_agent_id` | uuid | **Nullable** — en modo `off` no hay agente. Se inicializa con `inboxes.default_ai_agent_id` (ADR-0012) |
 | `operator_id` | uuid | **Nullable** — pool sin asignar, o modo autónomo (ADR-0004) |
 | `status` | `ConversationStatus` | |
 | `mode` | `AgentMode` | Modo efectivo de esta conversación (F27) |
 | `starred` | boolean | F25 |
-| `score` | smallint | Nullable. F13 |
-| `scored_by_operator_id` | uuid | Nullable. H-13 |
+| `quality_score` | smallint | Nullable. F13 — el operador califica la conversación cerrada. **Renombrado de `score`**: colisionaba con `tone_evaluations.tone_score`, que mide algo distinto (juicio de tono del LLM, no calificación humana) |
+| `scored_by_operator_id` | uuid | Nullable. F13 — falta de autor y fecha señalada en la matriz de trazabilidad |
 | `scored_at` | timestamptz | Nullable |
 | `first_response_at` | timestamptz | Nullable. H-12 — tiempo de respuesta (F34) |
 | `last_activity_at` | timestamptz | H-12 — tiempo de espera (F22) |
@@ -117,6 +125,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `conversation_id` | uuid | FK |
 | `message_batch_id` | uuid | Nullable — sólo los entrantes agrupados (F10) |
 | `wamid` | varchar | **Único.** Identificador del mensaje en el canal → idempotencia ante reintentos (H-08) |
+| `context_wamid` | varchar | Nullable ⚙ — `wamid` del mensaje al que este responde. WhatsApp permite responder citando un mensaje anterior; sin esto la bandeja no puede reconstruir a qué se refiere (F21, F22) |
 | `direction` | `MessageDirection` | |
 | `sender_type` | `SenderType` | **H-09.** Sin esto no existe la tasa de resolución autónoma (OE7) |
 | `sender_operator_id` | uuid | Nullable — poblado cuando `sender_type = operator` |
@@ -153,6 +162,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `name` | varchar | |
 | `description` | text | Nullable |
 | `default_mode` | `AgentMode` | Renombrado de `mode_default` (C03) |
@@ -177,8 +187,8 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `type` | `PromptComponentType` | Los seis de F01 |
 | `content` | text | Contenido vigente |
 | `position` | smallint | Orden de ensamblado |
-| `active` | boolean | OE1 exige el concepto de componente **activo**; habilita ablación |
-| `created_at` / `updated_at` | timestamptz | |
+| `active` | boolean | OE1 exige el concepto de componente **activo**; habilita ablación. **Distinto de `deleted_at`**: `active = false` es ablación —el componente existe y se puede volver a encender—, `deleted_at` es baja definitiva |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Lo exige el índice único parcial** de [relaciones.md §9](relaciones.md), que filtra por `deleted_at IS NULL` |
 
 ### `prompt_component_versions`
 
@@ -203,9 +213,9 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `id` | uuid | PK |
 | `ai_agent_id` | uuid | FK |
 | `signal_type` | `TransferSignalType` | Una fila por señal de F12 |
-| `enabled` | boolean | |
+| `enabled` | boolean | Apagar la señal sin darla de baja |
 | `threshold` | numeric | Umbral de disparo |
-| `created_at` / `updated_at` | timestamptz | |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Distinto de `enabled = false`**: apagar una señal es reversible y esperable; darla de baja saca la fila del modelo |
 
 ---
 
@@ -222,7 +232,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `messages_count` | smallint | |
 | `timer_ms_used` | integer | **Lo que permite defender que el timer es "adaptativo"** y no una constante |
 | `closed_reason` | `BatchCloseReason` | |
-| `opened_at` / `closed_at` / `processed_at` | timestamptz | |
+| `opened_at` / `closed_at` / `processed_at` | timestamptz | **Inmutable: sin `created_at` genérico, sin `updated_at` ni `deleted_at`** (C09). `opened_at` cumple la función de `created_at` que exige C06 |
 
 ### `detected_intents`
 
@@ -249,12 +259,15 @@ Estado **actual** del contexto dinámico. Una fila por conversación.
 | `conversation_id` | uuid | FK |
 | `turn_number` | integer | Turno al que corresponde el estado |
 | `summary` | text | Nullable |
-| `detected_intent` | varchar | Nullable. F04: *"intención"* |
+| `primary_intent` | varchar | Nullable. F04: *"intención"*. **Renombrado de `detected_intent`**: es la intención **dominante** del último bloque —la de mayor `confidence` en `detected_intents`— y es la que viaja en el prompt. El registro completo de F11 vive en la tabla, no acá |
 | `objections_json` | jsonb | F04: *"objeciones"* |
 | `urgency_level` | smallint | Nullable |
 | `budget_signal` | varchar | Nullable |
 | `extracted_data_json` | jsonb | F04: *"datos detectados del cliente"* |
-| `updated_at` | timestamptz | |
+| `created_at` | timestamptz | C06 — toda tabla lo lleva. Cuándo se creó el contexto, es decir **cuándo se procesó el primer bloque** de la conversación |
+| `updated_at` | timestamptz | Última reescritura |
+
+> **Sin `deleted_at`: no se borra por separado.** Es el estado actual de una conversación, en relación 1:1: se sobrescribe en cada bloque y deja de tener sentido cuando la conversación deja de tenerlo. El histórico vive en `conversation_context_versions`, que es inmutable.
 
 ### `conversation_context_versions`
 
@@ -291,7 +304,8 @@ Una fila por respuesta generada por la IA.
 | `prompt_tokens` | integer | |
 | `completion_tokens` | integer | |
 | `latency_ms` | integer | |
-| `cost` | numeric(14,6) | Costo del turno ⚙ — insumo de viabilidad económica |
+| `cost` | numeric(14,6) | Costo del turno ⚙ — insumo de viabilidad económica. Escala 6 y no 2 (C08): el costo por turno es una fracción de centavo |
+| `currency` | char(3) | C08 — **obligatoria junto a todo importe**. Por defecto `USD`: los proveedores de LLM facturan en dólares, mientras que `sales.currency` es `ARS`. Sumar ambos sin distinguir moneda invalidaría el análisis de viabilidad |
 | `reasoning_json` | jsonb | F05 |
 | `status` | `GenerationStatus` | F02 — modo sugerencia |
 | `reviewed_by_operator_id` | uuid | Nullable. F02 |
@@ -312,6 +326,7 @@ Una fila por respuesta generada por la IA.
 | `generation_id` | uuid | FK |
 | `prompt_component_version_id` | uuid | **Versión exacta** del componente ensamblado |
 | `position` | smallint | Orden en que se ensambló |
+| `created_at` | timestamptz | **Inmutable.** C06 exige `created_at` en toda tabla; era la única del modelo que no lo tenía |
 
 ---
 
@@ -327,7 +342,7 @@ Una fila por respuesta generada por la IA.
 | `ai_agent_id` | uuid | FK. Única dirección de la relación (ADR-0005) |
 | `collection_name` | varchar | Colección de Qdrant asociada (ADR-0010) |
 | `size_bytes_total` | bigint | Control del límite de 100 MB **por agente** (F06) |
-| `created_at` / `updated_at` | timestamptz | |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09 |
 
 ### `documents`
 
@@ -357,8 +372,15 @@ Una fila por respuesta generada por la IA.
 | `chunk_index` | integer | |
 | `content` | text | |
 | `token_count` | integer | |
-| `vector_id` | varchar | Identificador del punto en Qdrant (ADR-0010) |
+| `vector_id` | varchar | **Nullable.** Identificador del punto en Qdrant (ADR-0010). Se pone en nulo cuando el punto se elimina de la colección: registra que el vector ya no existe, aunque la fila sí |
 | `created_at` | timestamptz | |
+| `deleted_at` | timestamptz | **Nullable.** Fuera del índice activo — por borrado del documento o por reindexado. Ver la nota de abajo |
+
+> **Por qué el chunk se marca pero no se borra.** Al dar de baja un documento hay una tensión de tres lados: los fragmentos **tienen que dejar de recuperarse** (si no, el agente sigue citando contenido dado de baja), pero **no se pueden borrar** porque `retrieval_logs` los referencia y es la evidencia de OE6 — el registro de qué se recuperó en cada generación ya medida. La salida es que **la fila sobrevive en PostgreSQL y el vector desaparece de Qdrant**.
+>
+> No alcanza con derivarlo de `documents.deleted_at`: el **reindexado** —cambiar el modelo de embeddings, que ADR-0010 anticipa como pendiente— deja fragmentos obsoletos **sin que su documento esté borrado**. Por eso la marca vive en el chunk.
+>
+> **Orden de escritura al dar de baja** (se detalla en el Paso 7): primero se eliminan los puntos de Qdrant, después se marcan `vector_id = NULL` y `deleted_at`. Si falla el primer paso, el chunk queda vivo y recuperable — que es preferible a que quede marcado como borrado pero todavía presente en el índice.
 
 ### `retrieval_logs`
 
@@ -377,6 +399,20 @@ Una fila por respuesta generada por la IA.
 
 ## 6. Bloque 5 — Operación
 
+### `accounts`
+
+> **Origen:** ADR-0012 — **previsión estructural**, no funcionalidad. La sección 7.3 declara la estructura multi-empresa como *trabajo futuro*
+
+Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con una única fila durante todo el proyecto** (ver [relaciones.md §9](relaciones.md)): la gestión multi-empresa —alta de cuentas, aislamiento, permisos por cuenta— sigue fuera de alcance y no se implementa.
+
+| Atributo | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK |
+| `name` | varchar | Razón social o nombre comercial de la empresa |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | |
+
+> **Por qué existe una tabla que durante todo el proyecto tiene una sola fila.** No por los varios números de teléfono —eso ya lo resuelven varias filas de `inboxes`, sin contenedor—, sino por el costo asimétrico: agregar `account_id` después obliga a migrar las entidades raíz **y a decidir retroactivamente a qué cuenta perteneció cada fila histórica**, sobre datos productivos reales de la Fase 4. Ver ADR-0012.
+
 ### `operators`
 
 > **Origen:** **H-00** — el Anexo C nunca la declara, pese a que cuatro entidades la referencian · F18 · Anexo B · C01
@@ -386,6 +422,7 @@ Una fila por respuesta generada por la IA.
 | `id` | uuid | PK |
 | `name` | varchar | |
 | `lastname` | varchar | |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `email` | varchar | Único parcial (C09) |
 | `password_hash` | varchar | ⚙ Implícito en F18: no hay usuarios sin autenticación |
 | `role` | `OperatorRole` | Anexo B |
@@ -425,6 +462,7 @@ Una fila por respuesta generada por la IA.
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `name` | varchar | Único parcial |
 | `color` | varchar | |
 | `created_by_operator_id` | uuid | Renombrado de `created_by_admin_id` (C01) |
@@ -442,6 +480,8 @@ Una fila por respuesta generada por la IA.
 | `assigned_by_operator_id` | uuid | Nullable |
 | `created_at` | timestamptz | |
 
+> **Sin `deleted_at`: admite borrado físico, por excepción declarada a C09.** Desetiquetar borra la fila. Es una tabla de unión operativa, no un registro de hechos, y ninguna métrica del anteproyecto cuenta etiquetados históricos. Costo: se pierde quién había asignado la etiqueta y cuándo.
+
 ### `conversation_labels`
 
 > **Origen:** F24 — **hoy no representable** (H-07) · F23 · ADR-0003
@@ -453,6 +493,8 @@ Una fila por respuesta generada por la IA.
 | `label_id` | uuid | FK |
 | `assigned_by_operator_id` | uuid | Nullable |
 | `created_at` | timestamptz | |
+
+> **Sin `deleted_at`: admite borrado físico**, misma excepción declarada a C09 que `contact_labels`. Quitar una etiqueta de una conversación borra la fila.
 
 ### `reminders`
 
@@ -493,6 +535,7 @@ Una fila por respuesta generada por la IA.
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `title` | varchar | |
 | `content` | text | |
 | `created_by_operator_id` | uuid | Renombrado de `created_by_admin_id` (C01) |
@@ -503,21 +546,27 @@ Una fila por respuesta generada por la IA.
 
 ## 7. Bloque 6 — Canal e integración
 
-### `channel_configs`
+### `inboxes`
 
-> **Origen:** F20 · §8.5 (validación HMAC-SHA256) · H-08
+> **Origen:** F20 · §8.5 (validación HMAC-SHA256) · H-08 · ADR-0012 (renombre y ruteo)
+
+Una bandeja por número de WhatsApp. Meta permite varios números bajo una misma WABA —típicamente uno de ventas y otro de soporte—, y eso **sigue siendo canal único** en los términos de la sección 7.3.
 
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
+| `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
+| `default_ai_agent_id` | uuid | **Nullable.** El agente que atiende las conversaciones nuevas de esta bandeja (ADR-0012). Nulo si la bandeja opera sin IA |
 | `phone_number_id` | varchar | |
-| `waba_id` | varchar | |
+| `waba_id` | varchar | Agrupa las bandejas del mismo número comercial en Meta |
 | `display_name` | varchar | |
 | `access_token_encrypted` | bytea | |
 | `verify_token` | varchar | |
 | `app_secret_encrypted` | bytea | Validación de firma (§8.5) |
-| `status` | varchar | |
-| `created_at` / `updated_at` | timestamptz | |
+| `status` | `InboxStatus` | C07 — era `varchar` sin declarar |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Distinto de `status = inactive`**: una bandeja inactiva sigue existiendo en la configuración; una dada de baja, no |
+
+> **Renombrada de `channel_configs`** (ADR-0012). Conserva los mismos campos, todos específicos de WhatsApp: **no se agregó `channel_type` ni ninguna generalización**, porque los canales adicionales están fuera de alcance (7.3). El renombre es sólo vocabulario — el que no habría que volver a cambiar si algún día entra otro canal, y el que usa Chatwoot, referencia del dominio declarada en C01.
 
 ### `webhook_events`
 
@@ -526,15 +575,15 @@ Una fila por respuesta generada por la IA.
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
-| `channel_config_id` | uuid | FK |
-| `event_type` | varchar | |
+| `inbox_id` | uuid | FK. Renombrada de `channel_config_id` (ADR-0012) |
+| `event_type` | `WebhookEventType` | C07 — era `varchar` sin declarar |
 | `wamid` | varchar | Nullable — correlación con `messages` |
 | `payload_json` | jsonb | |
 | `signature_valid` | boolean | |
-| `status` | varchar | |
+| `status` | `WebhookEventStatus` | C07 — era `varchar` sin declarar |
 | `retries` | smallint | |
 | `error_message` | text | Nullable |
-| `received_at` / `processed_at` | timestamptz | |
+| `received_at` / `processed_at` | timestamptz | **Inmutable: sin `updated_at` ni `deleted_at`** (C09) — es el log de eventos que pide F20. `received_at` cumple la función de `created_at` que exige C06. `status` y `retries` mutan durante el reprocesamiento, no después |
 
 ### `meta_templates`
 
@@ -543,17 +592,17 @@ Una fila por respuesta generada por la IA.
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
-| `channel_config_id` | uuid | FK |
+| `inbox_id` | uuid | FK. Renombrada de `channel_config_id` (ADR-0012) |
 | `meta_template_id` | varchar | Identificador en la plataforma |
 | `name` | varchar | |
 | `language` | varchar | |
-| `category` | varchar | |
+| `category` | `MetaTemplateCategory` | C07 — el conjunto lo fija Meta, no el proyecto |
 | `status` | `MetaTemplateStatus` | F08: *"muestra plantillas existentes con estado"* |
 | `body` | text | |
 | `rejection_reason` | text | Nullable |
 | `llm_suggestion` | text | Nullable. F08/F37: sugerencia de reformulación |
-| `synced_at` | timestamptz | |
-| `created_at` / `updated_at` | timestamptz | |
+| `synced_at` | timestamptz | Última sincronización contra Meta |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09 — **una plantilla puede desaparecer del lado de Meta**, y la fila local tiene que poder reflejarlo sin perder el historial |
 
 ---
 
@@ -569,6 +618,7 @@ Una fila por respuesta generada por la IA.
 | `conversation_id` | uuid | FK |
 | `trigger_type` | `TransferSignalType` | Las cuatro señales de F12 |
 | `confidence` | numeric | |
+| `threshold_used` | numeric | **El umbral que efectivamente rigió al disparar esta transferencia.** `transfer_policies` es mutable y guarda sólo el valor actual: sin congelarlo acá, mover el umbral a mitad de las 200 conversaciones de OE3 vuelve incomparables las mediciones anteriores — el mismo argumento que justificó versionar los componentes del prompt para OE2 |
 | `classifier_version` | varchar | **Sin esto, ajustar el clasificador invalida las mediciones previas** |
 | `turn_number` | integer | |
 | `to_operator_id` | uuid | Nullable |
@@ -599,7 +649,7 @@ Una fila por respuesta generada por la IA.
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
 | `generation_id` | uuid | Nullable — evaluación por respuesta |
-| `score` | numeric | |
+| `tone_score` | numeric | **Renombrado de `score`** — ver `conversations.quality_score` |
 | `rubric_version` | varchar | **Una métrica de juez sin rúbrica versionada no es una métrica** |
 | `judge_model` | varchar | |
 | `rationale` | text | Nullable |
@@ -656,7 +706,7 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 
 ## 11. Resumen
 
-**34 entidades** en el modelo, más 2 condicionadas.
+**35 entidades** en el modelo, más 2 condicionadas.
 
 | Bloque | Entidades | Cantidad |
 |---|---|---|
@@ -664,12 +714,12 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 | 2 — Identidad del agente IA | `ai_agents`, `prompt_components`, `prompt_component_versions`, `transfer_policies` | 4 |
 | 3 — Ejecución por turno | `message_batches`, `detected_intents`, `conversation_contexts`, `conversation_context_versions`, `generations`, `generation_components` | 6 |
 | 4 — Conocimiento | `knowledge_bases`, `documents`, `document_chunks`, `retrieval_logs` | 4 |
-| 5 — Operación | `operators`, `conversation_assignments`, `internal_notes`, `labels`, `contact_labels`, `conversation_labels`, `reminders`, `sales`, `quick_replies` | 9 |
-| 6 — Canal e integración | `channel_configs`, `webhook_events`, `meta_templates` | 3 |
+| 5 — Operación | `accounts`, `operators`, `conversation_assignments`, `internal_notes`, `labels`, `contact_labels`, `conversation_labels`, `reminders`, `sales`, `quick_replies` | 10 |
+| 6 — Canal e integración | `inboxes`, `webhook_events`, `meta_templates` | 3 |
 | 7 — Evaluación | `transfer_events`, `conversation_annotations`, `tone_evaluations` | 3 |
 | 8 — Cumplimiento | `contact_attributes`, `audit_logs` | 2 |
 
-De las 34, **9 provienen del Anexo C** (con renombres y correcciones) y **25 son nuevas**.
+De las 35, **9 provienen del Anexo C** (con renombres y correcciones) y **26 son nuevas**.
 
 ---
 
@@ -677,11 +727,13 @@ De las 34, **9 provienen del Anexo C** (con renombres y correcciones) y **25 son
 
 ### El criterio
 
-Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y las 25 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido.
+Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y 25 de las 26 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido.
+
+**La excepción es `accounts`, y conviene declararla.** No nace de ningún requisito ni de ningún hallazgo: nace de la auditoría del catálogo y de una decisión de previsión estructural (ADR-0012). Es la única entidad del modelo que no responde a una fila del anteproyecto, y por eso lleva una regla escrita que la acota a una sola fila en operación. Fingir que deriva de un requisito sería más cómodo y menos honesto.
 
 ### Lo que revela el reparto
 
-El Anexo C tenía **nueve** entidades y el modelo necesita **treinta y cuatro**. Pero lo interesante no es el número, sino **dónde** se concentran las que faltaban:
+El Anexo C tenía **nueve** entidades y el modelo necesita **treinta y cinco**. Pero lo interesante no es el número, sino **dónde** se concentran las que faltaban:
 
 - Las nueve del Anexo C cubren **la operación**: contactos, conversaciones, mensajes, etiquetas, ventas, recordatorios, respuestas rápidas. Es el territorio que Chatwoot ya resolvió.
 - Las veinticinco nuevas se concentran en **la composición de prompts, la ejecución por turno, la clasificación de transferencia y la evaluación**. Es decir: casi exactamente la lista del aporte original que declara la sección 6.3 del anteproyecto.

@@ -37,8 +37,12 @@ Dos reglas que conviene sostener:
 | [0009](0009-horario-de-atencion.md) | Horario de atención del agente: fuera del alcance | — | Aceptada |
 | [0010](0010-qdrant-como-base-vectorial.md) | Qdrant como base vectorial, una colección por agente | — | Aceptada |
 | [0011](0011-acceso-a-datos-sensibles.md) | Acceso a datos sensibles: acotado por asignación, no por rol | — | Aceptada |
+| [0012](0012-cuenta-y-bandejas-de-entrada.md) | Cuenta y bandejas de entrada: previsión estructural para el trabajo futuro declarado | Auditoría del DER | Aceptada |
+| [0013](0013-fuente-de-verdad-del-modelo.md) | La fuente de verdad del modelo es el catálogo, no el tablero | Enmienda C10 | Aceptada |
 
-Con estas once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
+Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
+
+**ADR-0012 es posterior y de otra naturaleza:** no resuelve un hallazgo de la matriz, sino uno de la auditoría del catálogo de entidades (Paso 5). Es además la única decisión que **toca el alcance declarado** en la sección 7.3 del anteproyecto, y por eso conviene que el equipo la lea completa antes de darla por firmada.
 
 ---
 
@@ -51,6 +55,13 @@ Ninguna bloquea el avance a los Pasos 4 y 5, pero conviene cerrarlas antes de te
 - [ ] **Vista de historial del operador.** Con F32 restringido a `admin` ([ADR-0011](0011-acceso-a-datos-sensibles.md)) y las conversaciones divididas por cada reapertura ([ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md)), el operador atiende a un cliente recurrente sin ver sus conversaciones anteriores. ¿Ve al menos el listado de conversaciones previas desde el chat asignado? **Es el pendiente de mayor impacto.**
 - [ ] **Registro de desencriptado de datos sensibles.** Mejora de trazabilidad, sin urgencia una vez acotado el acceso por asignación. Ver [ADR-0007](0007-alcance-del-registro-de-auditoria.md).
 - [ ] **Marcador único o por tipo para CUIT/CUIL.** Comparten formato, así que la redacción sobre texto libre no puede distinguirlos. Se resuelve al modelar, en el Paso 5. Ver [ADR-0006](0006-anonimizacion-de-pii.md).
+- [ ] **Método de asignación de agente cuando hay varios en una misma bandeja.** [ADR-0012](0012-cuenta-y-bandejas-de-entrada.md) define `inboxes.default_ai_agent_id`, que cubre toda la operación real: un agente atiende las conversaciones nuevas de su bandeja. Lo que queda abierto es el **único caso que necesita varios agentes sobre la misma bandeja**: la comparación de proveedores de LLM que contempla la sección 8.4 (GPT-4o / Claude / Cohere), de la que depende OE2.
+
+  **Se decide en el Paso 11 (protocolo de evaluación), no en el modelo de datos.** Es una decisión de diseño experimental, y el principio de orden del plan —*Decisión → Dato*— advierte que modelarla antes de decidirla es dejar que el modelo la tome en silencio.
+
+  Dos salidas aparentemente obvias **no sirven metodológicamente**, y conviene tenerlo escrito antes de llegar al Paso 11: repartir por bandeja (un número por proveedor) es autoselección, no aleatorización — el cliente elige a qué número escribe; y repartir por período (una semana cada modelo) confunde el efecto del modelo con el del período. Ambas invalidarían la comparación que sostiene OE2.
+
+  Si el protocolo termina exigiendo trazabilidad del criterio de asignación, se resuelve con **una columna** en `conversations` (`ai_agent_assignment_reason`), no con un motor de ruteo. Un motor de reglas se descartó explícitamente: ningún requisito de F01–F39 lo pide, y reabriría [ADR-0009](0009-horario-de-atencion.md), que ya declaró el ruteo por horario fuera de alcance con el argumento de que *"construir capacidad sin requisito es alcance no justificado"*.
 
 ### Heredadas de la sección 8.4 del anteproyecto
 

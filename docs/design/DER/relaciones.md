@@ -60,9 +60,11 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 |---|---|---|---|---|
 | `conversations` | 1 — 0..* | `message_batches` | `message_batches.conversation_id` | |
 | `message_batches` | 1 — 0..* | `detected_intents` | `detected_intents.message_batch_id` | F11 detecta *cuántas* intenciones hay: puede ser ninguna, una o varias |
+| `message_batches` | 1 — 0..* | `pipeline_steps` | `pipeline_steps.message_batch_id` | **Cuelga del turno y no de `generations`** (ADR-0016): los primeros pasos del pipeline pueden bloquear el mensaje y hacer que nunca exista una generación. `0..*` porque un bloque con el agente en modo `off` no se procesa |
 | `conversations` | 1 — 0..1 | `conversation_contexts` | `conversation_contexts.conversation_id` (único) | **`0..1`**: una conversación recién abierta todavía no tuvo turno, así que no tiene contexto |
 | `conversations` | 1 — 0..* | `conversation_context_versions` | `conversation_context_versions.conversation_id` | Una por turno reescrito. **Es el histórico que OE2 necesita** |
 | `conversations` | 1 — 0..* | `generations` | `generations.conversation_id` | |
+| `ai_agents` | 1 — 0..* | `generations` | `generations.ai_agent_id` | **Obligatoria y distinta de `conversations.ai_agent_id`**, que es mutable (F27). Ésta congela **qué agente produjo esta generación** — sin ella OE1 no tiene contra qué comparar (H-21, ADR-0015) |
 | `generations` | 0..1 — 0..1 | `messages` | **`generations.message_id`** | **Nullable.** Una generación rechazada en modo sugerencia nunca produce mensaje (F02). Ver la nota de abajo |
 | `conversation_context_versions` | 0..1 — 0..* | `generations` | `generations.conversation_context_version_id` | **La versión exacta del contexto que se usó.** Es la mitad de la trazabilidad de OE2 |
 | `message_batches` | 0..1 — 0..* | `generations` | `generations.message_batch_id` | **Nullable.** El bloque que disparó la generación |
@@ -185,9 +187,11 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 | `phone_whatsapp`, `email` de operador y `name` de etiqueta son únicos **entre los no borrados** | C09 | Índice único parcial `WHERE deleted_at IS NULL` |
 | La suma de `documents.size_bytes` de una base no supera 100 MB | F06 | Regla de aplicación; `knowledge_bases.size_bytes_total` la materializa |
 | Un `prompt_component` tiene un solo tipo activo por agente | F01 — seis componentes, uno de cada tipo | Índice único parcial sobre `(ai_agent_id, type) WHERE active AND deleted_at IS NULL` |
+| **Se crea una `prompt_component_version` cuando cambia `content` o `active`** — no sólo `content`. Sin versionar el apagado, OE1 compara un conjunto contra sí mismo y sólo puede dar 100 % | OE1 · H-20 · ADR-0015 | Regla de aplicación (Regla 2 de `03-capa-prompts.md`, enmendada) |
 | **La decisión de transferir la toma el clasificador según `transfer_policies`. El componente `rules` NO puede habilitar ni inhibir una transferencia** — sólo describe el comportamiento conversacional alrededor de ella | F01, F12 | Regla de aplicación + nota en el diagrama. Sin esto, el comportamiento de transferencia queda definido en dos lugares —texto blando que lee el LLM y umbral duro que lee el clasificador— y ante divergencia gana el clasificador **en silencio**, sin que el admin sepa por qué se ignoró lo que escribió |
 | `messages` no admite borrado de ninguna clase | F29 · C09 | Ausencia de `deleted_at` + regla de aplicación |
 | **El clasificador evalúa las cuatro señales de F12 en cada bloque procesado, aunque una ya haya disparado.** Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: las señales que no llegan a evaluarse no dejan fila, y el detector de frustración deja de ser medible | OE4 · H-18 | Regla de aplicación + nota en el diagrama. Si se decide cortocircuitar por rendimiento, hay que registrar explícitamente cuáles se saltearon |
+| **El dominio de `pipeline_steps.outcome` depende de `pipeline_steps.step`** y por eso no es enumeración: C07 no admite una cuyo conjunto cambie según otra columna | ADR-0016 | Regla de aplicación. Tabla de valores en [entidades.md](entidades.md), Bloque 3 — misma solución que `conversation_annotations.gold_value` |
 | Una sola evaluación por bloque, señal y versión de clasificador | OE3, OE4 · H-18 | Índice único sobre `signal_evaluations (message_batch_id, signal_type, classifier_version)`. **Permite reclasificar con una versión nueva sin duplicar dentro de una misma corrida** — que es lo que habilita el barrido de umbral sin volver a correr las 200 y las 500 conversaciones |
 | **La búsqueda RAG sólo considera `document_chunks` con `deleted_at IS NULL`**, cuyo documento tampoco esté borrado | OE6 · ADR-0010 | Regla de aplicación. `retrieval_logs` los sigue referenciando para siempre: son el registro de lo que se recuperó **cuando se recuperó**, y borrarlos destruiría la evidencia de mediciones ya hechas |
 | **`contact_labels` y `conversation_labels` admiten borrado físico**, por excepción a C09 | F24, F33 · ADR-0003 | Desetiquetar es una operación operativa normal y ninguna métrica de F34–F38 ni de OE1–OE7 cuenta etiquetados históricos. **Costo asumido:** al quitar una etiqueta se pierde el registro de quién la había asignado y cuándo |
@@ -197,7 +201,7 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 
 ## 10. Cardinalidades que requieren atención
 
-Cinco puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad equivocada. Conviene revisarlos explícitamente al dibujar el DER.
+Seis puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad equivocada. Conviene revisarlos explícitamente al dibujar el DER.
 
 | # | Relación | Lectura ingenua | Correcta | Motivo |
 |---|---|---|---|---|
@@ -206,6 +210,7 @@ Cinco puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad 
 | 3 | `ai_agents` — `knowledge_bases` | Bidireccional (como en el Anexo C) | **Una sola dirección**, desde `knowledge_bases` | C05. La duplicación del Anexo C es una garantía de inconsistencia |
 | 4 | `knowledge_bases` — `documents` | `1 — 1` (un archivo) | **`1 — 0..*`** | H-06: F06 habla de documentos en plural, con límite **por agente** |
 | 5 | `generations` — `messages` | FK en ambas tablas | **Sólo en `generations`** | Misma trampa que el punto 3. Ver la nota de §3 |
+| 6 | `generations` — `ai_agents` | Sobra: ya se llega por `conversations` | **Existe y es obligatoria** | Es la trampa **inversa** a las anteriores. `conversations.ai_agent_id` es mutable (F27): da el agente actual, no el que generó. Sin la FK propia, OE1 no tiene lado *"debía"* (H-21) |
 
 ---
 
@@ -213,12 +218,22 @@ Cinco puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad 
 
 Las relaciones de este documento no se dan por buenas hasta pasar el **Paso 6** del plan de diseño: escribir, contra este modelo y sin ejecutarlas, las consultas SQL de cada métrica declarada en OE1–OE7 y en F34–F38.
 
-El criterio es binario: **si una métrica del anteproyecto no se puede escribir como consulta, falta un dato y el modelo no está terminado.** Las cadenas críticas a verificar son cuatro:
+El criterio es binario: **si una métrica del anteproyecto no se puede escribir como consulta, el diseño no está terminado.** Pero el recorrido mostró que hay **dos causas distintas**, con remedios opuestos, y conviene distinguirlas antes de actuar:
 
+| Causa | Cómo se reconoce | Qué se hace |
+|---|---|---|
+| **Falta un dato** | La métrica está bien definida y el modelo no permite calcularla | **Modelar ahora.** Descubrirlo con datos productivos encima sale carísimo: el dato nunca se guardó y no se puede reconstruir (H-18, H-20, H-21) |
+| **Falta una definición** | El anteproyecto no dice qué se mide, o dice varias cosas distintas | **Registrar el hallazgo y diferir la decisión.** Modelar antes de decidir es dejar que el modelo decida en silencio (H-22) |
+
+Las cadenas críticas a verificar son seis:
+
+0. **OE1 — componentes activos:** los componentes activos del agente **en el instante de la generación** (`generations.ai_agent_id` → `prompt_components` → la `prompt_component_version` vigente con `active`) contra los efectivamente ensamblados (`generation_components`). **Los dos lados tienen que construirse por caminos independientes**, o la consulta se compara consigo misma.
 1. **OE7 — resolución autónoma:** `conversations` resueltas sin `transfer_events`, filtrando por `messages.sender_type = 'ai_agent'`.
 2. **OE2 — consistencia de tono:** `tone_evaluations` agrupadas por las versiones de componente que realmente se usaron, vía `generations → generation_components → prompt_component_versions`.
 3. **OE3 — precisión del clasificador de transferencia:** `transfer_events` contra `conversation_annotations` (`annotation_type = 'transfer'`), **unidad = conversación** y agrupando por `signal_evaluations.classifier_version`.
 4. **OE4 — precisión del detector de frustración:** `signal_evaluations` con `signal_type = 'frustration'` —**todas**, no sólo las que dispararon— contra `conversation_annotations`. Es la cadena que H-18 hizo posible.
 5. **OE6 — resolución dentro del dominio:** `retrieval_logs` con su `similarity_score` contra la ausencia de transferencia por `signal_type = 'out_of_domain'`.
 
-> **Estado de esta verificación (2026-08-10).** El recorrido del Paso 6 está en curso. Produjo hasta ahora **H-18** —la salida del clasificador de frustración no se persistía, y sin ella OE4 no era medible—, ya resuelto con `signal_evaluations`. La cadena 1 (OE7) y la 2 (OE2) todavía no se verificaron.
+> **Estado de esta verificación (2026-08-10).** El recorrido del Paso 6 está en curso. Verificadas las cadenas **0 (OE1)**, **3 (OE3)** y **4 (OE4)**. Produjeron cuatro hallazgos, los cuatro ya resueltos: **H-18** (la salida del clasificador de frustración no se persistía → `signal_evaluations`, ADR-0014), **H-20** y **H-21** (OE1 no tenía lado *"debía"* → `prompt_component_versions.active` y `generations.ai_agent_id`, ADR-0015). **H-19** quedó abierto. Las cadenas 1 (OE7), 2 (OE2) y 5 (OE6) todavía no se verificaron.
+>
+> **El patrón que dejaron las tres verificadas conviene tenerlo a mano:** las tres fallaron por el mismo motivo —**el modelo guardaba el resultado de una decisión y no la evidencia sobre la que se tomó**—, y en los tres casos la consecuencia fue una métrica que sólo podía dar el número deseado. Es lo primero que conviene buscar al verificar las tres que faltan.

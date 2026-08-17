@@ -49,6 +49,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `PromptComponentType` | `objective` · `personality` · `behavior` · `tone` · `brand_voice` · `rules` | F01 |
 | `TransferSignalType` | `no_resolution` · `frustration` · `out_of_domain` · `explicit_request` | F12 |
 | `BatchCloseReason` | `silence` · `max_messages` · `max_duration` | F10 (`silence` es el único textual; los otros dos son guardas ⚙) |
+| `PipelineStep` | `blocklist` · `guardrail` · `triage` · `retrieval` · `reranking` · `grounding` · `generation` | ADR-0016 ⚙ — los pasos del pipeline de respuesta. **Sin anclaje textual salvo `retrieval` (F06) y `generation`**; el resto son decisiones de ingeniería del equipo |
 | `GenerationStatus` | `auto_sent` · `pending_review` · `accepted` · `edited` · `rejected` | F02 (modo sugerencia). **`sent` renombrado a `auto_sent`**: colisionaba con `MessageStatus.sent` con otro significado, que C07 prohíbe expresamente |
 | `DocumentStatus` | `pending` · `processing` · `indexed` · `failed` | ADR-0005 |
 | `MetaTemplateStatus` | `approved` · `pending` · `rejected` | F08, F37 |
@@ -192,7 +193,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 
 ### `prompt_component_versions`
 
-> **Origen:** OE2 — *"¿contra qué configuración se midió?"* · H-01
+> **Origen:** OE2 — *"¿contra qué configuración se midió?"* · H-01 · **H-20** (`active`)
 
 | Atributo | Tipo | Notas |
 |---|---|---|
@@ -200,9 +201,16 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `prompt_component_id` | uuid | FK |
 | `version_number` | integer | Correlativo por componente |
 | `content` | text | Contenido congelado |
+| `active` | boolean | **Estado encendido/apagado congelado en esta versión.** Es el lado *"debía"* de OE1 (H-20, ADR-0015) |
 | `changed_by_operator_id` | uuid | Nullable |
 | `change_note` | text | Nullable |
 | `created_at` | timestamptz | **Inmutable: sin `updated_at` ni `deleted_at`** (C09) |
+
+> **Por qué `active` se versiona y `position` no.** OE1 mide que *"el 100 % de los prompts generados incorporen todos los componentes activos"*: es una comparación entre lo que **se debía** ensamblar y lo que **se ensambló**. `generation_components` da el segundo conjunto; sin el histórico de `active`, el primero no existe y la consulta compara un conjunto contra sí mismo — **devuelve 100 % siempre, aunque el ensamblador falle** (H-20).
+>
+> `position` no se versiona porque **ninguna métrica del anteproyecto mide el orden de ensamblado**, y `generation_components.position` ya registra el orden real usado. Es una omisión decidida, no un olvido.
+>
+> **Enmienda a la Regla 2 de [03-capa-prompts.md](../03-capa-prompts.md):** se crea una versión nueva cuando cambia `content` **o `active`**. La redacción original sostenía que `active` quedaba congelado por `generation_components` — cierto para *cuáles participaron*, pero eso presupone que participar equivale a estar activo, que es justamente lo que OE1 verifica.
 
 ### `transfer_policies`
 
@@ -247,6 +255,46 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `position` | smallint | Orden dentro del bloque |
 | `created_at` | timestamptz | Inmutable |
 
+### `pipeline_steps`
+
+> **Origen:** **ADR-0016** — decisión de ingeniería del equipo (pipeline de respuesta) · OE6 (el veredicto de `triage` es el denominador) · F12 (`out_of_domain`) · F06 (`retrieval`) · **H-23**
+
+Una fila **por cada paso del pipeline ejecutado en un turno**. El pipeline es: *blocked-list → guardrail → triage → RAG → grounding (con reranking si hace falta) → blocked-list → guardrail → respuesta.*
+
+| Atributo | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK |
+| `message_batch_id` | uuid | FK. El turno. **No cuelga de `generations`**: los primeros pasos pueden impedir que exista una generación |
+| `step` | `PipelineStep` | Qué paso se ejecutó |
+| `direction` | `MessageDirection` | Si corrió sobre el mensaje entrante o sobre la respuesta saliente. **Reutiliza la enumeración existente** (C07) y es lo que distingue las dos apariciones de `blocklist` y `guardrail` |
+| `position` | smallint | Orden de ejecución dentro del turno |
+| `outcome` | varchar | Qué decidió. **Dominio declarado por `step`** — ver abajo |
+| `score` | numeric | Nullable — confianza, sólo en los pasos que la producen (`triage`, `grounding`) |
+| `version` | varchar | Versión de la lista, la regla o el modelo que decidió. **Sin esto, ajustar un guardrail invalida las mediciones previas** — mismo argumento que `signal_evaluations.classifier_version` |
+| `latency_ms` | integer | Nullable. Latencia del paso |
+| `detail_json` | jsonb | Nullable. Parámetros y detalle: qué regla coincidió, y **el `top_k` y el umbral de similitud del paso `retrieval`** (H-23) |
+| `created_at` | timestamptz | **Inmutable: sin `updated_at` ni `deleted_at`** (C09) |
+
+> **Dominio de `outcome` por `step`** (regla de aplicación, igual que `conversation_annotations.gold_value`):
+>
+> | `step` | Valores |
+> |---|---|
+> | `blocklist` | `pass` · `blocked` |
+> | `guardrail` | `pass` · `blocked` · `modified` |
+> | `triage` | `in_domain` · `out_of_domain` |
+> | `retrieval` | `hit` · `empty` |
+> | `reranking` | `applied` · `skipped` |
+> | `grounding` | `grounded` · `not_grounded` |
+> | `generation` | `ok` · `failed` |
+>
+> **Por qué existe.** El modelo guardaba lo que el RAG devolvió (`retrieval_logs`) y lo que el bot respondió (`generations`), y **nada de las decisiones del medio**. Es el mismo error que H-18, H-20, H-21 y H-23: se conserva el resultado y no la evidencia sobre la que se decidió.
+>
+> **Y es lo que destraba OE6 sin circularidad.** Definir *"consulta dentro del dominio"* por el `similarity_score` deja que el sistema decida qué le corresponde saber y después se evalúe sobre eso — **mejora su métrica justo cuando falla en recuperar**. El veredicto de `triage` se emite **antes** de recuperar y es independiente de si la recuperación funcionó, así que sirve de denominador. Sigue siendo el sistema juzgándose, y por eso se valida contra `conversation_annotations` en una muestra.
+>
+> **`retrieval` y `generation` figuran como pasos aunque su detalle viva en otro lado** (`retrieval_logs`, `generations`). Es deliberado: sin ellos el rastro queda con agujeros y no se puede leer en orden ni medir la latencia de punta a punta. El costo es una fila que sobre todo señala hacia otra tabla.
+>
+> **La enumeración `PipelineStep` va a cambiar.** El pipeline todavía no está dibujado — eso es el **Paso 8**. Se asume el costo: no hay datos, y ampliar una enumeración es barato comparado con descubrir en producción que no se registró nada.
+
 ### `conversation_contexts`
 
 > **Origen:** F04, textual · OE2 · **H-02 — el aporte original de la tesina**
@@ -285,7 +333,7 @@ Estado **actual** del contexto dinámico. Una fila por conversación.
 
 ### `generations`
 
-> **Origen:** F05 · H-01, H-02, H-09, H-11 · ADR-0006 (`prompt_rendered` redactado) · F02 (revisión)
+> **Origen:** F05 · H-01, H-02, H-09, H-11 · **H-21** (`ai_agent_id`) · ADR-0006 (`prompt_rendered` redactado) · F02 (revisión)
 
 Una fila por respuesta generada por la IA.
 
@@ -293,6 +341,7 @@ Una fila por respuesta generada por la IA.
 |---|---|---|
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
+| `ai_agent_id` | uuid | FK. **Qué agente produjo esta generación.** No nullable: si hubo generación, hubo agente (H-21, ADR-0015) |
 | `message_id` | uuid | Nullable — nulo si fue rechazada y nunca se envió |
 | `message_batch_id` | uuid | Nullable — bloque que la disparó |
 | `conversation_context_version_id` | uuid | Versión exacta del contexto usada |
@@ -312,6 +361,10 @@ Una fila por respuesta generada por la IA.
 | `reviewed_at` | timestamptz | Nullable |
 | `created_at` | timestamptz | |
 
+> **Por qué `ai_agent_id` acá y no por join con `conversations`.** Parece duplicar un dato que ya se alcanza por `generations → conversations.ai_agent_id`, pero **no son el mismo dato**: el de `conversations` es el agente **actual** de la conversación y es mutable —F27 permite cambiarlo o apagarlo, y [relaciones.md §9](relaciones.md) lo dice textual—, mientras que éste es el agente que **efectivamente produjo esta generación**, congelado. Es la misma distinción que hay entre `transfer_policies.threshold` y el `threshold_used` de `signal_evaluations`: configuración mutable contra instantánea del momento del hecho.
+>
+> Sin él, OE1 no tiene contra qué comparar: derivar el agente desde `generation_components` sería deducir *qué agente* a partir de *qué se ensambló*, que es exactamente lo que se está auditando. La entidad ya congelaba `llm_provider`, `llm_model` y `temperature` —que salen del agente— y no congelaba **de quién eran**: eso era un olvido, no una decisión (H-21).
+>
 > **Sobre la inmutabilidad:** el contenido generado es inmutable. Lo único que muta es el resultado de la revisión (`status`, `reviewed_*`), que transiciona **una sola vez** desde `pending_review` a un estado terminal. Por eso la entidad no lleva `updated_at` genérico.
 >
 > **Modo sugerencia sin entidad adicional:** el borrador de F02 es la propia `generation` en estado `pending_review`. Si el operador edita antes de enviar, `messages.content_text` guarda lo enviado y `completion_text` lo propuesto: **comparar ambos es la tasa de edición**, un proxy directo de la calidad del agente.
@@ -744,20 +797,20 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 
 ## 11. Resumen
 
-**36 entidades** en el modelo, más 2 condicionadas.
+**37 entidades** en el modelo, más 2 condicionadas.
 
 | Bloque | Entidades | Cantidad |
 |---|---|---|
 | 1 — Núcleo | `contacts`, `conversations`, `messages` | 3 |
 | 2 — Identidad del agente IA | `ai_agents`, `prompt_components`, `prompt_component_versions`, `transfer_policies` | 4 |
-| 3 — Ejecución por turno | `message_batches`, `detected_intents`, `conversation_contexts`, `conversation_context_versions`, `generations`, `generation_components` | 6 |
+| 3 — Ejecución por turno | `message_batches`, `detected_intents`, `pipeline_steps`, `conversation_contexts`, `conversation_context_versions`, `generations`, `generation_components` | 7 |
 | 4 — Conocimiento | `knowledge_bases`, `documents`, `document_chunks`, `retrieval_logs` | 4 |
 | 5 — Operación | `accounts`, `operators`, `conversation_assignments`, `internal_notes`, `labels`, `contact_labels`, `conversation_labels`, `reminders`, `sales`, `quick_replies` | 10 |
 | 6 — Canal e integración | `inboxes`, `webhook_events`, `meta_templates` | 3 |
 | 7 — Evaluación | `signal_evaluations`, `transfer_events`, `conversation_annotations`, `tone_evaluations` | 4 |
 | 8 — Cumplimiento | `contact_attributes`, `audit_logs` | 2 |
 
-De las 36, **9 provienen del Anexo C** (con renombres y correcciones) y **27 son nuevas**.
+De las 37, **9 provienen del Anexo C** (con renombres y correcciones) y **28 son nuevas**.
 
 ---
 
@@ -765,18 +818,22 @@ De las 36, **9 provienen del Anexo C** (con renombres y correcciones) y **27 son
 
 ### El criterio
 
-Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y 25 de las 27 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido. La vigesimosexta, `signal_evaluations`, nace de un hallazgo posterior —**H-18**, de la validación del Paso 6— y también traza a requisitos: OE4, F12 y F36.
+Cada entidad responde a una fila de la [matriz de trazabilidad](../01-trazabilidad.md) que quedó en ❌ o ⚠️, o conserva una entidad del Anexo C que quedó en ✅. **No se agregó ninguna entidad "por si acaso"**: la matriz recorrió los 39 requisitos y los 7 objetivos, y 25 de las 28 entidades nuevas son la respuesta a los 18 hallazgos que produjo ese recorrido. La vigesimosexta, `signal_evaluations`, nace de un hallazgo posterior —**H-18**, de la validación del Paso 6— y también traza a requisitos: OE4, F12 y F36.
 
-**La excepción es `accounts`, y conviene declararla.** No nace de ningún requisito ni de ningún hallazgo: nace de la auditoría del catálogo y de una decisión de previsión estructural (ADR-0012). Es la única entidad del modelo que no responde a una fila del anteproyecto, y por eso lleva una regla escrita que la acota a una sola fila en operación. Fingir que deriva de un requisito sería más cómodo y menos honesto.
+**Las dos excepciones conviene declararlas.**
+
+**`accounts`** no nace de ningún requisito ni de ningún hallazgo: nace de la auditoría del catálogo y de una decisión de previsión estructural (ADR-0012). Por eso lleva una regla escrita que la acota a una sola fila en operación. Fingir que deriva de un requisito sería más cómodo y menos honesto.
+
+**`pipeline_steps`** es un caso mixto (ADR-0016). El pipeline de respuesta —blocked-list, guardrail, triage, grounding— **es una decisión de ingeniería del equipo y no está en el anteproyecto**: sólo `retrieval` (F06) y `generation` tienen anclaje textual. Pero la entidad sí responde a un objetivo: el veredicto de `triage` es lo que permite definir *"consulta dentro del dominio"* (OE6) sin caer en la circularidad de medirlo por el `similarity_score`. Nace de una decisión propia y resuelve un problema del anteproyecto — las dos cosas, y así queda dicho.
 
 ### Lo que revela el reparto
 
 El Anexo C tenía **nueve** entidades y el modelo necesita **treinta y cinco**. Pero lo interesante no es el número, sino **dónde** se concentran las que faltaban:
 
 - Las nueve del Anexo C cubren **la operación**: contactos, conversaciones, mensajes, etiquetas, ventas, recordatorios, respuestas rápidas. Es el territorio que Chatwoot ya resolvió.
-- Las veintiséis nuevas se concentran en **la composición de prompts, la ejecución por turno, la clasificación de transferencia y la evaluación**. Es decir: casi exactamente la lista del aporte original que declara la sección 6.3 del anteproyecto.
+- Las veintiocho nuevas se concentran en **la composición de prompts, la ejecución por turno, la clasificación de transferencia y la evaluación**. Es decir: casi exactamente la lista del aporte original que declara la sección 6.3 del anteproyecto.
 
-**Estaba modelado lo que SONIA comparte con el estado del arte, y no estaba modelado lo que la diferencia de él.** Los bloques 2, 3 y 7 —catorce entidades— existen para sostener el aporte original y su medición.
+**Estaba modelado lo que SONIA comparte con el estado del arte, y no estaba modelado lo que la diferencia de él.** Los bloques 2, 3 y 7 —quince entidades— existen para sostener el aporte original y su medición.
 
 ### Las cinco decisiones estructurales
 

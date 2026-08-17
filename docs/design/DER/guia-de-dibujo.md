@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/guia-de-dibujo.md` |
 | **Estado** | Vigente — Paso 5 |
-| **Fecha** | 2026-08-09 · regenerada 2026-08-10 (Paso 6 — `signal_evaluations`, ADR-0014) |
+| **Fecha** | 2026-08-09 · regenerada 2026-08-10 (Paso 6 — ADR-0014 y ADR-0015) |
 | **Deriva de** | [entidades.md](entidades.md) y [relaciones.md](relaciones.md), que son la **fuente de verdad** ([ADR-0013](../02-decisiones/0013-fuente-de-verdad-del-modelo.md)) |
 
 ---
@@ -28,7 +28,7 @@ Este documento no agrega nada al modelo: **reordena el catálogo para que dibuja
 | **`operators`** | 21 | 1, 2, 3, 4, 5, 7, 8 |
 | **`conversations`** | 19 | 1, 3, 5, 6, 7 |
 
-*(Grados medidos sobre el andamio; les siguen `ai_agents` y `generations` con 8, y `accounts` y `messages` con 6. El modelo tiene **71 relaciones** en total.)*
+*(Grados medidos sobre el andamio; les siguen `ai_agents` y `generations` con 9, y `accounts` y `messages` con 6. El modelo tiene **73 relaciones** en total.)*
 
 Recomendación de layout: **`conversations` en el centro** del tablero y **`operators` en un lateral con espacio libre alrededor**. `operators` es autor o destinatario de casi todo (calificó, resolvió, asignó, editó, subió, anotó), así que sus líneas van a cruzar todo el diagrama sin importar dónde se ponga; darle un carril propio evita que se mezclen con la estructura conversacional.
 
@@ -132,8 +132,9 @@ FK  ai_agent_id           → ai_agents
 PK  id
 FK  prompt_component_id   → prompt_components
 FK  changed_by_operator_id NULL → operators     ⇄ B5
-    version_number, content, change_note, created_at
+    version_number, content, active, change_note, created_at
 ```
+> **`active` va en la versión, `position` no** (ADR-0015). Es el lado *"debía"* de OE1: sin él la métrica compara `generation_components` contra sí mismo. El orden no se versiona porque ninguna métrica lo mide.
 
 ### `transfer_policies`
 ```
@@ -160,11 +161,12 @@ FK  ai_agent_id           → ai_agents
 | `ai_agents` | 1 — 0..1 | `knowledge_bases` | `knowledge_bases.ai_agent_id` | B4 |
 | `ai_agents` | 0..1 — 0..* | `sales` | `sales.ai_agent_id` | B5 |
 | `ai_agents` | 0..1 — 0..* | `inboxes` | `inboxes.default_ai_agent_id` | B6 |
+| `ai_agents` | 1 — 0..* | `generations` | `generations.ai_agent_id` | B3 |
 | `prompt_component_versions` | 1 — 0..* | `generation_components` | `.prompt_component_version_id` | B3 |
 
 ---
 
-## 4. Bloque 3 — Ejecución por turno (6 entidades)
+## 4. Bloque 3 — Ejecución por turno (7 entidades)
 
 ### `message_batches`
 ```
@@ -180,6 +182,15 @@ PK  id
 FK  message_batch_id      → message_batches
     intent_label, confidence, position, created_at
 ```
+
+### `pipeline_steps`  — inmutable
+```
+PK  id
+FK  message_batch_id      → message_batches
+    step «PipelineStep», direction «MessageDirection», position,
+    outcome, score, version, latency_ms, detail_json, created_at
+```
+> **Cuelga del bloque, no de `generations`** (ADR-0016): los primeros pasos del pipeline pueden bloquear el mensaje y hacer que nunca exista una generación. Entre siete y nueve filas por turno.
 
 ### `conversation_contexts`
 ```
@@ -200,6 +211,7 @@ FK  conversation_id       → conversations       ⇄ B1
 ```
 PK  id
 FK  conversation_id       → conversations       ⇄ B1
+FK  ai_agent_id           → ai_agents           ⇄ B2
 FK  message_id       NULL → messages            ⇄ B1
 FK  message_batch_id NULL → message_batches
 FK  conversation_context_version_id → conversation_context_versions
@@ -223,6 +235,7 @@ FK  prompt_component_version_id → prompt_component_versions  ⇄ B2
 | Origen | Card. | Destino | FK vive en |
 |---|---|---|---|
 | `message_batches` | 1 — 0..* | `detected_intents` | `detected_intents.message_batch_id` |
+| `message_batches` | 1 — 0..* | `pipeline_steps` | `pipeline_steps.message_batch_id` |
 | `message_batches` | 0..1 — 0..* | `generations` | `generations.message_batch_id` |
 | `conversation_context_versions` | 0..1 — 0..* | `generations` | `.conversation_context_version_id` |
 | `generations` | 1 — **1..\*** | `generation_components` | `generation_components.generation_id` |
@@ -234,6 +247,7 @@ FK  prompt_component_version_id → prompt_component_versions  ⇄ B2
 | `conversations` | 1 — **0..1** | `conversation_contexts` | `.conversation_id` (único) | B1 |
 | `conversations` | 1 — 0..* | `conversation_context_versions` | `.conversation_id` | B1 |
 | `conversations` | 1 — 0..* | `generations` | `generations.conversation_id` | B1 |
+| `ai_agents` | 1 — 0..* | `generations` | `generations.ai_agent_id` | B2 |
 | `generations` | 0..1 — 0..1 | `messages` | **`generations.message_id`** | B1 |
 | `operators` | 0..1 — 0..* | `generations` | `generations.reviewed_by_operator_id` | B5 |
 | `prompt_component_versions` | 1 — 0..* | `generation_components` | `.prompt_component_version_id` | B2 |
@@ -564,11 +578,11 @@ FK  operator_id           → operators           ⇄ B5
 
 ---
 
-## 10. Las 21 enumeraciones
+## 10. Las 22 enumeraciones
 
 Se declaran con el estereotipo **«enumeration»** (C07). Conviene agruparlas en un sector aparte del tablero, no dispersas junto a las entidades que las usan — si no, las líneas de las enumeraciones compiten visualmente con las relaciones reales.
 
-`ContactType` · `OperatorRole` · `AgentMode` · `ConversationStatus` · `MessageDirection` · `MessageContentType` · `SenderType` · `MessageStatus` · `SourceChannel` · `PromptComponentType` · `TransferSignalType` · `BatchCloseReason` · `GenerationStatus` · `DocumentStatus` · `MetaTemplateStatus` · `MetaTemplateCategory` · `AttributeSource` · `AnnotationType` · `WebhookEventType` · `WebhookEventStatus` · `InboxStatus`
+`ContactType` · `OperatorRole` · `AgentMode` · `ConversationStatus` · `MessageDirection` · `MessageContentType` · `SenderType` · `MessageStatus` · `SourceChannel` · `PromptComponentType` · `TransferSignalType` · `BatchCloseReason` · `PipelineStep` · `GenerationStatus` · `DocumentStatus` · `MetaTemplateStatus` · `MetaTemplateCategory` · `AttributeSource` · `AnnotationType` · `WebhookEventType` · `WebhookEventStatus` · `InboxStatus`
 
 Los valores están en [entidades.md §1](entidades.md).
 
@@ -584,6 +598,7 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 - Un `prompt_component` tiene **un solo tipo activo por agente** (F01: seis componentes, uno de cada tipo).
 - **`transfer_policies` manda sobre `rules`.** La decisión de transferir la toma el clasificador según sus umbrales; el componente `rules` no puede habilitarla ni inhibirla. Sin esta nota, las dos entidades parecen configurar lo mismo por dos vías.
 - **El clasificador evalúa las cuatro señales de F12 en cada bloque, dispare o no** (ADR-0014). Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: lo que no se evalúa no deja fila, y el detector de frustración deja de ser medible.
+- **Se crea una `prompt_component_version` cuando cambia `content` o `active`**, no sólo `content` (ADR-0015). Sin versionar el apagado, OE1 compara un conjunto contra sí mismo y sólo puede dar 100 %.
 - `sender_operator_id` y `sender_ai_agent_id` son **excluyentes** y deben coincidir con `sender_type` (`CHECK`).
 - La suma de `documents.size_bytes` de una base **no supera 100 MB** (F06).
 - `messages` **no admite borrado** de ninguna clase (F29 · C09).
@@ -594,16 +609,16 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 
 ## 12. Checklist antes de dar por cerrado el Paso 5
 
-- [ ] Las 36 entidades dibujadas, repartidas en los 8 bloques.
-- [ ] Las 21 enumeraciones declaradas con «enumeration» (C07).
+- [ ] Las 37 entidades dibujadas, repartidas en los 8 bloques.
+- [ ] Las 22 enumeraciones declaradas con «enumeration» (C07).
 - [ ] Las FK se representan **de la misma manera en todas las entidades** — atributo en la caja **y** línea de relación, sin mezclar criterios (C10).
-- [ ] Las cinco cardinalidades de [relaciones.md §10](relaciones.md) revisadas explícitamente: son las que la lectura ingenua del anteproyecto equivoca.
+- [ ] Las seis cardinalidades de [relaciones.md §10](relaciones.md) revisadas explícitamente: son las que la lectura ingenua del anteproyecto equivoca. **La sexta es la trampa inversa:** `generations — ai_agents` parece sobrar y no sobra.
 - [ ] Ninguna línea entre `webhook_events` y `messages`, ni entre `conversation_annotations` y `labels`, ni desde `audit_logs.entity_id`.
-- [ ] Las once reglas de §11 anotadas en el tablero.
+- [ ] Las doce reglas de §11 anotadas en el tablero.
 - [ ] Título, fecha y nota de propósito en el diagrama (C10).
 - [ ] Exportado a `docs/diagrams/` en PNG y PDF **con la fecha en el nombre**: `der-logico-AAAA-MM-DD.png` (C10).
 - [ ] Verificado contra el andamio Mermaid (`docs/diagrams/der-logico-scaffold.mmd`): mismo conjunto de relaciones, sin sobrantes ni faltantes.
 
-> **Estado del andamio al 2026-08-10:** regenerado con `signal_evaluations` (ADR-0014) — 36 entidades en ambos, ninguna faltante ni sobrante, 71 relaciones. Si al dibujar aparece una relación que el andamio no tiene, **el error puede estar en cualquiera de los dos**: se resuelve mirando el catálogo, que es la fuente de verdad (ADR-0013).
+> **Estado del andamio al 2026-08-10:** regenerado con `signal_evaluations` (ADR-0014), `generations.ai_agent_id` (ADR-0015) y `pipeline_steps` (ADR-0016) — 37 entidades en ambos, ninguna faltante ni sobrante, 73 relaciones. Si al dibujar aparece una relación que el andamio no tiene, **el error puede estar en cualquiera de los dos**: se resuelve mirando el catálogo, que es la fuente de verdad (ADR-0013).
 >
 > **Al editar el andamio, cuidado con una trampa de Mermaid:** una línea de comentario vacía —sólo `%%`, sin texto— **rompe el parser**. Mermaid elimina los comentarios con al menos un carácter después del prefijo, pero deja los vacíos, y quedan como basura antes de `erDiagram`. Toda línea de comentario tiene que llevar texto.

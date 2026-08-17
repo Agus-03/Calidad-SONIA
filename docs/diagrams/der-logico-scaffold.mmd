@@ -57,10 +57,16 @@ erDiagram
     %% === BLOQUE 3 — Ejecución por turno ====================================
     conversations   ||--o{ message_batches               : conversation_id
     message_batches ||--o{ detected_intents              : message_batch_id
+    %% NOTA: pipeline_steps cuelga del bloque y NO de generations: los primeros
+    %% pasos del pipeline pueden impedir que exista una generación (ADR-0016).
+    message_batches ||--o{ pipeline_steps                : message_batch_id
     conversations   ||--o| conversation_contexts         : conversation_id
     conversations   ||--o{ conversation_context_versions : conversation_id
 
     conversations                 ||--o{ generations : conversation_id
+    %% NOTA: ai_agent_id NO es redundante con conversations.ai_agent_id, que es
+    %% mutable (F27). Congela qué agente generó: es el lado "debía" de OE1 (H-21).
+    ai_agents                     ||--o{ generations : ai_agent_id
     generations                   |o--o| messages    : message_id
     message_batches               |o--o{ generations : message_batch_id
     conversation_context_versions |o--o{ generations : context_version_id

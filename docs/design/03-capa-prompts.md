@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -55,9 +55,15 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 ### Regla 2 — Política de versionado de `prompt_component_versions`
 
-**Decisión.** Se crea una versión nueva **sólo si el `content` cambió** respecto de la versión vigente. Un guardado sin cambios no inserta fila.
+> **Enmendada el 2026-08-10** por el recorrido del Paso 6 ([ADR-0015](02-decisiones/0015-medicion-de-oe1.md), H-20). La redacción anterior versionaba **sólo por `content`**; el texto de abajo es el vigente.
 
-**Justificación.** OE2 exige poder decir contra qué configuración se midió cada resultado. Versionar en cada guardado —incluso sin cambios— llenaría el histórico de filas idénticas y obligaría a filtrar duplicados después, exactamente el ruido que la trazabilidad necesita evitar. Los otros dos atributos mutables de `prompt_components` no necesitan este mecanismo: `active` y `position` quedan congelados en el momento de cada generación a través de `generation_components` (que sólo enlaza componentes que participaron, con su posición real de ensamblado), así que su historial ya es reconstruible sin agregar columnas a `prompt_component_versions`.
+**Decisión.** Se crea una versión nueva si cambió el **`content`** o el **`active`** respecto de la versión vigente. Un guardado sin cambios no inserta fila. El `position` **no** dispara versión.
+
+**Justificación.** OE2 exige poder decir contra qué configuración se midió cada resultado, y OE1 exige poder decir **qué componentes debían estar** en cada prompt. Versionar en cada guardado —incluso sin cambios— llenaría el histórico de filas idénticas y obligaría a filtrar duplicados después, exactamente el ruido que la trazabilidad necesita evitar. Pero un cambio de `active` **no** es una fila idéntica: es el cambio más significativo que puede sufrir un componente.
+
+**Por qué cambió esta regla.** La versión original sostenía que `active` y `position` quedaban congelados a través de `generation_components`, *"que sólo enlaza componentes que participaron"*. Para `position` es cierto —`generation_components.position` guarda el orden real de ensamblado— y para `content` también. Para `active` no: **equipara haber participado con haber estado activo, que es precisamente lo que OE1 verifica.** Con esa equivalencia, la consulta de OE1 compara `generation_components` contra sí mismo y devuelve 100 % aunque el ensamblador falle. Una métrica que no puede dar otro resultado no mide nada.
+
+`position` sigue sin versionarse, y es deliberado: ninguna métrica del anteproyecto mide el orden de ensamblado.
 
 ---
 
@@ -101,7 +107,9 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 ## 3. Extensiones identificadas, no modeladas todavía
 
-Ninguna de las dos tiene anclaje textual en el anteproyecto — son mejoras de ingeniería que el equipo decidió incorporar, no un requisito de F01–F39. Se documentan como puntos de extensión en la secuencia del bloque, sin cambios en `entidades.md` ni `relaciones.md` por ahora:
+> **Actualizado el 2026-08-10 ([ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md)).** El equipo definió el pipeline completo de respuesta —*blocked-list → guardrail → triage → RAG → grounding (reranking si hace falta) → blocked-list → guardrail → respuesta*—, del que las dos extensiones de abajo son pasos. **Su rastro ya está modelado** en la entidad `pipeline_steps`: una fila por paso ejecutado, con su resultado, su versión y su latencia. Lo que sigue pendiente es el **diseño** de cada paso, no dónde registrarlo. El pipeline se dibuja en el **Paso 8** (secuencia del turno); las zonas de confianza, en el Paso 12.
+
+Ninguna de las dos tiene anclaje textual en el anteproyecto — son mejoras de ingeniería que el equipo decidió incorporar, no un requisito de F01–F39. Se documentan como puntos de extensión en la secuencia del bloque:
 
 - **Reranking.** Entre la consulta de RAG (paso 7 de la secuencia) y el armado del `user` (paso 9): un filtro/reordenamiento adicional sobre los candidatos recuperados por similitud, para los casos en que el top-k inicial no sea suficientemente relevante.
 - **Guardrails de ciberseguridad de los datos.** Dos puntos de entrada distintos:
@@ -212,7 +220,7 @@ y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil.
 
 ### 4.8. `generations` + `generation_components`
 
-- `generations`: `conversation_context_version_id` → la de `turn_number = 5` · `prompt_rendered` = el bloque 4.7 (ya redactado) · `completion_text` = *"¡Hola! Sí, el departamento de 2 ambientes en zona centro de Jesús María está disponible, a $320.000 + expensas — dentro de tu presupuesto. Para alquilarlo se necesita recibo de sueldo y garantía propietaria o seguro de caución, más un depósito de un mes. ¿Querés que coordine una visita?"* · `status = sent` (modo autónomo).
+- `generations`: `conversation_context_version_id` → la de `turn_number = 5` · `prompt_rendered` = el bloque 4.7 (ya redactado) · `completion_text` = *"¡Hola! Sí, el departamento de 2 ambientes en zona centro de Jesús María está disponible, a $320.000 + expensas — dentro de tu presupuesto. Para alquilarlo se necesita recibo de sueldo y garantía propietaria o seguro de caución, más un depósito de un mes. ¿Querés que coordine una visita?"* · `status = auto_sent` (modo autónomo).
 - `generation_components`: 6 filas, una por cada `prompt_component_version_id` vigente (la **v2** de `tone`, no la v1), con su `position` 1–6.
 - `retrieval_logs`: las 2 filas de 4.6, con `generation_id` de esta generación.
 

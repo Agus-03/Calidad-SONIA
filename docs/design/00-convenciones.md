@@ -181,7 +181,9 @@ Las FK se declaran en la base y no solo en la aplicación porque son la única g
 
 ### C06 — Marcas de tiempo
 
-**Decisión:** todas las marcas de tiempo son **`timestamptz` almacenadas en UTC**. La conversión a hora local (`America/Argentina/Cordoba`) ocurre exclusivamente en la capa de presentación.
+**Decisión:** todas las marcas de tiempo son **`timestamptz` almacenadas en UTC**. La conversión a hora local (`America/Argentina/Cordoba`) ocurre en la capa de presentación **y en toda consulta que agrupe por unidad temporal, donde ocurre *antes* de agrupar**.
+
+> **Enmienda del 2026-08-10 (Paso 6).** La redacción original decía que la conversión ocurría *"exclusivamente en la capa de presentación"*, y para F38 eso es insuficiente: la *"distribución horaria/semanal"* **bucketiza**, y bucketizar es parte del cálculo, no de la presentación. Agrupar por hora en UTC y convertir el resultado después corre el pico **tres horas** — el de las 10 de la mañana aparece a las 13. En SQL: `date_trunc('day', ts AT TIME ZONE 'America/Argentina/Cordoba')`, nunca al revés. Ver `05-consultas-de-metricas.sql`, sección F38.
 
 **Justificación de UTC.** F38 pide "distribución horaria/semanal" y F34 "tiempos de respuesta": son métricas que dependen de que todos los instantes sean comparables entre sí. Argentina no aplica hoy horario de verano, pero lo aplicó en el pasado y podría volver a hacerlo; si las marcas se guardan en hora local, una hora del día pasa a existir dos veces al año y otra deja de existir, y las series temporales de F38 quedan irreproducibles. Además el proyecto contempla despliegue real (Fase 4) y las marcas que provee la plataforma de mensajería vienen en UTC: convertirlas al escribir es agregar un punto de falla sin ganancia.
 

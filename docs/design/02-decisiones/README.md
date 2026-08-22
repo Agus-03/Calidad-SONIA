@@ -42,6 +42,7 @@ Dos reglas que conviene sostener:
 | [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
 | [0015](0015-medicion-de-oe1.md) | Cómo se mide OE1 | H-20, H-21 | Aceptada |
 | [0016](0016-rastro-del-pipeline-de-respuesta.md) | Rastro del pipeline de respuesta | H-23 | Aceptada |
+| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | **Propuesta** |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
@@ -50,6 +51,8 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 **ADR-0014 y ADR-0015 son la serie del Paso 6.** Nacen de intentar escribir la consulta SQL de una métrica y descubrir que no se podía — que es exactamente para lo que existe ese paso. Las dos corrigen **el mismo error de fondo**: el modelo guardaba el resultado de una decisión y no la evidencia sobre la que se tomó, y la consecuencia era en ambos casos una métrica que sólo podía devolver el número deseado. Es previsible que aparezcan más: la validación de OE2, OE6 y OE7 todavía no se hizo.
 
 **ADR-0015 enmienda un documento vigente**, la Regla 2 de [03-capa-prompts.md](../03-capa-prompts.md). Se dejó escrito el razonamiento original y por qué estaba incompleto, en vez de corregirlo en silencio.
+
+**ADR-0017 es de otra clase y por eso está en estado Propuesta.** No resuelve un hallazgo del modelo de datos: decide la arquitectura de despliegue y el reparto de lenguajes, que la sección 8.4 dejó explícitamente sin definir. Toca el trabajo de los tres y conviene discutirla entre todos —y con los tutores— antes de darla por firmada. Es además la segunda decisión que **matiza el texto del anteproyecto**, después de ADR-0012: parte el Módulo 2 entre dos procesos, y señala que la justificación de Go por "concurrencia masiva" no está respaldada por el alcance declarado en 7.3.
 
 ---
 

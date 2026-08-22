@@ -50,7 +50,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `TransferSignalType` | `no_resolution` · `frustration` · `out_of_domain` · `explicit_request` | F12 |
 | `BatchCloseReason` | `silence` · `max_messages` · `max_duration` | F10 (`silence` es el único textual; los otros dos son guardas ⚙) |
 | `PipelineStep` | `blocklist` · `guardrail` · `triage` · `retrieval` · `reranking` · `grounding` · `generation` | ADR-0016 ⚙ — los pasos del pipeline de respuesta. **Sin anclaje textual salvo `retrieval` (F06) y `generation`**; el resto son decisiones de ingeniería del equipo |
-| `GenerationStatus` | `auto_sent` · `pending_review` · `accepted` · `edited` · `rejected` | F02 (modo sugerencia). **`sent` renombrado a `auto_sent`**: colisionaba con `MessageStatus.sent` con otro significado, que C07 prohíbe expresamente |
+| `GenerationStatus` | `auto_sent` · `pending_review` · `accepted` · `edited` · `rejected` · `blocked` | F02 (modo sugerencia) · **`blocked` (ADR-0016, Paso 8)**: la frenó el guardrail de salida, no una persona. Los otros cinco describen resultados de revisión humana y son anteriores a que existiera un corte automático posterior a la generación; usar `rejected` para eso afirmaría que un operador la rechazó, que es falso. **`sent` renombrado a `auto_sent`**: colisionaba con `MessageStatus.sent` con otro significado, que C07 prohíbe expresamente |
 | `DocumentStatus` | `pending` · `processing` · `indexed` · `failed` | ADR-0005 |
 | `MetaTemplateStatus` | `approved` · `pending` · `rejected` | F08, F37 |
 | `AttributeSource` | `manual` · `llm` | F31 |
@@ -240,7 +240,14 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `messages_count` | smallint | |
 | `timer_ms_used` | integer | **Lo que permite defender que el timer es "adaptativo"** y no una constante |
 | `closed_reason` | `BatchCloseReason` | |
+| `error_message` | text | Nullable — **por qué falló el turno**, cuando falló. Ver la nota |
 | `opened_at` / `closed_at` / `processed_at` | timestamptz | **Inmutable: sin `created_at` genérico, sin `updated_at` ni `deleted_at`** (C09). `opened_at` cumple la función de `created_at` que exige C06 |
+
+> **`error_message` no rompe la inmutabilidad del bloque.** Se llena en la misma escritura en la que el núcleo declara el turno fallido, después de agotar los reintentos, y nunca se sobreescribe. Sin él, un turno caído deja únicamente `closed_at IS NOT NULL AND processed_at IS NULL`: alcanza para **contar** turnos fallidos, no para **diagnosticarlos**. En la Fase 4, con despliegue en producción real, distinguir *"el cerebro no respondió"* de *"el proveedor de LLM devolvió 429"* son dos acciones correctivas distintas.
+>
+> **Es texto libre y no una enumeración, a propósito.** Sigue el precedente de `webhook_events.error_message`, que existe por el mismo motivo (F20). La contrapartida hay que decirla: **sirve para diagnosticar un turno, no para agregar por causa.** Si la Fase 4 pidiera contar fallas por tipo, eso pide una enumeración y es decisión del Paso 11, no de ahora.
+>
+> **Sin contador de reintentos.** El número de intentos es configuración —variable de entorno, 3 por defecto—, no un hecho del turno: guardarlo en cada fila repetiría en millones de bloques lo que ya dice el archivo de configuración. Lo que no se puede reconstruir después es el motivo, y eso es lo que se guarda.
 
 ### `detected_intents`
 
@@ -366,6 +373,8 @@ Una fila por respuesta generada por la IA.
 > Sin él, OE1 no tiene contra qué comparar: derivar el agente desde `generation_components` sería deducir *qué agente* a partir de *qué se ensambló*, que es exactamente lo que se está auditando. La entidad ya congelaba `llm_provider`, `llm_model` y `temperature` —que salen del agente— y no congelaba **de quién eran**: eso era un olvido, no una decisión (H-21).
 >
 > **Sobre la inmutabilidad:** el contenido generado es inmutable. Lo único que muta es el resultado de la revisión (`status`, `reviewed_*`), que transiciona **una sola vez** desde `pending_review` a un estado terminal. Por eso la entidad no lleva `updated_at` genérico.
+>
+> **Quién escribe `status` y cuándo** (Paso 8). La fila la escribe el cerebro **una sola vez, después del guardrail de salida**, con el valor que describe su propio veredicto: `blocked` si lo frenó, `pending_review` en modo sugerencia, `auto_sent` en modo autónomo. En modo autónomo el envío todavía no ocurrió cuando se escribe `auto_sent`, y eso **no es una mentira**: `GenerationStatus` describe el resultado del **filtrado** —¿pasó sin revisión humana, la revisó alguien, la frenó el sistema?—, no el de la **entrega**. La entrega vive en `messages.status` «MessageStatus», que ya distingue `sent · delivered · read · failed`. Si el envío falla, la generación sigue siendo `auto_sent` y su `message_id` apunta a un mensaje `failed`: las dos afirmaciones son ciertas y cada una está donde corresponde. Separarlas es lo que evita tener que agregar un sexto estado sólo para nombrar el intervalo entre generar y enviar.
 >
 > **Modo sugerencia sin entidad adicional:** el borrador de F02 es la propia `generation` en estado `pending_review`. Si el operador edita antes de enviar, `messages.content_text` guarda lo enviado y `completion_text` lo propuesto: **comparar ambos es la tasa de edición**, un proxy directo de la calidad del agente.
 

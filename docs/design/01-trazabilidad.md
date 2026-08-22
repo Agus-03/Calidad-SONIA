@@ -173,6 +173,52 @@ Los dieciocho anteriores nacen de comparar el texto de un requisito con el **Ane
 >
 > **Y los tres de tipo `definición` comparten otro:** los tres aparecen donde el anteproyecto **nombra una métrica sin definir su denominador** — qué cuenta como interacción (H-22), como consulta del dominio (H-24), como conversación de un operador (H-25). Es el lugar donde conviene mirar primero al revisar cualquier objetivo que falte.
 
+
+---
+
+### 5.4. Hallazgos del recorrido del Paso 8 → contra el comportamiento
+
+El Paso 6 recorrió las **métricas**; el Paso 8 recorrió la **secuencia del turno**
+(camino feliz, modo sugerencia, corte por guardrail y cerebro caído). Son cinco
+hallazgos, en [`07-secuencia-del-turno.md`](07-secuencia-del-turno.md) §6, más un
+sexto —**H-31**— que apareció al revisar ese documento contra ADR-0017.
+
+Aparece un **tercer tipo**, que el Paso 6 no había producido: `consulta`. No
+falta un dato ni una definición — falta usar bien un dato que ya está.
+
+| # | Hallazgo | Tipo | Toca | Estado |
+|---|---|---|---|---|
+| **H-26** | **`GenerationStatus` no puede nombrar una respuesta bloqueada por el sistema.** Sus cinco valores —`auto_sent · pending_review · accepted · edited · rejected`— describen **resultados de revisión humana**: la enumeración es anterior a ADR-0016, que introdujo el guardrail de salida. Una respuesta frenada automáticamente no tiene estado verdadero: `rejected` afirma que la rechazó un operador, `auto_sent` afirma que salió. Y mirando sólo `generations`, una bloqueada es indistinguible de una **huérfana por caída del cerebro**: las dos tienen `message_id NULL` | dato | ADR-0016, F02 | ✅ **Resuelto** — valor `blocked`, más la regla de quién escribe `status` y cuándo (`DER/entidades.md`) |
+| **H-27** | **La consulta de OE7 contaba las sugerencias aceptadas como resolución autónoma.** Descartaba la intervención humana filtrando `messages.sender_type = 'operator'`, pero una sugerencia **aceptada** (F02) produce un mensaje con `sender_type = 'ai_agent'` que un humano revisó antes de que saliera. **OE7 salía inflado**, y en la dirección cómoda | **consulta** | OE7, F36.a, F02 | ✅ **Resuelto** — exclusión por `generations.reviewed_by_operator_id IS NOT NULL` (supuesto S4 en `05-consultas-de-metricas.sql`) |
+| **H-28** | **Un turno fallido no deja por qué falló.** `message_batches` no tenía campo de error: con el cerebro caído sólo queda `closed_at IS NOT NULL AND processed_at IS NULL`. Alcanza para **contar** turnos fallidos, no para **diagnosticarlos** — y en la Fase 4, *"el cerebro no respondió"* y *"el proveedor de LLM devolvió 429"* piden dos acciones correctivas distintas | dato | Fase 4, F20 | ✅ **Resuelto** — `message_batches.error_message`, texto libre, precedente `webhook_events.error_message` |
+| **H-29** | **Los mensajes salientes no tienen clave de idempotencia.** `messages.wamid` es única y resuelve la idempotencia de los **entrantes**; para los salientes es NULL hasta que Meta responde. PostgreSQL admite varios NULL en un índice único, así que el modelo no se rompe — pero **un reintento de envío no tiene con qué reconocerse**, y `messages` no admite borrado ni corrección (F29, C09) | dato | F29, C09 | ⏸️ **Diferido al Paso 7.** Es modelo físico —clave de idempotencia y estrategia de reintento—, no un hueco del modelo lógico |
+| **H-30** | **Una transferencia propuesta en modo sugerencia no tiene semántica.** Si el clasificador dispara mientras la conversación ya está bajo revisión humana, escribir el `transfer_event` cuenta como transferencia algo que ya estaba en manos de un operador, y contamina el denominador de OE3 con casos donde transferir era una operación vacía | definición | OE3, F02, F12 | ✅ **Resuelto en el acto** — no se escribe. `transfer_events` registra **la acción**; la evaluación se conserva en `signal_evaluations` (ADR-0014), así que OE4 no se afecta. **Consecuencia:** el conjunto anotado de OE3 se elige entre conversaciones en modo autónomo |
+
+| **H-31** | **Los bytes del documento no tienen dónde vivir.** `documents` registra `filename`, `mime_type`, `size_bytes` y `checksum` — **ninguna ruta, clave de objeto ni columna binaria**. El modelo guarda *que existe* un archivo de hasta 100 MB (F06) y no dice **dónde está**. Quien recibe la subida y quien la procesa son procesos distintos en las dos opciones posibles —sea el núcleo o el modo `api` del cerebro el que recibe, el que fragmenta es el modo `worker`—, así que un directorio temporal local no alcanza en ningún caso | dato | F06, ADR-0005, ADR-0017 | ⏸️ **Diferido al Paso 7.** Las tres salidas —almacenamiento de objetos con `storage_key`, volumen compartido con ruta, o `bytea` en la tabla— tienen consecuencias distintas para el backup, para el tamaño de la base y para el DFD de la Ley 25.326 (Paso 12). Va junto al cifrado y al orden de escritura contra Qdrant, que son sus vecinas |
+
+> **Tres de los cuatro de tipo `dato` fallan por un motivo distinto al del
+> Paso 6.** Ahí el modelo guardaba *el resultado de una decisión y no la
+> evidencia*; acá el modelo **no sabe nombrar un estado por el que el sistema
+> efectivamente pasa** — bloqueada (H-26), fallida con motivo (H-28), saliente
+> todavía sin confirmar (H-29). Es lo que se ve cuando se dibuja **el orden** de
+> las escrituras y no sólo su contenido: la matriz encuentra entidades faltantes,
+> la consulta encuentra combinaciones imposibles, y **la secuencia encuentra
+> estados sin nombre**.
+>
+> **H-31 es el cuarto y no sigue ese patrón:** es un atributo faltante de los de
+> siempre, del mismo tipo que los catorce de §5.1. Lo notable no es el hallazgo
+> sino **dónde apareció** — revisando este documento contra ADR-0017, no
+> escribiéndolo. Preguntarse *"¿quién escribe `documents`?"* obliga a preguntarse
+> *"¿y dónde está el archivo?"*, que es una pregunta que ni la matriz ni las
+> consultas de métricas tenían motivo para hacer.
+>
+> **H-27 merece atención aparte** porque es el más incómodo de los cuatro pasos
+> recorridos hasta acá: no faltaba ningún dato —`reviewed_by_operator_id` estaba
+> escrito desde el Paso 5— y la consulta estaba marcada `[OK]`. Sólo se cayó al
+> cruzarla con una rama que se había pensado por separado. La lección práctica es
+> que **una consulta validada contra el modelo no está validada contra el
+> comportamiento**, y que las dos revisiones no se sustituyen.
+
 ---
 
 ## 6. Resumen

@@ -173,6 +173,7 @@ FK  ai_agent_id           → ai_agents
 PK  id
 FK  conversation_id       → conversations       ⇄ B1
     messages_count, timer_ms_used, closed_reason «BatchCloseReason»,
+    error_message NULL,
     opened_at, closed_at, processed_at
 ```
 

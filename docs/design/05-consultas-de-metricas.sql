@@ -205,6 +205,14 @@ WHERE  NOT EXISTS (
 --       de una conversación que debía transferirse en el turno 8 cuenta como
 --       acierto. El anteproyecto no declara el momento óptimo como objetivo.
 --   S3. `gold_value` reutiliza los valores de `TransferSignalType` más 'none'.
+--   S4. EL CONJUNTO DE 200 SE ELIGE ENTRE CONVERSACIONES EN MODO AUTÓNOMO.
+--       Decisión del Paso 8: en modo sugerencia NO se escribe `transfer_events`,
+--       porque la conversación ya está en manos de un operador y transferir no
+--       es una acción posible. La consulta queda correcta sola —su población
+--       sale de `transfer_events`—, pero la ANOTACIÓN es manual: anotar
+--       conversaciones supervisadas llenaría el conjunto de casos donde la
+--       transferencia era una operación vacía. La evaluación del clasificador
+--       en esas conversaciones no se pierde: vive en `signal_evaluations`.
 
 -- OE3.a — precisión gruesa: ¿había que transferir?
 
@@ -411,6 +419,14 @@ GROUP  BY conversation_id;
 --   S3. OE7 es el único objetivo SIN FECHA propia. La población "conversaciones
 --       reales" se acota por la ventana de la Fase 4 (1/03 – 6/04/2027, Anexo D).
 --       Es un anclaje derivado, no textual: va declarado, no dado por obvio.
+--   S4. EL MODO SUGERENCIA TAMBIÉN DESCALIFICA (corrección del Paso 8). Una
+--       sugerencia ACEPTADA (F02) produce un mensaje con `sender_type =
+--       'ai_agent'` que un humano revisó ANTES de que saliera: eso no es
+--       resolución autónoma. El filtro de S1 no la ve, porque el mensaje no es
+--       de operador, y sin este supuesto OE7 SE INFLA. La evidencia ya existía
+--       en el modelo: `generations.reviewed_by_operator_id` sólo se llena
+--       cuando alguien revisó, en cualquiera de los tres desenlaces de F02
+--       (aceptada, editada o rechazada).
 
 WITH resueltas AS (
     SELECT c.id, c.ai_agent_id
@@ -429,18 +445,30 @@ clasificadas AS (
                      AND m.sender_type = 'ai_agent')              AS respondio_ia,
            EXISTS (SELECT 1 FROM messages m
                    WHERE m.conversation_id = r.id
-                     AND m.sender_type = 'operator')              AS respondio_humano  -- S1
+                     AND m.sender_type = 'operator')              AS respondio_humano,  -- S1
+           EXISTS (SELECT 1 FROM generations g
+                   WHERE g.conversation_id = r.id
+                     AND g.reviewed_by_operator_id IS NOT NULL)   AS hubo_revision      -- S4
     FROM   resueltas r
+),
+evaluadas AS (
+    SELECT *,
+           (respondio_ia
+            AND NOT respondio_humano
+            AND NOT hubo_transferencia
+            AND NOT hubo_revision)                                AS es_autonoma
+    FROM   clasificadas
 )
 SELECT count(*)                                                          AS resueltas,
-       count(*) FILTER (WHERE respondio_ia
-                          AND NOT respondio_humano
-                          AND NOT hubo_transferencia)                    AS autonomas,
-       round(100.0 * count(*) FILTER (WHERE respondio_ia
-                                        AND NOT respondio_humano
-                                        AND NOT hubo_transferencia)
+       count(*) FILTER (WHERE es_autonoma)                               AS autonomas,
+       count(*) FILTER (WHERE hubo_revision)                             AS con_revision_f02,
+       round(100.0 * count(*) FILTER (WHERE es_autonoma)
              / count(*), 2)                                              AS oe7_pct
-FROM   clasificadas;
+FROM   evaluadas;
+
+-- `con_revision_f02` se devuelve a propósito: es la magnitud de la corrección.
+-- Si esa columna es grande, el número de OE7 antes del Paso 8 estaba inflado
+-- en esa proporción, y conviene poder decirlo en el informe con el dato al lado.
 
 
 -- #############################################################################
@@ -470,14 +498,17 @@ clasificadas AS (
     SELECT r.id, r.ai_agent_id,
            EXISTS (SELECT 1 FROM transfer_events te WHERE te.conversation_id = r.id) AS hubo_transferencia,
            EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = r.id AND m.sender_type = 'ai_agent') AS respondio_ia,
-           EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = r.id AND m.sender_type = 'operator') AS respondio_humano
+           EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = r.id AND m.sender_type = 'operator') AS respondio_humano,
+           EXISTS (SELECT 1 FROM generations g WHERE g.conversation_id = r.id
+                     AND g.reviewed_by_operator_id IS NOT NULL) AS hubo_revision   -- S4 de OE7
     FROM   resueltas r
 )
 SELECT a.name AS agente,
        count(*)                                                          AS resueltas,
        round(100.0 * count(*) FILTER (WHERE respondio_ia
                                         AND NOT respondio_humano
-                                        AND NOT hubo_transferencia)
+                                        AND NOT hubo_transferencia
+                                        AND NOT hubo_revision)
              / count(*), 2)                                              AS autonoma_pct
 FROM   clasificadas c
 JOIN   ai_agents a ON a.id = c.ai_agent_id

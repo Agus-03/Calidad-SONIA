@@ -42,7 +42,7 @@ Dos reglas que conviene sostener:
 | [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
 | [0015](0015-medicion-de-oe1.md) | Cómo se mide OE1 | H-20, H-21 | Aceptada |
 | [0016](0016-rastro-del-pipeline-de-respuesta.md) | Rastro del pipeline de respuesta | H-23 | Aceptada |
-| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | **Propuesta** |
+| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | **Propuesta** · revisada 2026-08-22 |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
@@ -53,6 +53,8 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 **ADR-0015 enmienda un documento vigente**, la Regla 2 de [03-capa-prompts.md](../03-capa-prompts.md). Se dejó escrito el razonamiento original y por qué estaba incompleto, en vez de corregirlo en silencio.
 
 **ADR-0017 es de otra clase y por eso está en estado Propuesta.** No resuelve un hallazgo del modelo de datos: decide la arquitectura de despliegue y el reparto de lenguajes, que la sección 8.4 dejó explícitamente sin definir. Toca el trabajo de los tres y conviene discutirla entre todos —y con los tutores— antes de darla por firmada. Es además la segunda decisión que **matiza el texto del anteproyecto**, después de ADR-0012: parte el Módulo 2 entre dos procesos, y señala que la justificación de Go por "concurrencia masiva" no está respaldada por el alcance declarado en 7.3.
+
+**ADR-0017 se revisó el 2026-08-22, antes de firmarse, y el cambio está declarado en su §0.** Se corrige editando el documento y no escribiendo uno nuevo porque **la regla de más arriba protege el historial de las decisiones revertidas, y ésta nunca llegó a aceptarse**: hacer que los tres lean dos documentos para acordar una sola decisión la haría más difícil de acordar, no más trazable. Lo que la revisión agrega salió de recorrer los 39 requisitos uno por uno, que la versión original no había hecho: **un hueco** —la ingesta de F06 no tenía proceso donde ocurrir— y **tres decisiones que faltaban**: el ensamblador único que protege a OE1, las tres reglas de escritura sobre la base compartida, y el nombre de la arquitectura. La frontera Go/Python y la base única se sostuvieron sin cambios.
 
 ---
 
@@ -118,8 +120,16 @@ Ningún dato falta: las cuatro reglas son calculables hoy. Falta elegir **una** 
 
 > **Lo que no es una decisión:** `sales.amount` se agrupa **siempre por `currency`** (C08). No es una elección, es la convención ya fijada — sumar ARS con USD invalidaría el monto atribuido.
 
+### Abiertas por ADR-0017 (Paso 7 — nivel físico)
+
+- [ ] **El núcleo es hoy de instancia única, y hay que declararlo.** El timer de F10 mantiene un temporizador vivo **en memoria** por conversación, y el fan-out de WebSockets entrega sólo a los operadores conectados a *esa* instancia. Con dos instancias, ninguna de las dos cosas está definida: no hay dueño del timer de una conversación dada, ni forma de que un mensaje llegue al operador conectado a la otra. **Para el alcance de 7.3 una instancia sobra**, así que el pendiente **no es resolverlo: es escribirlo** en el documento de arquitectura, en vez de dejar que se lea como si el sistema escalara horizontalmente. Salida cuando haga falta, sin tocar 7.3: `LISTEN`/`NOTIFY` de PostgreSQL para el fan-out —no es MQTT y no agrega un componente nuevo— y *leases* en la base o ruteo pegajoso por conversación para el timer.
+- [ ] **Cómo se agregan dos reportes de cobertura en el número único que pide OE5.** Con dos runtimes hay dos cadenas de herramientas. SonarQube lo soporta; falta definir el procedimiento y, sobre todo, **si el ≥ 80 % se exige por servicio o sobre el total** — no dan el mismo resultado, y el núcleo tiene 26 de los 39 requisitos.
+- [x] **Qué ve el cliente cuando el cerebro está caído.** ✅ **Confirmado en el Paso 8** ([`07-secuencia-del-turno.md`](../07-secuencia-del-turno.md) §5). El modelo lo soporta: el mensaje del cliente ya está en `messages` mucho antes del salto, y los tres relojes de `message_batches` distinguen un turno cerrado y no procesado. Se agregaron **tres reglas**: tres reintentos con backoff, configurables por variable de entorno; **no se reprocesa automáticamente** cuando el cerebro vuelve —una respuesta de IA sobre un contexto que ya avanzó es peor que ninguna—; y el motivo de la falla queda en `message_batches.error_message` (H-28).
+- [ ] **Dónde viven los bytes de los documentos** (H-31, hallazgo del Paso 8). `documents` no tiene ruta, clave de objeto ni columna binaria: el modelo registra que existe un archivo de hasta 100 MB (F06) y no dónde está. El que recibe la subida y el que la fragmenta son procesos distintos, así que un directorio local no alcanza. Tres salidas —almacenamiento de objetos, volumen compartido o `bytea`— con consecuencias distintas para el backup, el tamaño de la base y el DFD de la Ley 25.326 (Paso 12). **Arrastra la decisión (c) de ADR-0017:** qué servicio sirve la subida de F06.
+- [ ] **Idempotencia de los mensajes salientes** (H-29, hallazgo del Paso 8). `messages.wamid` es única y resuelve los **entrantes**; para los salientes es NULL hasta que Meta responde, y un reintento de envío no tiene con qué reconocerse. `messages` no admite borrado ni corrección (F29, C09), así que un duplicado es permanente. Falta la clave de idempotencia y la estrategia de reintento de envío.
+
 ### Heredadas de la sección 8.4 del anteproyecto
 
-- [ ] **Frontend.** Sigue "A DEFINIR" en 8.4. Debe consumir WebSockets para el inbox en tiempo real (F21).
+- [ ] **Frontend.** Sigue "A DEFINIR" en 8.4. Debe consumir WebSockets para el inbox en tiempo real (F21). **ADR-0017 lo cuenta como el tercer desplegable**, aunque no elige la tecnología.
 - [ ] **Proveedor de LLM primario y de respaldo.** Conviene fijarlo antes de medir OE2: la consistencia de tono depende del modelo.
 - [ ] **Modelo de embeddings.** Condiciona la dimensionalidad de las colecciones del vector store; cambiarlo después obliga a reindexar toda la base de conocimiento.

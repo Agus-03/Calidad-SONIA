@@ -66,7 +66,11 @@ Responder (2) y (3) copiando la respuesta de (1) es lo natural, y es lo que este
 | **`conversations`** | **M2** (estado, transferencia) · **M3** (asignación, modo, destacado) · **M1** (actividad) |
 | **`messages`** | **Gateway/M2** (entrantes) · **M1** (respuesta de la IA) · **M3** (respuesta del operador) |
 
-**Las dos tablas del núcleo las escriben los tres módulos.** Es la señal clásica de que la frontera modular no sigue al dato: el agregado central es compartido. **El punto (i) lo resuelve**; la versión anterior de este ADR lo dejaba señalado y abierto.
+**Las dos tablas del núcleo las escriben los tres módulos.** Es la señal clásica de que la frontera modular no sigue al dato: el agregado central es compartido. **El punto (i) lo resuelve entre los dos servicios**; la versión anterior de este ADR lo dejaba señalado y abierto.
+
+> **Y reaparece un nivel más abajo (2026-09-03).** Dentro del núcleo, `conversations` y `messages` las escriben **tres paquetes**: `turn/` (el mensaje entrante y la respuesta de la IA), `inbox/` (la del operador, más `starred`, `mode` y `operator_id`) y `whatsapp/` (los webhooks que mueven `messages.status`). La regla *"un paquete = las tablas que escribe"* no alcanza cuando tres lo hacen. **Se resuelve declarando al agregado compartido como paquete propio, `conversations/`**, dueño de las dos tablas; los otros tres escriben por su repositorio. La regla queda **un paquete = las tablas de las que es dueño**, que es el mismo movimiento que (i).2 hizo al pasar de *una tabla, un servicio* a *una columna, un servicio*: el enunciado se vuelve más estricto y verdadero en lugar de más simple y falso.
+>
+> **Lo que hace posible cumplirla es una transacción que cruce paquetes.** [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) exige que `message_batches.processed_at` se escriba **en la misma transacción** que el mensaje saliente, `generations.message_id` y `transfer_events` — si no, un reinicio del núcleo no puede distinguir un turno terminado de uno que nunca se procesó. Por eso los repositorios reciben un `Executor` de `platform/db` que abstrae el pool y `pgx.Tx`, y **la transacción la abre quien conduce el turno, no el repositorio**. Esto no toca (i).3: **ninguna transacción cruza el borde entre los dos servicios.**
 
 ### 1.2. La inferencia está en los tres módulos, no en uno
 
@@ -148,7 +152,9 @@ Del recorrido de los 39 requisitos (§6):
    | **Escribe el cerebro (Python)** | Sólo sus tablas de **evidencia**: `generations` · `generation_components` · `pipeline_steps` · `retrieval_logs` · `detected_intents` · `signal_evaluations` · `conversation_contexts` (+ versiones) · `contact_attributes` · `documents` · `document_chunks` |
    | **Escribe el instrumental de evaluación (Python, offline)** | `conversation_annotations` · `tone_evaluations` |
 
-   **El cerebro nunca escribe `conversations` ni `messages`.** No persiste la respuesta que genera: **la devuelve, y el núcleo la persiste y la envía**. Igual con la transferencia — el cerebro *propone* (escribe `signal_evaluations`), el núcleo *ejecuta* (escribe `transfer_events` y mueve `conversations.status`). Así la persistencia y el envío a Meta quedan del mismo lado, que es lo único que evita el peor error posible: un mensaje guardado que nunca se envió, o enviado dos veces.
+   **El cerebro nunca escribe `conversations`, `messages` ni `contact_attributes`.** No persiste la respuesta que genera: **la devuelve, y el núcleo la persiste y la envía**. Igual con la transferencia — el cerebro *propone* (escribe `signal_evaluations`), el núcleo *ejecuta* (escribe `transfer_events` y mueve `conversations.status`). Así la persistencia y el envío a Meta quedan del mismo lado, que es lo único que evita el peor error posible: un mensaje guardado que nunca se envió, o enviado dos veces.
+
+   **Y lo mismo con F31 (2026-09-03).** El LLM extrae datos del contacto, pero `contact_attributes` **no es evidencia: es dato del contacto**. El cerebro devuelve los atributos extraídos con su `AttributeSource = llm` y `contacts/` los persiste. La alternativa —que el cerebro escriba— costaba una excepción a esta regla a cambio de ahorrar un campo en la respuesta del turno. **La regla vale más que el campo.**
 
    **Por qué el instrumental está separado, y no es un detalle de despliegue.** `conversation_annotations.gold_value` es la verdad de terreno contra la que se mide la precisión del clasificador (OE3, OE4), y `tone_evaluations` es donde vive OE2. Que su **único escritor sea un proceso offline que no se despliega** es la garantía estructural de que **el sistema evaluado no puede escribir su propia nota**. Es una propiedad de diseño, no una casualidad de organización.
 
@@ -162,14 +168,18 @@ Del recorrido de los 39 requisitos (§6):
 
    **No hay concurrencia: hay un traspaso.** El cerebro escribe una vez y nunca vuelve a una generación sobre la que ya contestó; el núcleo escribe recién después. El propósito original de la regla —que dos servicios no se pisen— queda intacto, y el enunciado pasa a ser **más estricto y verdadero** en lugar de más simple y falso.
 
-   **La excepción se enumera, no se autoriza.** Vale sólo donde un servicio produce una fila que el otro debe completar **porque únicamente él conoce el desenlace**. Hoy hay **un caso declarado** —`generations`— y **uno abierto**: `documents`, donde `uploaded_by_operator_id` es NOT NULL y el worker toma trabajo con `FOR UPDATE SKIP LOCKED`, patrón que presupone un productor distinto del consumidor. Se decide junto con **H-31** en el Paso 7. Cualquier tercer caso requiere una decisión nueva, no esta regla.
+   **La excepción se enumera, no se autoriza.** Vale sólo donde un servicio produce una fila que el otro debe completar **porque únicamente él conoce el desenlace**. Hoy hay **un solo caso declarado** —`generations`—. Cualquier segundo caso requiere una decisión nueva, no esta regla.
+
+   > **`documents` dejó de ser un caso abierto (2026-09-03).** La versión anterior lo listaba como el segundo, porque `uploaded_by_operator_id` es NOT NULL y el worker toma trabajo con `FOR UPDATE SKIP LOCKED` —patrón que presupone un productor distinto del consumidor— y no estaba decidido quién recibía la subida. **Con el núcleo recibiéndola, no hay excepción:** Go crea la fila completa, incluido el operador que subió, y el `worker` sólo actualiza `status`, `locked_at` y `error_message`. Es una columna, un servicio, sin traspaso de propiedad — el productor nunca deja campos que el consumidor deba completar por conocer algo que él no conoce.
+   >
+   > **Lo que sigue pendiente de H-31 no es esta regla, son dos atributos.** `documents` no tiene **dónde** están los bytes: registra `filename`, `mime_type`, `size_bytes` y `checksum`, y ninguna dirección. Al firmarse este ADR hay que agregar al catálogo `documents.object_key` (varchar — la clave en el almacén de objetos, que es lo único con que el `worker` puede bajar el archivo) y `documents.locked_at` (timestamptz nullable — para el `SKIP LOCKED`). **Son dos atributos, no una entidad: los contadores del modelo no se mueven.**
 3. **Ninguna transacción cruza el borde.** No hay transacciones distribuidas. Cuando el cerebro escribe evidencia y el envío falla después, el estado se representa en `generations.status` **y en `messages.status`**, que son cosas distintas: el primero describe el **filtrado** (¿pasó sin revisión humana, la revisó alguien, la frenó el sistema?), el segundo la **entrega**. Una generación `auto_sent` enlazada a un mensaje `failed` es una fila coherente.
 
    > **Corrección del Paso 8.** La versión anterior decía que `generations.status` *"ya tiene los valores necesarios"*. **No los tenía:** faltaba `blocked`, para la respuesta que frena el guardrail de salida de [ADR-0016](0016-rastro-del-pipeline-de-respuesta.md). Es **H-26**, y el valor se agregó al catálogo.
 
 **(j) Nombre de la arquitectura**, para el informe y la defensa:
 
-> SONIA adopta una **arquitectura basada en servicios** (*service-based architecture*): dos servicios de grano grueso separados **por ecosistema tecnológico, no por dominio ni por escala**, sobre una única base PostgreSQL compartida, con los tres módulos de la sección 8.5 como *bounded contexts* internos. Cada servicio se organiza **por capas dentro de cada contexto**, con puertos y adaptadores en las tres fronteras que el propio anteproyecto anticipa reemplazar: proveedor de LLM (8.4), base vectorial (8.4) y canal de WhatsApp (Twilio Sandbox → API oficial de Meta, Anexo D).
+> SONIA adopta una **arquitectura basada en servicios** (*service-based architecture*): dos servicios de grano grueso separados **por ecosistema tecnológico, no por dominio ni por escala**, sobre una única base PostgreSQL compartida, con los tres módulos de la sección 8.5 como *bounded contexts* internos. Cada servicio se organiza **por capas dentro de cada contexto**, con puertos y adaptadores en las cuatro fronteras donde el reemplazo está a la vista: proveedor de LLM (8.4), base vectorial (8.4), canal de WhatsApp (Twilio Sandbox → API oficial de Meta, Anexo D) y almacén de objetos (proveedor sin decidir).
 
 Dos nombres que **no** deben usarse:
 
@@ -177,6 +187,31 @@ Dos nombres que **no** deben usarse:
 - **"Monolito distribuido"** — es un término **peyorativo**: nombra el antipatrón de microservicios que fallaron en ser independientes. La diferencia con lo nuestro es que acá está **elegido a propósito, con el motivo escrito y con condición de reversión documentada** (§4). Conviene tener esa respuesta preparada.
 
 > *"Arquitectura basada en servicios" es una categoría con nombre propio en la taxonomía de Richards & Ford (`Fundamentals of Software Architecture`), y su rasgo definitorio es exactamente la base compartida. **Verificar la cita antes de incorporarla al informe:** la bibliografía del anteproyecto todavía no tiene ninguna referencia de arquitectura.*
+
+**(k) Autenticación entre los dos servicios** — *agregado el 2026-09-03*.
+
+Separar en dos desplegables crea una superficie que el monolito no tenía: **el cerebro escucha en un puerto**. Y ese proceso tiene la clave del proveedor de LLM, puede renderizar el prompt completo de cualquier agente (F03 —voz de marca y reglas incluidas, que son propiedad intelectual de la cooperante) y **escribe las tablas de evidencia de las que se leen OE1 a OE7**. El §(i) resuelve que dos servicios no se pisen; no dice nada sobre un tercero.
+
+**La decisión: secreto compartido en cabecera *más* aislamiento de red. Las dos cosas.**
+
+| Capa | Qué hace |
+|---|---|
+| **Aislamiento de red** | El puerto del cerebro **no se publica al host** en `docker-compose.yml`; sólo es alcanzable desde la red interna del compose |
+| **Secreto compartido** | El núcleo manda `X-Internal-Token` en cada petición; una dependencia de FastAPI lo valida y rechaza con `401`. Viene de `BRAIN_INTERNAL_TOKEN` y **se valida al arrancar** (regla 9): si falta, ninguno de los dos procesos levanta |
+
+**Es unidireccional, y eso es lo que la mantiene simple.** El núcleo llama al cerebro; el cerebro **devuelve** y nunca llama de vuelta —es la regla (i)—, así que no hace falta que el cerebro se autentique ante nadie. Y **la identidad del operador no viaja**: el núcleo autentica a la persona, llama al cerebro como sí mismo y registra en `audit_logs`, que es su tabla. El cerebro no necesita saber quién previsualizó.
+
+| Alternativa | Motivo del descarte |
+|---|---|
+| **Sólo aislamiento de red** | Es gratis y hace la mayor parte del trabajo, pero depende de que nadie publique el puerto por error. Para OE7 —despliegue en producción real— eso es una promesa, no un control |
+| **mTLS** | Certificados, renovación y distribución para dos procesos de una PYME. Costo desproporcionado |
+| **JWT firmado por el núcleo** | Su ventaja es propagar identidad con expiración. **Acá no hay identidad que propagar**, así que se paga gestión de claves y sincronía de reloj a cambio de nada |
+
+**Consecuencia negativa, declarada:** rotar el secreto obliga a reiniciar los dos procesos. Con dos desplegables y una cooperante es aceptable; conviene decirlo antes de que aparezca como sorpresa.
+
+**Dónde se implementa:** `platform/httpclient/` y `brainclient/` lo agregan del lado Go; una dependencia en `brain/api/` lo valida del lado Python; `BRAIN_INTERNAL_TOKEN` entra en `.env.example` y en las dos configuraciones.
+
+> **Queda abierto —y es más fuerte que esto—: el rol de Postgres del cerebro.** Con el HTTP cerrado, el cerebro **sigue teniendo credenciales de base**, y la regla (i) —*"escribe sólo tablas de evidencia"*— es hoy una **convención**: nada impide que un `INSERT` en `messages` funcione. Un rol sin `INSERT`/`UPDATE` sobre `conversations`, `messages` y `contact_attributes` la convertiría en un `GRANT` de la migración 0001, y la base rechazaría la violación en vez de que se descubra con datos productivos encima. Es la misma lógica por la que el instrumental de evaluación está separado: **una propiedad de diseño vale más cuando la garantiza la estructura que cuando la garantiza la disciplina.** Requiere decisión del equipo.
 
 ## 3. Justificación
 
@@ -225,7 +260,7 @@ Si hacia el final de la Fase 2 el equipo está gastando más tiempo en la fronte
 |---|---|
 | **Un servicio por módulo (tres o cuatro procesos)** | Es la lectura literal de 8.5 y la más costosa. Los módulos no tienen volumen independiente —cada turno los recorre todos en orden—, así que la separación agrega latencia, despliegues y depuración distribuida sin comprar escalado independiente. Además `conversations` y `messages` los escriben los tres: la frontera de proceso no coincide con la frontera del dato. |
 | **Monolito único en Python** | **Es la alternativa más fuerte y conviene decirlo.** Sería lo más rápido de construir, con una sola cadena de herramientas y un solo reporte de cobertura, y la carga real —una PYME cooperante con decenas de conversaciones diarias— la resuelve `asyncio` sin dificultad. Se descarta porque el timer adaptativo de F10 es genuinamente más limpio con goroutines y canales, y porque el equipo declara interés en sostener el uso de Go. **Pero ése es el motivo real y hay que declararlo así:** la justificación de 8.4 —*"concurrencia masiva de webhooks y WebSockets"*— **no está respaldada por el alcance de 7.3**, que es una cooperante propietaria de departamentos en alquiler. Sostener un argumento de escala que el alcance no respalda es exactamente lo que un tribunal pregunta. |
-| **Monolito único en Go** | Renuncia al ecosistema de LangChain, los SDK de LLM, los tokenizadores y las bibliotecas de evaluación, que es donde vive el aporte de la tesina. Reimplementarlo en Go es trabajo sin valor académico. |
+| **Monolito único en Go** | Renuncia a los SDK de proveedores, los tokenizadores y las bibliotecas de evaluación, que es donde vive el aporte de la tesina. **No se nombra LangChain a propósito:** el equipo decidió no usarlo en el camino caliente —sus *templates* y *chains* son justamente la capa de la que este proyecto es dueño (punto (h) y `generation_components`)—, así que sostener el argumento sobre él sería falso. Reimplementarlo en Go es trabajo sin valor académico. |
 | **Base de datos por servicio** | Contradice 8.5 —*"almacena todos los estados del sistema"*— y rompe la cadena de trazabilidad de OE2, convirtiéndola en consistencia eventual entre procesos. Es la única alternativa que este ADR descarta sin matices. |
 | **Cola de mensajes entre núcleo y cerebro** | 7.3 declara el protocolo MQTT explícitamente fuera de alcance. Y una cola cambiaría el turno de sincrónico a asincrónico, lo que contradice la expectativa de respuesta casi inmediata de WhatsApp. |
 | **El trabajador de ingesta como cuarto artefacto propio** | Comparte el 100 % del código de fragmentación y embeddings con el cerebro. Un artefacto aparte duplicaría dependencias, imagen y despliegue **sin separar nada que difiera de verdad**. Un segundo punto de entrada sobre el mismo código da el proceso separado sin el costo. |
@@ -244,40 +279,40 @@ Derivado del Anexo A del anteproyecto, requisito por requisito. **Éste es el ma
 | F01 | Configuración modular del agente | ABM | Go | `agents/` |
 | F02 | Tres modos de operación | ABM + estado | Go | `agents/` (defecto) · `inbox/` (por conversación) |
 | F03 | Previsualización del prompt | Render | **Python** | `prompts/` — invocado por el núcleo, ver (h) |
-| F04 | Reescritura adaptativa | Inferencia | **Python** | `cognition/` |
-| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `cognition/` → `inbox/` |
-| F06 | Pipeline RAG | Inferencia + **lote** | **Python** | `knowledge/` + `worker/` |
-| F07 | Acceso a respuestas rápidas por la IA | Inferencia | **Python** | `cognition/` — lee tabla del núcleo |
-| F08 | Visualización de plantillas Meta | **Partido** | Go sincroniza · Python sugiere | `channel/` + `cognition/` |
-| F09 | Respuestas rápidas configurables | ABM | Go | `operation/` |
+| F04 | Reescritura adaptativa | Inferencia | **Python** | `prompts/` — rewriter.py |
+| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `pipeline/runner.py` → `inbox/` |
+| F06 | Pipeline RAG | Inferencia + **lote** | **Python** | `documents/` (ABM, Go) · `knowledge/` + `worker/` (Python) |
+| F07 | Acceso a respuestas rápidas por la IA | Inferencia | **Python** | `pipeline/generation.py` — lee tabla del núcleo |
+| F08 | Visualización de plantillas Meta | **Partido** | Go sincroniza · Python sugiere | `meta_templates/` + `pipeline/` |
+| F09 | Respuestas rápidas configurables | ABM | Go | `quick_replies/` |
 | F10 | Timer adaptativo | **Concurrencia con estado** | Go | `turn/` |
-| F11 | Chunking dinámico | Inferencia | **Python** | `cognition/` |
-| F12 | Clasificador de transferencia | Inferencia | **Python** | `cognition/` |
-| F13 | Puntaje de conversaciones | ABM | Go | `operation/` |
-| F14 | Registro de ventas | ABM | Go | `operation/` |
-| F15 | Trazabilidad de origen | ABM | Go | `operation/` |
+| F11 | Chunking dinámico | Inferencia | **Python** | `classifiers/intent.py` |
+| F12 | Clasificador de transferencia | Inferencia | **Python** | `classifiers/transfer.py` · `frustration.py` |
+| F13 | Puntaje de conversaciones | ABM | Go | `inbox/` |
+| F14 | Registro de ventas | ABM | Go | `sales/` |
+| F15 | Trazabilidad de origen | ABM | Go | `contacts/` |
 | F16 | Gráficas y métricas de vendedores | Consulta agregada | Go | `reporting/` |
 | F17 | Gestión de agentes IA | ABM | Go | `agents/` |
-| F18 | Gestión de usuarios y roles | ABM | Go | `operation/` |
-| F19 | Gestión de etiquetas | ABM | Go | `operation/` |
-| F20 | Gestión de webhooks | IO externo | Go | `channel/` |
-| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `channel/` (recepción) · `inbox/` (fan-out) |
+| F18 | Gestión de usuarios y roles | ABM | Go | `operators/` |
+| F19 | Gestión de etiquetas | ABM | Go | `labels/` |
+| F20 | Gestión de webhooks | IO externo | Go | `whatsapp/` |
+| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `whatsapp/` (recepción) · `inbox/` (fan-out) |
 | F22 | Vista centralizada de chats | Consulta caliente | Go | `inbox/` |
 | F23 | Filtros de bandeja | Consulta caliente | Go | `inbox/` |
-| F24 | Etiquetas por conversación | ABM | Go | `operation/` |
+| F24 | Etiquetas por conversación | ABM | Go | `inbox/` |
 | F25 | Destacar con estrella | ABM | Go | `inbox/` |
 | F26 | Transferencia entre operadores | ABM | Go | `inbox/` |
 | F27 | Control de modo por conversación | ABM | Go | `inbox/` |
-| F28 | Recordatorios | ABM + disparo | Go | `operation/` |
+| F28 | Recordatorios | ABM + disparo | Go | `reminders/` |
 | F29 | Restricción: sin borrado de mensajes | **Documental** | — | — |
-| F30 | ABM de contactos | ABM | Go | `operation/` |
-| F31 | Extracción automática de datos | **Inferencia** | **Python** | `cognition/` |
-| F32 | Historial unificado por contacto | Consulta | Go | `operation/` |
-| F33 | Segmentación por etiquetas | Consulta | Go | `operation/` |
+| F30 | ABM de contactos | ABM | Go | `contacts/` |
+| F31 | Extracción automática de datos | **Partido** | Python infiere · **Go persiste** | `classifiers/extraction.py` → `contacts/` persiste |
+| F32 | Historial unificado por contacto | Consulta | Go | `reporting/` |
+| F33 | Segmentación por etiquetas | Consulta | Go | `contacts/` |
 | F34 | Métricas de volumen | Consulta agregada | Go | `reporting/` |
 | F35 | Métricas por vendedor | Consulta agregada | Go | `reporting/` |
-| F36 | Métricas del agente IA | **Partido** | Python produce el juicio de tono · Go agrega | `eval/` → `reporting/` |
-| F37 | Panel de plantillas Meta | **Partido** | Go sincroniza y sirve · Python sugiere | `channel/` + `cognition/` |
+| F36 | Métricas del agente IA | **Partido** | Python produce el juicio de tono · Go agrega | `test/evals/` → `reporting/` |
+| F37 | Panel de plantillas Meta | **Partido** | Go sincroniza y sirve · Python sugiere | `meta_templates/` + `pipeline/` |
 | F38 | Gráficas temporales | Consulta agregada | Go | `reporting/` |
 | F39 | Restricción: sin campañas Meta | **Documental** | — | — |
 
@@ -297,36 +332,51 @@ El corte de primer nivel es el ***bounded context*; las capas van adentro de cad
 
 ```
 sonia/                              ← un solo repositorio
-├── core/                           ← DESPLEGABLE 1 · Go
-│   ├── cmd/core/main.go
-│   ├── internal/
-│   │   ├── channel/                Gateway · F20, F21(rx), F08/F37(sincronización), F29
-│   │   ├── turn/                   F10 · time.Timer + canales
-│   │   ├── agents/                 F01, F02, F17 · ABM de la identidad del agente
-│   │   ├── inbox/                  F21(fan-out), F05(vista), F22–F23, F25–F27
-│   │   ├── operation/              F09, F13–F15, F18, F19, F24, F28, F30, F32, F33
-│   │   ├── reporting/              F16, F34–F36(lectura), F38 · SÓLO LECTURA
-│   │   ├── brain/                  puerto de salida hacia el cerebro
-│   │   └── platform/               db, auth, config, tx, logging
-│   └── migrations/                 ← DUEÑO ÚNICO del esquema, regla (i.1)
-├── brain/                          ← DESPLEGABLE 2 · Python · dos modos de arranque
-│   └── src/sonia_brain/
-│       ├── api/                    FastAPI · contrato interno (OpenAPI)
-│       ├── prompts/                F03, F04 · EL ENSAMBLADOR, única implementación
-│       ├── cognition/              F07, F08, F11, F12, F31 · pipeline de ADR-0016
-│       ├── knowledge/              F06 · búsqueda semántica
-│       ├── worker/                 F06 · ingesta — segundo entrypoint, mismo código
-│       └── adapters/               llm/ · vectorstore/ — puertos de (j)
-├── web/                            ← DESPLEGABLE 3 · A DEFINIR (8.4)
-└── eval/                           ← Python · OFFLINE, no se despliega · OE2–OE4, OE6, OE7
+├── contracts/                      enums.yaml (las 22) · brain.openapi.json — fuente única
+├── deploy/                         Dockerfiles + compose · context: .. para ver contracts/
+└── src/
+    ├── core/                       ← DESPLEGABLE 1 · Go
+    │   ├── main.go
+    │   ├── internal/
+    │   │   ├── whatsapp/           Gateway · F20, F21(rx), F29
+    │   │   ├── meta_templates/     F08, F37 (sincronización y panel)
+    │   │   ├── turn/               F10 · time.Timer + canales · ABRE LA TRANSACCIÓN
+    │   │   ├── conversations/      DUEÑO de conversations y messages · el agregado de §1.1
+    │   │   ├── agents/             F01, F02, F17 · ABM de la identidad del agente
+    │   │   ├── documents/          F06 (ABM y carga) · knowledge_bases + documents
+    │   │   ├── inbox/              F21(fan-out), F05(vista), F13, F22–F27
+    │   │   ├── contacts/           F15, F30, F31(persistencia), F33
+    │   │   ├── labels/             F19        ├── sales/     F14
+    │   │   ├── reminders/          F28        ├── operators/ F18
+    │   │   ├── quick_replies/      F09
+    │   │   ├── reporting/          F16, F32, F34–F36(lectura), F38 · SÓLO LECTURA
+    │   │   ├── brainclient/        puerto de salida hacia el cerebro
+    │   │   └── platform/           http · httpclient · storage · db (pool + Executor) · id · config · logging
+    │   ├── migrations/             ← DUEÑO ÚNICO del esquema, regla (i.1) · DDL + invariantes
+    │   └── seeds/                  datos de demo, idempotentes, nunca en producción
+    ├── brain/                      ← DESPLEGABLE 2 · Python · dos modos de arranque
+    │   ├── api/                    FastAPI · contrato interno (OpenAPI)
+    │   ├── pipeline/               un módulo por valor de PipelineStep (ADR-0016) · F05, F07
+    │   ├── prompts/                F03, F04 · EL ENSAMBLADOR, única implementación
+    │   ├── classifiers/            F11, F12, F31 — F31 **devuelve**, no escribe
+    │   ├── knowledge/              F06 · búsqueda semántica
+    │   ├── worker/                 F06 · ingesta — segundo entrypoint, mismo código
+    │   ├── adapters/               llm/ · vectorstore/ · storage/ — puertos de (j)
+    │   ├── rules/                  prompts internos versionados, no código
+    │   └── infra/                  config · db · logging
+    ├── frontend/                   ← DESPLEGABLE 3 · A DEFINIR (8.4)
+    └── test/                       karate/ · evals/ (OFFLINE, no se despliega) · datasets/
 ```
 
-**Puertos y adaptadores sólo en tres fronteras**, porque son las tres donde el propio anteproyecto dice que el reemplazo va a ocurrir — no es abstracción especulativa, está en el cronograma:
+> **Nota (2026-09-03).** Este árbol reemplaza al de la versión del 22/08, que usaba `channel/`, `operation/`, `cognition/` y `eval/`. El renombre no fue cosmético: al chequearlo contra la tabla del §6 aparecieron **cinco requisitos sin paquete** —F05 (lado Python), F06 (el ABM), F07, F08/F37 y F31—, todos resueltos arriba. Es el mismo patrón del §0: *recorrer requisitos y dibujar árboles contestan preguntas distintas.*
+
+**Puertos y adaptadores sólo en cuatro fronteras**, porque son las cuatro donde el reemplazo está a la vista — no es abstracción especulativa:
 
 | Frontera | Evidencia textual |
 |---|---|
 | **Proveedor de LLM** | 8.4: *"GPT-4o / Claude / Cohere / Otros"*. OE2 exige compararlos (pendiente abierto) |
 | **Base vectorial** | 8.4: *"pgvector o Qdrant"*. [ADR-0010](0010-qdrant-como-base-vectorial.md) eligió Qdrant; el puerto protege la reindexación si cambia el modelo de embeddings |
 | **Canal de WhatsApp** | 8.4: *"Twilio Sandbox para desarrollo"* → Anexo D, Fase 4: API oficial de Meta. **El cambio está agendado** |
+| **Almacén de objetos** | F06 admite documentos de 100 MB y los bytes no van en la fila. **El proveedor está sin decidir** (Supabase, DigitalOcean, otro), así que el puerto no es especulativo: es la incertidumbre misma. Go escribe al subir, el `worker` lee al ingerir; `documents.object_key` guarda la clave (H-31) |
 
 En el resto —ABM de contactos, etiquetas, recordatorios— **un repositorio alcanza**. No conviene inventar puertos donde no hay dos implementaciones a la vista.

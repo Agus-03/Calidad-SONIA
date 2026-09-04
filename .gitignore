@@ -3,3 +3,18 @@
 
 # Help Files
 z_helps/
+
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+
+# Go
+/src/core/bin/
+
+# Build
+/deploy/.docker/
+
+# Unnecessary right now
+contracts/

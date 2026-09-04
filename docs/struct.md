@@ -3,8 +3,8 @@
 | Campo | Valor |
 |---|---|
 | **Qué es** | El árbol de archivos completo, con el propósito de cada paquete y **de qué tablas es dueño** |
-| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../../CLAUDE.md), que es la fuente. **Enmienda a [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1** — el ADR sigue en Propuesta y su árbol es el anterior |
-| **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](ESTADO.md) |
+| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Enmienda a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1** — el ADR sigue en Propuesta y su árbol es el anterior |
+| **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `service` → `repository` → `model`) |
 | **Última revisión** | 2026-09-03 |
 
@@ -190,70 +190,3 @@ sonia/
 │
 └── z_helps/                            material de trabajo · sin peso oficial · ignorado
 ```
-
-Los seis paquetes de una línea —`labels/`, `meta_templates/`, `operators/`, `quick_replies/`, `reminders/`, `sales/`— tienen los mismos cuatro archivos: `controller.go`, `service.go`, `repository.go` y `model.go`.
-
-Los tests de Go **no** tienen carpeta: van pegados al código como `*_test.go`.
-
----
-
-## 2. Dueño de cada tabla
-
-La forma operativa de la regla 1. Las **37 entidades** del catálogo, con el paquete que las escribe, en orden alfabético. Un paquete que no aparece acá no escribe nada.
-
-### Núcleo — Go
-
-| Paquete | Tablas de las que es dueño |
-|---|---|
-| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `transfer_policies` |
-| `contacts/` | `contacts` · `contact_attributes` · `contact_labels` |
-| `conversations/` | `conversations` · `messages` |
-| `documents/` | `documents` · `knowledge_bases` |
-| `inbox/` | `conversation_assignments` · `conversation_labels` · `internal_notes` |
-| `labels/` | `labels` |
-| `meta_templates/` | `meta_templates` |
-| `migrations/` | `accounts` — fila única, es un invariante del esquema y no lo escribe ningún paquete |
-| `operators/` | `operators` |
-| `platform/http/` | `audit_logs` — transversal, lo escribe un middleware |
-| `quick_replies/` | `quick_replies` |
-| `reminders/` | `reminders` |
-| `reporting/` | **ninguna** |
-| `sales/` | `sales` |
-| `turn/` | `message_batches` · `transfer_events` |
-| `whatsapp/` | `inboxes` · `webhook_events` |
-
-### Cerebro — Python
-
-| Paquete | Tablas de las que es dueño |
-|---|---|
-| `classifiers/` | `detected_intents` · `signal_evaluations` |
-| `knowledge/` | `retrieval_logs` |
-| `pipeline/` | `generations` · `generation_components` · `pipeline_steps` |
-| `prompts/` | `conversation_contexts` · `conversation_context_versions` |
-| `worker/` | `document_chunks` |
-
-### Instrumental offline — `src/test/evals/`
-
-| Paquete | Tablas de las que es dueño |
-|---|---|
-| `evals/` | `conversation_annotations` · `tone_evaluations` |
-
-**Su único escritor es un proceso que no se despliega**, y eso es deliberado: garantiza que el sistema evaluado no pueda escribir su propia nota.
-
-### Las dos excepciones
-
-1. **`generations` la escriben los dos servicios.** El cerebro la inserta; el núcleo completa `message_id` y el desenlace de la revisión de F02. La regla que lo ordena: *el cerebro es dueño de la fila hasta que responde; desde ahí es del núcleo.*
-2. **`conversations` y `messages` las escriben tres paquetes** —`turn/`, `inbox/` y `whatsapp/`— pero **ninguno con SQL propio**: todos pasan por el repositorio de `conversations/`, dentro de la transacción que abre quien conduce.
-
----
-
-## 3. Estado de avance
-
-15 de las 37 tablas y 3 de los 16 paquetes del núcleo. Verificado el 2026-09-03: **Go compila y `go vet` está limpio; 44 tests del cerebro pasan, con 67 % de cobertura.** Ninguna línea de SQL se ejecutó todavía — las migraciones no se aplicaron a ningún Postgres, y por eso `agents/` mide 12,1 % y `prompts/repository.py` 37 %.
-
-| | Existe hoy |
-|---|---|
-| **Migraciones** | `0001_foundations` · `0002_agents` · `0003_conversations` · `0004_turn_evidence` — 15 tablas |
-| **Paquetes del núcleo** | `agents/` (completo, con tests) · `brainclient/` · `inbox/` (sólo lectura: la vista de F05) · `operators/` (sólo repositorio) · `platform/` sin `httpclient/` ni `storage/` |
-| **Paquetes del cerebro** | `adapters/llm/` (sólo `anthropic`) · `api/` (sólo la ruta de prompts) · `infra/` · `prompts/` (completo) · `tests/` |
-| **Sin empezar** | `Makefile` · `ci.yml` · `contracts/brain.openapi.json` · `deploy/` · `frontend/` · `seeds/` · `test/` |

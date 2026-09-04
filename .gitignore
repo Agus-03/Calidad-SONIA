@@ -3,3 +3,16 @@
 
 # Help Files
 z_helps/
+
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+
+# Go
+# OJO: go.mod y go.sum SÍ se commitean — sin ellos no hay build reproducible.
+/src/core/bin/
+
+# Build
+/deploy/.docker/

@@ -14,7 +14,7 @@ func TestParseLevelFallsBackToInfo(t *testing.T) {
 	}{
 		{name: "debug is the noisiest level", level: "debug", want: slog.LevelDebug},
 		{name: "info is the default of the four", level: "info", want: slog.LevelInfo},
-		{name: "warn is what a 4xx logs", level: "warn", want: slog.LevelWarn},
+		{name: "warning is what a 4xx logs", level: "warning", want: slog.LevelWarn},
 		{name: "error is what a 5xx logs", level: "error", want: slog.LevelError},
 		{name: "an unknown level logs at info instead of nothing", level: "verbose", want: slog.LevelInfo},
 		{name: "an empty level logs at info instead of nothing", level: "", want: slog.LevelInfo},

@@ -20,7 +20,7 @@ func parseLevel(level string) slog.Level {
 	switch level {
 	case "debug":
 		return slog.LevelDebug
-	case "warn":
+	case "warning":
 		return slog.LevelWarn
 	case "error":
 		return slog.LevelError

@@ -72,9 +72,9 @@ func Load() (Config, error) {
 	}
 
 	switch cfg.LogLevel {
-	case "debug", "info", "warn", "error":
+	case "debug", "info", "warning", "error":
 	default:
-		problems = append(problems, fmt.Sprintf("LOG_LEVEL=%q is not one of debug, info, warn, error", cfg.LogLevel))
+		problems = append(problems, fmt.Sprintf("LOG_LEVEL=%q is not one of debug, info, warning, error", cfg.LogLevel))
 	}
 
 	if len(problems) > 0 {

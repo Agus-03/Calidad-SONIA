@@ -15,3 +15,8 @@ func New() uuid.UUID {
 	}
 	return v
 }
+
+// Parse validates an identifier that comes from outside before it reaches a query.
+func Parse(s string) (uuid.UUID, error) {
+	return uuid.Parse(s)
+}

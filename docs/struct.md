@@ -5,8 +5,8 @@
 | **Qué es** | El árbol de archivos completo, con el propósito de cada paquete y **de qué tablas es dueño** |
 | **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Enmienda a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1** — el ADR sigue en Propuesta y su árbol es el anterior |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
-| **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-03 |
+| **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
+| **Última revisión** | 2026-09-04 |
 
 ---
 
@@ -102,19 +102,23 @@ sonia/
 │   │
 │   ├── core/                           ── DESPLEGABLE 1 · Go · gin ──
 │   │   ├── go.mod   ·   go.sum
-│   │   ├── main.go                     carga y valida la config, arma e inyecta todo
+│   │   ├── main.go                     sólo main(): la señal y el código de salida
 │   │   │
 │   │   ├── internal/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
-│   │   │   │   └── controller · service · repository · model
+│   │   │   │   └── controller · routes · service · repository · model
+│   │   │   │
+│   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
+│   │   │   │   ├── app.go              Run(ctx): config, pool, router, apagado ordenado
+│   │   │   │   └── deps.go             el grafo de objetos · lo único que crece por contexto
 │   │   │   │
 │   │   │   ├── brainclient/            puerto de salida hacia el cerebro
 │   │   │   │   ├── client.go           agrega X-Internal-Token
 │   │   │   │   └── contract.go
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
-│   │   │   │   └── controller · service · repository · model
+│   │   │   │   └── controller · routes · service · repository · model
 │   │   │   │                           persiste también los atributos de F31
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
@@ -124,12 +128,14 @@ sonia/
 │   │   │   │
 │   │   │   ├── documents/              bases de conocimiento y carga · F06 (ABM)
 │   │   │   │   ├── controller.go       recibe el upload de hasta 100 MB
+│   │   │   │   ├── routes.go
 │   │   │   │   ├── service.go          bytes a platform/storage, fila en pending
 │   │   │   │   ├── repository.go
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja y tiempo real · F05, F13, F21–F27
 │   │   │   │   ├── controller.go
+│   │   │   │   ├── routes.go           método · path · roles · handler, una fila cada uno
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
 │   │   │   │   ├── service.go
 │   │   │   │   ├── repository.go
@@ -139,10 +145,10 @@ sonia/
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
 │   │   │   ├── operators/              usuarios y roles · F18
 │   │   │   │
-│   │   │   ├── platform/               lo transversal · única excepción declarada
+│   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
-│   │   │   │   ├── http/               router · middleware · auth · errors
+│   │   │   │   ├── http/               router · route · middleware · auth · errors
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7
 │   │   │   │   ├── logging/

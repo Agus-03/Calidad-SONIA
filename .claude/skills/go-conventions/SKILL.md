@@ -13,7 +13,7 @@ Cada regla de abajo está en el código. Si una deja de ser cierta, es que el id
 
 ## 1. La forma de un paquete
 
-- Un paquete de `internal/` es un *bounded context* y se reconoce por las tablas que escribe. Cuatro archivos planos: `model.go` (structs con tags `json`), `repository.go` (SQL), `service.go` (reglas), `controller.go` (HTTP). Sin subcarpetas de capa.
+- Un paquete de `internal/` es un *bounded context* y se reconoce por las tablas que escribe. Cinco archivos planos: `model.go` (structs con tags `json`), `repository.go` (SQL), `service.go` (reglas), `controller.go` (HTTP) y `routes.go` (la tabla de rutas, sección 4). Sin subcarpetas de capa.
 - El comentario `// Package x …` va en **un solo archivo** del paquete —el que mejor lo define— y dice para qué existe, no qué contiene: `// Package inbox serves only the F05 slice: which components influenced a response.`
 - `platform/` es la excepción declarada y guarda lo transversal: `http/`, `db/`, `config/`, `logging/`, `id/`.
 - Cuando un archivo pasa las ~400 líneas se parte en varios archivos del mismo paquete, no en una carpeta.
@@ -42,8 +42,10 @@ Cada regla de abajo está en el código. Si una deja de ser cierta, es que el id
 - Los errores de API se construyen con `BadRequest`/`Unauthorized`/`Forbidden`/`NotFound`/`Conflict`/`Unavailable`/`Internal`, con un `code` estable en `snake_case` que el frontend puede switchear. La causa técnica va con `WithCause(err)`: termina en el log, nunca en el body.
 - El contexto del request es `ctx.Request.Context()`. `context.Background()` en un handler es un error.
 - Un identificador que llega por la URL se parsea con `uuid.Parse` y su fallo es un 400 con código propio (`invalid_generation_id`), no un 500.
-- El rol se exige en `Register` con `RequireRole(...)`, enumerando los tres roles incluso cuando entran todos: explícito, nunca por omisión.
-- Cada contexto monta sus rutas implementando `Register(g *gin.RouterGroup)`; `main.go` lo pasa en `Controllers`. `/health` queda fuera de autenticación y todo lo demás bajo `/api/v1`.
+- **Las rutas son datos, no efectos.** Cada contexto declara las suyas en `routes.go`, implementando `Routes() []soniahttp.Route`; `internal/app/deps.go` lo pasa en `Controllers` y **sólo `platform/http` toca gin**. `/health` queda fuera de autenticación y todo lo demás bajo `/api/v1`.
+- Una fila lleva los cuatro datos que son una sola decisión: `Method`, `Path`, `Roles` y `Handler`. Van juntos porque separarlos deja publicar un endpoint sin protección sin que se note; una fila sin `Roles` **hace entrar en pánico al router al arrancar**, que es el único momento en que ese error es barato.
+- Los roles se enumeran incluso cuando entran los tres: explícito, nunca por omisión. El prefijo del contexto se escribe una vez en un `const routeBase` del paquete.
+- El handler que va en la tabla **sigue siendo privado** (`c.create`): viaja como valor. Que las rutas se declaren afuera del `controller.go` no es motivo para exportar nada.
 - Middleware transversal y en este orden: `RequestID`, `AccessLog`, `Recovery`. El `X-Request-Id` vuelve en la respuesta y aparece en cada línea de log.
 
 ## 5. Acceso a datos (pgx)

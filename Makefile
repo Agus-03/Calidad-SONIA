@@ -40,9 +40,11 @@ build:
 # Each service is tested with its own tooling, because ADR-0028 measures coverage per service and never aggregates.
 test: test-core test-brain
 
+# Go carries no threshold of its own, so the 80% of ADR-0028 is enforced here and not in the workflow.
 test-core:
-	cd src/core && go test ./...
+	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3; if ($$3 + 0 < 80) { print "below the 80% of ADR-0028"; exit 1 } }'
 
+# The threshold is in pyproject.toml, so running pytest by hand enforces the same number the CI does.
 test-brain:
 	cd src/brain && poetry run pytest
 

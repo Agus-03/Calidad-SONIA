@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Qué es** | El árbol de archivos completo, con el propósito de cada paquete y **de qué tablas es dueño** |
-| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Enmienda a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1** — el ADR sigue en Propuesta y su árbol es el anterior |
+| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
 | **Última revisión** | 2026-09-04 |
@@ -27,7 +27,8 @@ sonia/
 │
 ├── contracts/                          fuente única compartida por los dos servicios
 │   ├── brain.openapi.json              contrato del cerebro, generado por FastAPI
-│   └── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   ├── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   └── generate.py                     las baja a Go y a Python · nadie edita lo generado
 │
 ├── deploy/                             context: .. para que los builds vean contracts/
 │   ├── brain.Dockerfile
@@ -71,7 +72,7 @@ sonia/
 │   │   │   ├── intent.py
 │   │   │   └── transfer.py
 │   │   │
-│   │   ├── infra/                      config · db · ids · logging · rules
+│   │   ├── infra/                      config · db · enums (GENERADO) · ids · logging · rules
 │   │   ├── knowledge/                  F06 · chunking · embeddings · search
 │   │   │
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
@@ -148,6 +149,7 @@ sonia/
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
+│   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml
 │   │   │   │   ├── http/               router · route · middleware · auth · errors
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7

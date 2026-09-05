@@ -47,7 +47,7 @@ El resto (marcas de tiempo, enumeraciones, valores monetarios, política de borr
 
 ## Estructura del código
 
-Éste es el layout acordado. **Enmienda a [ADR-0017](docs/design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, que tiene el árbol anterior — el ADR sigue en Propuesta y hay que actualizarlo al firmarlo.
+Éste es el layout acordado. **Detalla a [ADR-0017](docs/design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05. Ante conflicto entre los dos, gana este archivo.
 
 **El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas están en [`docs/struct.md`](docs/struct.md).** Lo de acá abajo es el resumen; ante conflicto, gana este archivo y hay que corregir el otro.
 
@@ -58,7 +58,8 @@ sonia/
 ├── docs/                                  documentación
 ├── contracts/
 │   ├── brain.openapi.json                 contrato del cerebro, generado por FastAPI
-│   └── enums.yaml                         las 22 enumeraciones, fuente única para Go y Python
+│   ├── enums.yaml                         las 22 enumeraciones, fuente única para Go y Python
+│   └── generate.py                        baja enums.yaml a Go y a Python · `make contracts`
 ├── deploy/                                docker-compose.yml · core.Dockerfile · brain.Dockerfile
 ├── .github/workflows/ci.yml
 ├── .env.example   ·   Makefile
@@ -85,7 +86,7 @@ sonia/
     │   │   ├── quick_replies/             respuestas rápidas · F09
     │   │   ├── reporting/                 sólo lectura · F16, F32, F34–F38
     │   │   ├── brainclient/               cliente HTTP del cerebro
-    │   │   └── platform/                  http/ (router, middleware, auth) · httpclient/ · storage/ · db (pool + Executor) · id · config · logging
+    │   │   └── platform/                  http/ (router, middleware, auth) · httpclient/ · storage/ · db (pool + Executor) · id · config · logging · enums (generado)
     │   ├── migrations/                    único dueño del esquema · DDL + invariantes
     │   └── seeds/                         datos de demo, idempotentes, nunca en producción
     │
@@ -109,7 +110,7 @@ sonia/
     │   ├── rules/                         datos versionados, no código — ver regla 9
     │   │   ├── blocklist.yaml             guardrails.yaml · triage.yaml · grounding.yaml
     │   │   └── rewriter.yaml              frustration.yaml · intent.yaml · transfer.yaml · extraction.yaml
-    │   ├── infra/                         config.py (Settings) · db · logging
+    │   ├── infra/                         config.py (Settings) · db · logging · enums.py (generado)
     │   └── tests/
     │
     ├── frontend/                          frontend

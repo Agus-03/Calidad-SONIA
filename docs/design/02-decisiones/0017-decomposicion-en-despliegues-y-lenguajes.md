@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | **Propuesta** — requiere acuerdo de los tres autores antes de darse por firmada |
-| **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) |
+| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 |
+| **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) · **firmada 2026-09-05** |
 | **Etapa** | Diseño — antes del Paso 7 (nivel físico) |
 | **Resuelve** | La sección 8.4 deja el lenguaje sin decidir (*"Python o GO"*, *"Go o Python"*) y 8.5 no dice si los módulos son procesos separados |
 | **Requisitos afectados** | Transversal · F06 (ingesta) · F03 (previsualización) · OE1 · OE2 (cadena de trazabilidad) · OE5 (cobertura) |
@@ -36,7 +36,7 @@ El recorrido de requisitos revisó **qué** hace cada servicio. Dibujar la secue
 | **(i).2 declara el tercer escritor** | El instrumental de evaluación escribe `conversation_annotations` y `tone_evaluations`, y no figuraba. Una lista cerrada a la que le falta un escritor no es una lista: o las anotaciones de OE3/OE4 no tienen quién las escriba, o la regla no rige |
 | **(i).3 afirmaba algo falso** | Decía que `generations.status` *"ya tiene los valores necesarios"*. No los tenía: le faltaba `blocked`, para la respuesta que frena el guardrail de salida de ADR-0016. Es **H-26**, hallazgo del Paso 8 |
 
-> **Que las dos pasadas encontraran cosas distintas no es casualidad.** Recorrer requisitos contesta *"¿está todo asignado?"*; dibujar la secuencia contesta *"¿el orden de las escrituras es consistente?"*. Son preguntas distintas y ninguna cubre a la otra — la primera encontró un proceso que faltaba (la ingesta), la segunda encontró una regla que no se podía cumplir. **Conviene hacer las dos antes de firmar**, y ésa es la razón por la que este ADR sigue en Propuesta después de dos revisiones.
+> **Que las dos pasadas encontraran cosas distintas no es casualidad.** Recorrer requisitos contesta *"¿está todo asignado?"*; dibujar la secuencia contesta *"¿el orden de las escrituras es consistente?"*. Son preguntas distintas y ninguna cubre a la otra — la primera encontró un proceso que faltaba (la ingesta), la segunda encontró una regla que no se podía cumplir. **Conviene hacer las dos antes de firmar**, y ésa es la razón por la que este ADR estuvo en Propuesta durante dos revisiones, hasta firmarse el 2026-09-05.
 
 ---
 
@@ -332,12 +332,16 @@ El corte de primer nivel es el ***bounded context*; las capas van adentro de cad
 
 ```
 sonia/                              ← un solo repositorio
+├── .github/workflows/ci.yml        cobertura ≥ 80 % POR SERVICIO (ADR-0028)
+├── .dockerignore                   en la raíz: es la raíz del contexto de build
+├── .env.example   ·   Makefile     db-migrate · db-seed · db-reset · test
 ├── contracts/                      enums.yaml (las 22) · brain.openapi.json — fuente única
 ├── deploy/                         Dockerfiles + compose · context: .. para ver contracts/
 └── src/
     ├── core/                       ← DESPLEGABLE 1 · Go
-    │   ├── main.go
+    │   ├── main.go                 sólo main(): la señal y el código de salida
     │   ├── internal/
+    │   │   ├── app/                EL ARRANQUE · app.go (Run) · deps.go (el grafo de objetos)
     │   │   ├── whatsapp/           Gateway · F20, F21(rx), F29
     │   │   ├── meta_templates/     F08, F37 (sincronización y panel)
     │   │   ├── turn/               F10 · time.Timer + canales · ABRE LA TRANSACCIÓN
@@ -355,6 +359,8 @@ sonia/                              ← un solo repositorio
     │   ├── migrations/             ← DUEÑO ÚNICO del esquema, regla (i.1) · DDL + invariantes
     │   └── seeds/                  datos de demo, idempotentes, nunca en producción
     ├── brain/                      ← DESPLEGABLE 2 · Python · dos modos de arranque
+    │   ├── main.py                 un entrypoint, flag api|worker
+    │   ├── pyproject.toml          Poetry · absorbe la config de pytest · poetry.lock se commitea
     │   ├── api/                    FastAPI · contrato interno (OpenAPI)
     │   ├── pipeline/               un módulo por valor de PipelineStep (ADR-0016) · F05, F07
     │   ├── prompts/                F03, F04 · EL ENSAMBLADOR, única implementación
@@ -363,12 +369,15 @@ sonia/                              ← un solo repositorio
     │   ├── worker/                 F06 · ingesta — segundo entrypoint, mismo código
     │   ├── adapters/               llm/ · vectorstore/ · storage/ — puertos de (j)
     │   ├── rules/                  prompts internos versionados, no código
-    │   └── infra/                  config · db · logging
+    │   ├── infra/                  config · db · logging — NO `platform/`: taparía la stdlib
+    │   └── tests/                  unitarios · conftest.py · factories.py
     ├── frontend/                   ← DESPLEGABLE 3 · A DEFINIR (8.4)
     └── test/                       karate/ · evals/ (OFFLINE, no se despliega) · datasets/
 ```
 
 > **Nota (2026-09-03).** Este árbol reemplaza al de la versión del 22/08, que usaba `channel/`, `operation/`, `cognition/` y `eval/`. El renombre no fue cosmético: al chequearlo contra la tabla del §6 aparecieron **cinco requisitos sin paquete** —F05 (lado Python), F06 (el ABM), F07, F08/F37 y F31—, todos resueltos arriba. Es el mismo patrón del §0: *recorrer requisitos y dibujar árboles contestan preguntas distintas.*
+
+> **Nota (2026-09-05, al firmar).** Se incorporaron al árbol `core/internal/app/` —el arranque, segunda excepción declarada junto a `platform/`: está fuera de `package main` porque `package main` no se puede importar y un test que levante el proceso entero necesita importarlo—, `brain/tests/` y los archivos de raíz que la Fase 0 construye. **El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas viven en [`docs/struct.md`](../../struct.md)**, que detalla a éste; ante conflicto entre los dos gana `CLAUDE.md`.
 
 **Puertos y adaptadores sólo en cuatro fronteras**, porque son las cuatro donde el reemplazo está a la vista — no es abstracción especulativa:
 

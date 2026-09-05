@@ -12,6 +12,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/logging"
+	"github.com/mateo-velasquez/sonia/src/core/migrations"
 )
 
 // Run serves until ctx is cancelled: who cancels it is the caller's business, not this one's.
@@ -33,6 +34,14 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
+
+	applied, err := db.Migrate(ctx, pool, migrations.FS)
+	if err != nil {
+		return err
+	}
+	if len(applied) > 0 {
+		log.Info("migrations applied", slog.Int("count", len(applied)), slog.String("last", applied[len(applied)-1]))
+	}
 
 	deps := wire(cfg, pool, log)
 

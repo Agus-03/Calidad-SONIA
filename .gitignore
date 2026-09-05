@@ -18,3 +18,7 @@ __pycache__/
 
 # Unnecessary right now
 contracts/
+
+# Coverage
+.coverage
+htmlcov/

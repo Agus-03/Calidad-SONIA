@@ -1,118 +1,119 @@
 # SONIA - the 22 enumerations. Source of truth: DER/entidades.md; this is its transcription.
+# C07: in PostgreSQL these are varchar + CHECK and never a native ENUM, so sql_name names a column type and is not a type to create.
 
 version: 1
 
 enums:
   ContactType:
-    db_type: contact_type
+    sql_name: contact_type
     origin: Anexo C — contacts.type
     values: [client, provider, prospect]
 
   OperatorRole:
-    db_type: operator_role
+    sql_name: operator_role
     origin: Anexo B (C01)
     values: [operator, supervisor, admin]
 
   AgentMode:
-    db_type: agent_mode
+    sql_name: agent_mode
     origin: Anexo C; F02, F27
     # Quoted: YAML 1.1 reads off/on/yes/no as booleans.
     values: [autonomous, suggestion, "off"]
 
   ConversationStatus:
-    db_type: conversation_status
+    sql_name: conversation_status
     origin: Anexo C — conversations.status
     values: [active, waiting, resolved]
 
   MessageDirection:
-    db_type: message_direction
+    sql_name: message_direction
     origin: Anexo C — messages.direction
     values: [inbound, outbound]
 
   MessageContentType:
-    db_type: message_content_type
+    sql_name: message_content_type
     origin: Anexo C — messages.content_type
     values: [text, audio, image]
 
   SenderType:
-    db_type: sender_type
+    sql_name: sender_type
     origin: H-09
     values: [contact, ai_agent, operator, system]
 
   MessageStatus:
-    db_type: message_status
+    sql_name: message_status
     origin: F20 - channel status webhooks
     values: [sent, delivered, read, failed]
 
   SourceChannel:
-    db_type: source_channel
+    sql_name: source_channel
     origin: F15; ADR-0001
     values: [meta_ads, qr, referral, direct]
 
   PromptComponentType:
-    db_type: prompt_component_type
+    sql_name: prompt_component_type
     origin: F01 - the six components
     # This order is F01's and it is the default on creation; position is mutable and does not version.
     values: [objective, personality, behavior, tone, brand_voice, rules]
 
   TransferSignalType:
-    db_type: transfer_signal_type
+    sql_name: transfer_signal_type
     origin: F12
     values: [no_resolution, frustration, out_of_domain, explicit_request]
 
   BatchCloseReason:
-    db_type: batch_close_reason
+    sql_name: batch_close_reason
     origin: F10
     values: [silence, max_messages, max_duration]
 
   PipelineStep:
-    db_type: pipeline_step
+    sql_name: pipeline_step
     origin: ADR-0016
     # Fixed before the pipeline was drawn (Paso 8): it is expected to change.
     values: [blocklist, guardrail, triage, retrieval, reranking, grounding, generation]
 
   GenerationStatus:
-    db_type: generation_status
+    sql_name: generation_status
     origin: F02; blocked added by ADR-0016 (Paso 8)
     # Describe el FILTRADO, no la entrega. La entrega vive en MessageStatus.
     values: [auto_sent, pending_review, accepted, edited, rejected, blocked]
 
   DocumentStatus:
-    db_type: document_status
+    sql_name: document_status
     origin: ADR-0005
     values: [pending, processing, indexed, failed]
 
   MetaTemplateStatus:
-    db_type: meta_template_status
+    sql_name: meta_template_status
     origin: F08, F37
     values: [approved, pending, rejected]
 
   AttributeSource:
-    db_type: attribute_source
+    sql_name: attribute_source
     origin: F31
     values: [manual, llm]
 
   AnnotationType:
-    db_type: annotation_type
+    sql_name: annotation_type
     origin: OE3, OE4
     values: [transfer, frustration, intent]
 
   WebhookEventType:
-    db_type: webhook_event_type
+    sql_name: webhook_event_type
     origin: F20, section 8.5
     values: [message, status, unknown]
 
   WebhookEventStatus:
-    db_type: webhook_event_status
+    sql_name: webhook_event_status
     origin: F20
     values: [received, processed, failed, discarded]
 
   InboxStatus:
-    db_type: inbox_status
+    sql_name: inbox_status
     origin: F20
     values: [active, inactive, error]
 
   MetaTemplateCategory:
-    db_type: meta_template_category
+    sql_name: meta_template_category
     origin: F08, F37 - the set is fixed by Meta
     values: [marketing, utility, authentication]

@@ -2,8 +2,11 @@
 
 COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 
+# Read so the integration DSN is assembled here and nobody has to type a password into a shell.
+-include .env
+
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain
+.PHONY: help up down logs build test test-core test-brain test-integration
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -11,6 +14,7 @@ help:
 	@echo "logs       sigue la salida de los tres servicios"
 	@echo "build      reconstruye las dos imagenes"
 	@echo "test       corre los tests de los dos servicios"
+	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
 
 up:
 	$(COMPOSE) up -d --build
@@ -32,3 +36,7 @@ test-core:
 
 test-brain:
 	cd src/brain && poetry run pytest
+
+# The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
+test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+test-integration: test

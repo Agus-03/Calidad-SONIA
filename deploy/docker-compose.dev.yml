@@ -1,0 +1,42 @@
+# Development tooling, kept out of docker-compose.yml so the three deployables of ADR-0017 stay three.
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4:9.8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:?}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?}
+      # Desktop mode: there is one person on the other side and a login screen would only be a second password to remember.
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    configs:
+      - source: pgadmin_servers
+        target: /pgadmin4/servers.json
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+
+# Inline and not a file, because this is the only way the real POSTGRES_* of the .env reach servers.json.
+configs:
+  pgadmin_servers:
+    content: |
+      {
+        "Servers": {
+          "1": {
+            "Name": "SONIA",
+            "Group": "Servers",
+            "Host": "db",
+            "Port": 5432,
+            "MaintenanceDB": "${POSTGRES_DB}",
+            "Username": "${POSTGRES_USER}",
+            "SSLMode": "prefer"
+          }
+        }
+      }
+
+volumes:
+  pgadmin:

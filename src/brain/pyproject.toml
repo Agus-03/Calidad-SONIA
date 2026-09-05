@@ -31,3 +31,10 @@ pyyaml = ">=6.0"
 pythonpath = "."
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# The threshold of ADR-0028 lives here and not in the workflow, so it is the project that declares it and not the CI.
+addopts = "--cov --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["."]
+# The tests are not what is being measured, and enums.py is generated code that runs whole on import.
+omit = ["tests/*", "infra/enums.py"]

@@ -2,11 +2,14 @@
 
 COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 
+# The same project plus the development tooling, so pgadmin lands on the network the database is already on.
+COMPOSE_DEV := $(COMPOSE) -f deploy/docker-compose.dev.yml
+
 # Read so the integration DSN is assembled here and nobody has to type a password into a shell.
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check
+.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check migrate migrate-status pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -17,6 +20,10 @@ help:
 	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
 	@echo "contracts  regenera las enumeraciones de Go y de Python"
 	@echo "contracts-check   falla si lo generado quedo viejo"
+	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
+	@echo "migrate-status    lista lo que la base dice que ya corrio"
+	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
+	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 
 up:
 	$(COMPOSE) up -d --build
@@ -33,9 +40,11 @@ build:
 # Each service is tested with its own tooling, because ADR-0028 measures coverage per service and never aggregates.
 test: test-core test-brain
 
+# Go carries no threshold of its own, so the 80% of ADR-0028 is enforced here and not in the workflow.
 test-core:
-	cd src/core && go test ./...
+	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3; if ($$3 + 0 < 80) { print "below the 80% of ADR-0028"; exit 1 } }'
 
+# The threshold is in pyproject.toml, so running pytest by hand enforces the same number the CI does.
 test-brain:
 	cd src/brain && poetry run pytest
 
@@ -46,6 +55,22 @@ contracts:
 # The only way the three copies of an enumeration drift is a contract that changed and was never regenerated.
 contracts-check:
 	cd src/brain && poetry run python ../../contracts/generate.py --check
+
+# There is no separate migration step: the core applies the schema when it boots, so this is the whole mechanism.
+migrate:
+	$(COMPOSE) up -d --build db core
+
+# Reads the runner's own bookkeeping, which is the only place that knows what actually ran.
+migrate-status:
+	$(COMPOSE) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
+
+# Brings the database with it, because pgadmin against nothing is an empty tree.
+pgadmin:
+	$(COMPOSE_DEV) up -d db pgadmin
+	@echo "pgadmin en http://localhost:5050 - el servidor SONIA ya esta en el arbol"
+
+pgadmin-down:
+	$(COMPOSE_DEV) rm -sf pgadmin
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)

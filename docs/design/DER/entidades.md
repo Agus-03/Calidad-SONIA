@@ -238,6 +238,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
 | `messages_count` | smallint | |
+| `turn_number` | integer | Correlativo por conversación. **Fuente de verdad del número de turno** (ADR-0022, H-19): `conversation_contexts`, `conversation_context_versions` y `transfer_events` lo **copian** desde acá, nunca lo calculan por su cuenta |
 | `timer_ms_used` | integer | **Lo que permite defender que el timer es "adaptativo"** y no una constante |
 | `closed_reason` | `BatchCloseReason` | |
 | `error_message` | text | Nullable — **por qué falló el turno**, cuando falló. Ver la nota |

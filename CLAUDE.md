@@ -15,7 +15,7 @@ Jerarquía. Ante conflicto, gana la de más arriba.
 | Anteproyecto | Requisitos (F01–F39), objetivos (OE1–OE7), roles, alcance | `docs/SONIA_Anteproyecto.pdf` |
 | Documentos de diseño | Convenciones y decisiones de modelado | `docs/design/` |
 | Diagramas | Modelo de datos y comportamiento | `docs/diagrams/` |
-| Estructura del código | Árbol completo y dueño de cada tabla | [`docs/design/struct.md`](docs/design/struct.md) |
+| Estructura del código | Árbol completo y dueño de cada tabla | [`docs/struct.md`](docs/struct.md) |
 
 **Regla:** todo análisis, decisión o propuesta debe estar anclado en el anteproyecto. No inventar requisitos, entidades ni métricas que no estén en él. Si falta información, decirlo explícitamente en lugar de completarla.
 
@@ -41,7 +41,7 @@ Las tres reglas que más fácil se violan por costumbre:
 2. **Inglés** para tablas, columnas, enumeraciones, código y comentarios. **Español** para toda la documentación.
 3. `snake_case`, tablas en plural, PK `id` de tipo `uuid` (v7), FK `<entidad>_id`.
 
-El resto —marcas de tiempo, enumeraciones, valores monetarios, política de borrado, herramientas de diagramación— está en el documento.
+El resto (marcas de tiempo, enumeraciones, valores monetarios, política de borrado, herramientas de diagramación) está en el documento.
 
 ---
 
@@ -49,7 +49,9 @@ El resto —marcas de tiempo, enumeraciones, valores monetarios, política de bo
 
 Éste es el layout acordado. **Enmienda a [ADR-0017](docs/design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, que tiene el árbol anterior — el ADR sigue en Propuesta y hay que actualizarlo al firmarlo.
 
-**El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas están en [`docs/design/struct.md`](docs/design/struct.md).** Lo de acá abajo es el resumen; ante conflicto, gana este archivo y hay que corregir el otro.
+**El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas están en [`docs/struct.md`](docs/struct.md).** Lo de acá abajo es el resumen; ante conflicto, gana este archivo y hay que corregir el otro.
+
+**`docs/struct.md` es el mapa y nada más: NUNCA se le agrega estado de avance.** No va qué existe hoy, qué falta, qué está a medias, ni cobertura ni fechas de verificación. Dice **dónde va cada cosa**, no qué está hecho —y por eso lista archivos que todavía no existen—. El motivo: un mapa con estado adentro caduca en cada commit y deja de ser confiable justo para lo que sirve. El avance vive en `ESTADO.md`, que es bitácora y se espera que cambie.
 
 ```
 sonia/
@@ -62,8 +64,9 @@ sonia/
 ├── .env.example   ·   Makefile
 └── src/
     ├── core/                              Go · gin
-    │   ├── main.go                        carga y valida la config, arma e inyecta todo
+    │   ├── main.go                        sólo `main()`: la señal y el código de salida
     │   ├── internal/
+    │   │   ├── app/                       el arranque · app.go (`Run`) · deps.go (el grafo de objetos)
     │   │   ├── whatsapp/                  F20, F29 · webhook.go (entrada) · client.go (envío a Meta)
     │   │   ├── meta_templates/            plantillas de Meta: sincroniza y sirve · F08, F37
     │   │   ├── turn/                      orquestador del turno
@@ -121,7 +124,7 @@ sonia/
 1. **Un paquete = las tablas de las que es dueño.** Si algo no tiene lugar obvio, se mira qué tabla toca. Un paquete sin tablas propias es una bolsa y no se crea. **Escribir en la tabla de otro se hace por su repositorio, dentro de la transacción de quien conduce** — nunca con SQL propio. `conversations` y `messages` son el **agregado compartido** que ADR-0017 §1.1 identificó: las escriben `turn/` (el entrante y la respuesta de la IA), `inbox/` (la del operador, más `starred`, `mode` y `operator_id`) y `whatsapp/` (los webhooks de estado), así que su dueño es `conversations/` y los tres pasan por él.
 2. **Plano hasta que duela.** Cuando un archivo pasa las ~400 líneas se parte en varios archivos; recién ahí se vuelve carpeta. No se crean subcarpetas de capas dentro de un paquete: eso recrea el árbol capa-primero que el corte por contexto evita.
 3. **Sólo `core/migrations/` toca el esquema.** El cerebro hace DML, nunca DDL. Y **el cerebro escribe únicamente tablas de evidencia** —`pipeline_steps`, `generations`, `retrieval_logs`, `signal_evaluations`, `detected_intents`, `document_chunks`—: nunca `conversations`, `messages` ni `contact_attributes`. Lo que no es evidencia lo **devuelve**, y el núcleo lo persiste y lo envía. `migrations/` es DDL más invariantes estructurales (la fila única de `accounts`); `seeds/` son datos de demo, idempotentes, corridos por el `Makefile` y **nunca por la aplicación al arrancar**.
-4. **El primer nivel de `internal/` es el *bounded context*, no la capa.** Cada paquete tiene su `controller.go` (HTTP: parsea, valida, responde), `service.go`, `repository.go` y `model.go`. En `platform/` va sólo lo transversal —router, middleware, auth, errores, cliente HTTP, almacenamiento de objetos, base, config, logging— y es la única excepción declarada. **Un archivo que crece se parte en más archivos del mismo paquete** (`dto_create.go`, `dto_update.go`), nunca en un paquete hermano: en Go eso invita al ciclo de imports y parte el contexto en dos.
+4. **El primer nivel de `internal/` es el *bounded context*, no la capa.** Cada paquete tiene su `controller.go` (HTTP: parsea, valida, responde), `routes.go` (su tabla de rutas: método, path, roles y handler en una fila), `service.go`, `repository.go` y `model.go`. En `platform/` va sólo lo transversal —router, middleware, auth, errores, cliente HTTP, almacenamiento de objetos, base, config, logging— y es una de las **dos** excepciones declaradas. La otra es **`app/`, el arranque**: `app.go` tiene `Run(ctx)` —config, pool, router, servidor, apagado ordenado— y `deps.go` el grafo de objetos, que es lo único que crece al sumar un contexto. Está fuera de `package main` porque `package main` no se puede importar y un test que levante el proceso entero necesita importarlo; en `main.go` quedan sólo `main()`, la señal y el código de salida. **Un archivo que crece se parte en más archivos del mismo paquete** (`dto_create.go`, `dto_update.go`), nunca en un paquete hermano: en Go eso invita al ciclo de imports y parte el contexto en dos.
 5. **La transacción la abre quien conduce, no el repositorio.** Los repositorios reciben un `Executor` de `platform/db` —que abstrae el pool y `pgx.Tx`— en vez de guardarse el pool, para que una transacción pueda cruzar paquetes. Lo exige el turno: `07-secuencia-del-turno.md` pide que `message_batches.processed_at` se escriba **en la misma transacción** que el mensaje saliente, `generations.message_id` y `transfer_events`; si no, un reinicio no puede distinguir un turno terminado de uno que nunca se procesó. **Ninguna transacción cruza el borde entre los dos servicios** — eso sigue prohibido por ADR-0017 (i).3.
 6. **`pipeline/` tiene un módulo por valor de `PipelineStep`**, para que una fila de `pipeline_steps` mapee a un archivo. `reranking` no se crea hasta que exista.
 7. **Un solo dueño de la palabra "orquestador":** el del turno, en `core/internal/turn/`. Lo del cerebro es *el pipeline*.
@@ -140,6 +143,17 @@ sonia/
 - **Escribir también las consecuencias negativas** de una decisión, no sólo sus ventajas.
 - Documentación en español; identificadores técnicos en inglés.
 
+### Cómo trabajar con el equipo
+
+Reglas que salieron de trabajar con nosotros. Valen para cualquiera del grupo.
+
+1. **Preguntar no es aprobar.** Si se pide una explicación, se explica y se espera. Explicar y aplicar en la misma tanda saca la decisión de las manos de quien preguntó.
+2. **Un pedido = un cambio.** Nada de arreglos colaterales de paso: si aparece un enlace roto o un dato viejo, se menciona al final como pregunta. Un diff con cosas que nadie pidió deja de ser revisable.
+3. **Respuestas breves, y el sí o el no primero.** Nadie tiene tiempo de leer tres pantallas para saber si la respuesta era sí. El detalle va después, y sólo si hace falta.
+4. **Separar qué decide quién.** Marcar explícitamente qué ya está decidido, qué se resuelve solo y qué necesita una decisión del grupo. Preguntar únicamente por lo último.
+5. **Commits de una sola oración**, sin cuerpo. El razonamiento vive en los documentos, no en el historial de git.
+6. **El `.env` no se lee.** Tiene secretos reales. Para verificar configuración están `.env.example`, `deploy/docker-compose.yml` y los dos archivos de config.
+
 ---
 
 ## Notas prácticas
@@ -151,4 +165,6 @@ sonia/
 
 ## Estado
 
-Ver [`docs/design/ESTADO.md`](docs/design/ESTADO.md) — qué pasos están cerrados, qué quedó diferido y las trampas de alcance a no repetir.
+Ver [`z_helps/ESTADO.md`](z_helps/ESTADO.md) — qué pasos están cerrados, qué quedó diferido y las trampas de alcance a no repetir.
+
+> **Ojo con la tensión:** `ESTADO.md` está en `z_helps/`, que este archivo declara sin peso oficial y que **no se cita como autoridad**. Como bitácora de trabajo encaja; como registro de decisiones tomadas, no. Si se lo va a citar en el informe, tiene que volver a `docs/`.

@@ -22,7 +22,7 @@ pytest-asyncio = ">=0.24"
 # ADR-0028 requires 80% coverage per service, so it has to be measurable.
 pytest-cov = ">=5.0"
 # Exercises the FastAPI app without a live server.
-httpx = ">=0.27"
+httpx2 = "^2.12.0"
 
 [tool.pytest.ini_options]
 # The brain root is the import root: api, prompts, adapters and infra are flat (regla 12).

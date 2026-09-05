@@ -7,8 +7,10 @@ from typing import Literal
 from pydantic import Field, PostgresDsn, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Anchored to this file and not to the working directory: there is one .env and it lives at the repository root.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# Anchored to this file and not to the working directory, and absent in a container, where there is no repository above the code.
+def _env_file() -> Path | None:
+    parents = Path(__file__).resolve().parents
+    return parents[3] / ".env" if len(parents) > 3 else None
 
 
 # Raised when the environment cannot serve, so the failure is a stopped process and not a broken turn.
@@ -19,7 +21,7 @@ class ConfigError(RuntimeError):
 # Settings holds every value the brain needs: the shared database (ADR-0017) and the token the core signs with (ADR-0017 (k)).
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=_REPO_ROOT / ".env",
+        env_file=_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

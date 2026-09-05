@@ -27,7 +27,8 @@ sonia/
 │
 ├── contracts/                          fuente única compartida por los dos servicios
 │   ├── brain.openapi.json              contrato del cerebro, generado por FastAPI
-│   └── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   ├── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   └── generate.py                     las baja a Go y a Python · nadie edita lo generado
 │
 ├── deploy/                             context: .. para que los builds vean contracts/
 │   ├── brain.Dockerfile
@@ -71,7 +72,7 @@ sonia/
 │   │   │   ├── intent.py
 │   │   │   └── transfer.py
 │   │   │
-│   │   ├── infra/                      config · db · ids · logging · rules
+│   │   ├── infra/                      config · db · enums (GENERADO) · ids · logging · rules
 │   │   ├── knowledge/                  F06 · chunking · embeddings · search
 │   │   │
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
@@ -148,6 +149,7 @@ sonia/
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
+│   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml
 │   │   │   │   ├── http/               router · route · middleware · auth · errors
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7

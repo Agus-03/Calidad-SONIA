@@ -58,7 +58,8 @@ sonia/
 ├── docs/                                  documentación
 ├── contracts/
 │   ├── brain.openapi.json                 contrato del cerebro, generado por FastAPI
-│   └── enums.yaml                         las 22 enumeraciones, fuente única para Go y Python
+│   ├── enums.yaml                         las 22 enumeraciones, fuente única para Go y Python
+│   └── generate.py                        baja enums.yaml a Go y a Python · `make contracts`
 ├── deploy/                                docker-compose.yml · core.Dockerfile · brain.Dockerfile
 ├── .github/workflows/ci.yml
 ├── .env.example   ·   Makefile
@@ -85,7 +86,7 @@ sonia/
     │   │   ├── quick_replies/             respuestas rápidas · F09
     │   │   ├── reporting/                 sólo lectura · F16, F32, F34–F38
     │   │   ├── brainclient/               cliente HTTP del cerebro
-    │   │   └── platform/                  http/ (router, middleware, auth) · httpclient/ · storage/ · db (pool + Executor) · id · config · logging
+    │   │   └── platform/                  http/ (router, middleware, auth) · httpclient/ · storage/ · db (pool + Executor) · id · config · logging · enums (generado)
     │   ├── migrations/                    único dueño del esquema · DDL + invariantes
     │   └── seeds/                         datos de demo, idempotentes, nunca en producción
     │
@@ -109,7 +110,7 @@ sonia/
     │   ├── rules/                         datos versionados, no código — ver regla 9
     │   │   ├── blocklist.yaml             guardrails.yaml · triage.yaml · grounding.yaml
     │   │   └── rewriter.yaml              frustration.yaml · intent.yaml · transfer.yaml · extraction.yaml
-    │   ├── infra/                         config.py (Settings) · db · logging
+    │   ├── infra/                         config.py (Settings) · db · logging · enums.py (generado)
     │   └── tests/
     │
     ├── frontend/                          frontend

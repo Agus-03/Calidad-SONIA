@@ -9,7 +9,7 @@ COMPOSE_DEV := $(COMPOSE) -f deploy/docker-compose.dev.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check migrate migrate-status pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -22,6 +22,7 @@ help:
 	@echo "contracts-check   falla si lo generado quedo viejo"
 	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
 	@echo "migrate-status    lista lo que la base dice que ya corrio"
+	@echo "seed       carga los datos de demo: agente, inbox y contacto fijos"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 
@@ -63,6 +64,11 @@ migrate:
 # Reads the runner's own bookkeeping, which is the only place that knows what actually ran.
 migrate-status:
 	$(COMPOSE) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
+
+# Never run by the application at boot (regla 3): demo data is a decision someone takes, not a side effect of starting.
+# Idempotent, so running it twice is not an error and a half-seeded database can be finished by running it again.
+seed:
+	$(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) < src/core/seeds/0001_demo.sql
 
 # Brings the database with it, because pgadmin against nothing is an empty tree.
 pgadmin:

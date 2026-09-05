@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Qué es** | El árbol de archivos completo, con el propósito de cada paquete y **de qué tablas es dueño** |
-| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Enmienda a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1** — el ADR sigue en Propuesta y su árbol es el anterior |
+| **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
 | **Última revisión** | 2026-09-04 |

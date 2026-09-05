@@ -42,7 +42,7 @@ Dos reglas que conviene sostener:
 | [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
 | [0015](0015-medicion-de-oe1.md) | Cómo se mide OE1 | H-20, H-21 | Aceptada |
 | [0016](0016-rastro-del-pipeline-de-respuesta.md) | Rastro del pipeline de respuesta | H-23 | Aceptada |
-| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | **Propuesta** · revisada 2026-08-22 |
+| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | Aceptada · revisada 2026-08-22 · firmada 2026-09-05 |
 | [0018](0018-proveedor-de-llm-y-embeddings.md) | Proveedor de LLM primario y de respaldo, y modelo de embeddings | 8.4 sin decidir | Aceptada |
 | [0019](0019-almacenamiento-de-objetos.md) | Almacenamiento de objetos: Supabase Storage | H-31 | Aceptada |
 | [0020](0020-idempotencia-de-los-mensajes-salientes.md) | Idempotencia de los mensajes salientes: *at-most-once* | H-29 | Aceptada |
@@ -63,7 +63,7 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 
 **ADR-0015 enmienda un documento vigente**, la Regla 2 de [03-capa-prompts.md](../03-capa-prompts.md). Se dejó escrito el razonamiento original y por qué estaba incompleto, en vez de corregirlo en silencio.
 
-**ADR-0017 es de otra clase y por eso está en estado Propuesta.** No resuelve un hallazgo del modelo de datos: decide la arquitectura de despliegue y el reparto de lenguajes, que la sección 8.4 dejó explícitamente sin definir. Toca el trabajo de los tres y conviene discutirla entre todos —y con los tutores— antes de darla por firmada. Es además la segunda decisión que **matiza el texto del anteproyecto**, después de ADR-0012: parte el Módulo 2 entre dos procesos, y señala que la justificación de Go por "concurrencia masiva" no está respaldada por el alcance declarado en 7.3.
+**ADR-0017 es de otra clase y por eso estuvo en estado Propuesta hasta el 2026-09-05.** No resuelve un hallazgo del modelo de datos: decide la arquitectura de despliegue y el reparto de lenguajes, que la sección 8.4 dejó explícitamente sin definir. Toca el trabajo de los tres, así que se discutió entre todos antes de darla por firmada. Es además la segunda decisión que **matiza el texto del anteproyecto**, después de ADR-0012: parte el Módulo 2 entre dos procesos, y señala que la justificación de Go por "concurrencia masiva" no está respaldada por el alcance declarado en 7.3.
 
 **ADR-0017 se revisó el 2026-08-22, antes de firmarse, y el cambio está declarado en su §0.** Se corrige editando el documento y no escribiendo uno nuevo porque **la regla de más arriba protege el historial de las decisiones revertidas, y ésta nunca llegó a aceptarse**: hacer que los tres lean dos documentos para acordar una sola decisión la haría más difícil de acordar, no más trazable. Lo que la revisión agrega salió de recorrer los 39 requisitos uno por uno, que la versión original no había hecho: **un hueco** —la ingesta de F06 no tenía proceso donde ocurrir— y **tres decisiones que faltaban**: el ensamblador único que protege a OE1, las tres reglas de escritura sobre la base compartida, y el nombre de la arquitectura. La frontera Go/Python y la base única se sostuvieron sin cambios.
 

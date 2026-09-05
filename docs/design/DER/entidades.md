@@ -419,7 +419,9 @@ Una fila por respuesta generada por la IA.
 | `mime_type` | varchar | |
 | `size_bytes` | bigint | |
 | `checksum` | varchar | Detección de duplicados ⚙ |
+| `object_key` | varchar | Clave de los bytes en el almacén de objetos (H-31, ADR-0017 · ADR-0019). Los bytes no van en la fila: un archivo de 100 MB en `bytea` infla backups y WAL |
 | `status` | `DocumentStatus` | Pipeline de ingesta |
+| `locked_at` | timestamptz | **Nullable.** Marca de toma del documento por el `worker` de ingesta (ADR-0017 (g)). Es la única columna, junto a `status` y `error_message`, que escribe el cerebro sobre esta tabla |
 | `error_message` | text | Nullable |
 | `uploaded_by_operator_id` | uuid | |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | |

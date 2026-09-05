@@ -47,7 +47,7 @@ El resto (marcas de tiempo, enumeraciones, valores monetarios, política de borr
 
 ## Estructura del código
 
-Éste es el layout acordado. **Enmienda a [ADR-0017](docs/design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, que tiene el árbol anterior — el ADR sigue en Propuesta y hay que actualizarlo al firmarlo.
+Éste es el layout acordado. **Detalla a [ADR-0017](docs/design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05. Ante conflicto entre los dos, gana este archivo.
 
 **El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas están en [`docs/struct.md`](docs/struct.md).** Lo de acá abajo es el resumen; ante conflicto, gana este archivo y hay que corregir el otro.
 

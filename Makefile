@@ -6,7 +6,7 @@ COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration
+.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -15,6 +15,8 @@ help:
 	@echo "build      reconstruye las dos imagenes"
 	@echo "test       corre los tests de los dos servicios"
 	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
+	@echo "contracts  regenera las enumeraciones de Go y de Python"
+	@echo "contracts-check   falla si lo generado quedo viejo"
 
 up:
 	$(COMPOSE) up -d --build
@@ -36,6 +38,14 @@ test-core:
 
 test-brain:
 	cd src/brain && poetry run pytest
+
+# Run through the brain venv because that is where pyyaml is declared; the generator belongs to neither service.
+contracts:
+	cd src/brain && poetry run python ../../contracts/generate.py
+
+# The only way the three copies of an enumeration drift is a contract that changed and was never regenerated.
+contracts-check:
+	cd src/brain && poetry run python ../../contracts/generate.py --check
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)

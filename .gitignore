@@ -16,9 +16,6 @@ __pycache__/
 # Build
 /deploy/.docker/
 
-# Unnecessary right now
-contracts/
-
 # Coverage
 .coverage
 htmlcov/

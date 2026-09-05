@@ -139,11 +139,12 @@ CREATE TABLE message_batches (
 CREATE UNIQUE INDEX message_batches_turn_unique ON message_batches (conversation_id, turn_number);
 
 -- No deleted_at of any kind: messages are the record of facts F34 to F36 and OE7 are computed on (C09).
+-- wamid is nullable: an outbound message is written before it is sent, so it has no channel id yet (07-secuencia, hallazgo 3).
 CREATE TABLE messages (
     id                 uuid        PRIMARY KEY,
     conversation_id    uuid        NOT NULL REFERENCES conversations (id),
     message_batch_id   uuid        REFERENCES message_batches (id),
-    wamid              varchar     NOT NULL UNIQUE,
+    wamid              varchar     UNIQUE,
     context_wamid      varchar,
     direction          varchar     NOT NULL CHECK (direction IN ('inbound', 'outbound')),
     sender_type        varchar     NOT NULL CHECK (sender_type IN ('contact', 'ai_agent', 'operator', 'system')),
@@ -264,13 +265,14 @@ CREATE TABLE conversation_context_versions (
 );
 
 -- H-21 - ai_agent_id is the agent that produced this generation, frozen; conversations.ai_agent_id is the current one and mutates.
+-- conversation_context_version_id is nullable: relaciones.md declares it 0..1, and before the rewriter of F04 there is no version to point at.
 CREATE TABLE generations (
     id                              uuid          PRIMARY KEY,
     conversation_id                 uuid          NOT NULL REFERENCES conversations (id),
     ai_agent_id                     uuid          NOT NULL REFERENCES ai_agents (id),
     message_id                      uuid          REFERENCES messages (id),
     message_batch_id                uuid          REFERENCES message_batches (id),
-    conversation_context_version_id uuid          NOT NULL REFERENCES conversation_context_versions (id),
+    conversation_context_version_id uuid          REFERENCES conversation_context_versions (id),
     llm_provider                    varchar       NOT NULL,
     llm_model                       varchar       NOT NULL,
     temperature                     numeric,

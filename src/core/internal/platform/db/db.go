@@ -12,12 +12,27 @@ import (
 // Pool is the type the repositories receive.
 type Pool = *pgxpool.Pool
 
+// Options carries only what the pool needs, so this package never imports the application config.
+type Options struct {
+	DatabaseURL string
+	MinSize     int
+	MaxSize     int
+}
+
 // Open builds the pool and pings it: an unverified pool fails on the first customer message.
-func Open(ctx context.Context, databaseURL string) (Pool, error) {
-	cfg, err := pgxpool.ParseConfig(databaseURL)
+func Open(ctx context.Context, opts Options) (Pool, error) {
+	cfg, err := pgxpool.ParseConfig(opts.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("db: cannot parse DATABASE_URL: %w", err)
 	}
+
+	if opts.MinSize > 0 {
+		cfg.MinConns = int32(opts.MinSize)
+	}
+	if opts.MaxSize > 0 {
+		cfg.MaxConns = int32(opts.MaxSize)
+	}
+
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute
 

@@ -99,6 +99,9 @@ func Fail(c *gin.Context, log *slog.Logger, err error) {
 // OK writes a successful payload.
 func OK(c *gin.Context, payload any) { c.JSON(http.StatusOK, payload) }
 
+// Text writes a body verbatim: an external callback can demand an exact string that a JSON envelope would break.
+func Text(c *gin.Context, body string) { c.String(http.StatusOK, body) }
+
 // Created writes a successful creation payload.
 func Created(c *gin.Context, payload any) { c.JSON(http.StatusCreated, payload) }
 

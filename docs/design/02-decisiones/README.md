@@ -54,6 +54,7 @@ Dos reglas que conviene sostener:
 | [0026](0026-conjuntos-de-evaluacion-simulados.md) | Los conjuntos de evaluación de OE3 y OE4 se simulan | Origen de las 200 y 500 | Aceptada |
 | [0027](0027-nucleo-de-instancia-unica.md) | El núcleo opera en una única instancia | Pendiente de ADR-0017 | Aceptada |
 | [0028](0028-cobertura-de-pruebas-por-servicio.md) | La cobertura del ≥ 80 % se exige por servicio | Pendiente de ADR-0017 | Aceptada |
+| [0029](0029-el-acuse-del-webhook-no-espera-al-turno.md) | El acuse del webhook no espera al turno | Fase 1 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

@@ -2,7 +2,8 @@
 name = "sonia-brain"
 version = "0.1.0"
 description = "SONIA — cerebro: ensamblado de prompts, RAG y clasificadores (desplegable 2 de ADR-0017)"
-requires-python = ">=3.14"
+# Capped because the provider SDKs are: an open upper bound makes the resolver refuse a range they cannot satisfy.
+requires-python = ">=3.14,<4.0"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -10,6 +11,11 @@ dependencies = [
     "pydantic-settings>=2.5",
     # The brain does DML, never DDL: src/core/migrations/ owns the schema (regla 3).
     "psycopg[binary,pool]>=3.2",
+    # The three candidates of section 8.4, behind the port of adapters/llm: no service imports one of these directly,
+    # which is what lets OE2 compare providers without touching the rest of the brain (ADR-0018).
+    "cohere>=5.13",
+    "anthropic>=0.40",
+    "openai>=1.50",
 ]
 
 [tool.poetry]

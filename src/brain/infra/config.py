@@ -18,6 +18,10 @@ class ConfigError(RuntimeError):
     pass
 
 
+# An allowlist and not a ban on production: with a ban, an ENVIRONMENT typed "prod" would quietly let canned answers through.
+DOUBLE_ALLOWED_ENVIRONMENTS = frozenset({"development", "test"})
+
+
 # Settings holds every value the brain needs: the shared database (ADR-0017) and the token the core signs with (ADR-0017 (k)).
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -37,6 +41,27 @@ class Settings(BaseSettings):
     db_pool_max_size: int = Field(default=10, ge=1)
 
     brain_internal_token: str = Field(min_length=1)
+
+    # Which provider a turn uses is a property of the agent (ai_agents.llm_provider), so no key can be required at boot:
+    # the process cannot know which agents exist without reading the database. A missing one fails when that agent runs.
+    cohere_api_key: str = ""
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+
+    # Under the 10 s the core waits for the whole turn (BRAIN_TIMEOUT_MS), with room left for the reads around it.
+    llm_timeout_seconds: float = Field(default=8.0, gt=0)
+
+    # Development and CI answer with the doubled adapter because there is no key; production must never be able to.
+    llm_use_double: bool = False
+
+    @model_validator(mode="after")
+    def _double_stays_out_of_production(self) -> "Settings":
+        if self.llm_use_double and self.environment not in DOUBLE_ALLOWED_ENVIRONMENTS:
+            raise ValueError(
+                "LLM_USE_DOUBLE answers canned text and is only allowed when ENVIRONMENT is "
+                + " or ".join(sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+            )
+        return self
 
     @model_validator(mode="after")
     def _pool_range(self) -> "Settings":

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from infra.config import ConfigError, Settings, describe, get_settings
+from infra.config import DOUBLE_ALLOWED_ENVIRONMENTS, ConfigError, Settings, describe, get_settings
 
 _MINIMUM = {
     "database_url": "postgresql://sonia:sonia@127.0.0.1:5432/sonia",
@@ -71,3 +71,32 @@ def test_get_settings_raises_a_readable_error(clean_env, monkeypatch: pytest.Mon
 
     assert "DATABASE_URL" in str(caught.value)
     get_settings.cache_clear()
+
+
+# Regla 10 stops a process that cannot serve, and a provider key is not that: it is per agent, and which agents exist
+# is only known by reading the database. A missing one has to surface when that agent runs, not at boot.
+def test_a_provider_key_is_not_required_to_boot(clean_env) -> None:
+    settings = Settings(_env_file=None, **_MINIMUM)
+
+    assert (settings.cohere_api_key, settings.anthropic_api_key, settings.openai_api_key) == ("", "", "")
+
+
+# The double answers canned text, so letting it into production would be a bot that looks alive and says nothing real.
+@pytest.mark.parametrize("environment", ["production", "staging", "prod", "produccion", ""])
+def test_the_double_cannot_be_switched_on_outside_development(clean_env, environment: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **_MINIMUM, llm_use_double=True, environment=environment)
+
+
+# An allowlist and not a ban: these two are the only spellings that may answer with canned text.
+@pytest.mark.parametrize("environment", sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+def test_the_double_is_allowed_where_there_is_no_key(clean_env, environment: str) -> None:
+    assert Settings(_env_file=None, **_MINIMUM, llm_use_double=True, environment=environment).llm_use_double
+
+
+# The core waits BRAIN_TIMEOUT_MS for the whole turn, so this one has to leave room for the reads around the call.
+def test_the_provider_timeout_fits_inside_the_turn_budget(clean_env) -> None:
+    assert Settings(_env_file=None, **_MINIMUM).llm_timeout_seconds < 10
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **_MINIMUM, llm_timeout_seconds=0)

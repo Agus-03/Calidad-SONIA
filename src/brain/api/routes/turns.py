@@ -4,8 +4,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from adapters.llm.base import LLMError, LLMMessage
+from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
-from pipeline.repository import TurnNotFound, read_turn
+from infra.enums import MessageDirection
+from pipeline.repository import Turn, TurnNotFound, read_turn
 
 router = APIRouter(tags=["turns"])
 logger = logging.getLogger("sonia.api.turns")
@@ -25,18 +28,49 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
                 detail={"code": "turn_not_found", "message": str(err)},
             ) from err
 
+    context = {
+        "conversation_id": str(turn.conversation_id),
+        "turn_number": turn.turn_number,
+        "llm_provider": turn.agent.llm_provider,
+        "llm_model": turn.agent.llm_model,
+    }
+
+    client = resolve(turn.agent.llm_provider, request.app.state.settings)
+    try:
+        completion = await client.complete(
+            model=turn.agent.llm_model,
+            # None until rules/generation.yaml exists: a prompt written here would be the Python literal regla 9 forbids.
+            system=None,
+            messages=_messages(turn),
+            temperature=turn.agent.temperature,
+            max_tokens=turn.agent.max_tokens,
+        )
+    except LLMError as err:
+        # failed and a 200: an unusable provider does not improve on a retry, so the core must not be told to try again.
+        logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
+        return TurnResponse(outcome="failed")
+
     logger.info(
-        "turn read",
+        "turn generated",
         extra={
             "context": {
-                "conversation_id": str(turn.conversation_id),
-                "turn_number": turn.turn_number,
-                "incoming_messages": len(turn.incoming),
-                "history_messages": len(turn.history),
-                "llm_model": turn.agent.llm_model,
+                **context,
+                "prompt_tokens": completion.prompt_tokens,
+                "completion_tokens": completion.completion_tokens,
             }
         },
     )
+    # generation_id stays absent until the row exists: it is the id of evidence nobody wrote yet.
+    return TurnResponse(outcome="generated", completion_text=completion.text)
 
-    # failed and not blocked: nothing rejected this turn, there is simply no generator wired yet (that is the LLM adapter task).
-    return TurnResponse(outcome="failed")
+
+# History first and the batch last, which is the order the conversation happened in and the order a prompt has to read.
+def _messages(turn: Turn) -> tuple[LLMMessage, ...]:
+    # The operator's replies reach the model as the assistant's own: from the contact's side there is one voice answering.
+    return tuple(
+        LLMMessage(
+            role="user" if m.direction == MessageDirection.INBOUND else "assistant",
+            text=m.content_text,
+        )
+        for m in (*turn.history, *turn.incoming)
+    )

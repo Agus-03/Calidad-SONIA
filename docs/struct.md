@@ -58,7 +58,7 @@ sonia/
 │   │   ├── pyproject.toml              Poetry · absorbe la config de pytest
 │   │   │
 │   │   ├── adapters/                   los cuatro puertos, menos el canal
-│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · anthropic
+│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · cohere · anthropic · openai · double
 │   │   │   ├── storage/                lee los bytes que subió el núcleo
 │   │   │   └── vectorstore/            base · qdrant
 │   │   │

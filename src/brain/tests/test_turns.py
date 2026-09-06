@@ -131,9 +131,30 @@ def test_turns_answers_the_contract_of_section_1(settings: Settings) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer"}
-    # Nothing rejected this turn: there is no generator yet, which is failed and never blocked.
+    # failed and never blocked: this deployment has no key for the provider the row names, which is not a rejection.
     assert payload["outcome"] == "failed"
     assert payload["transfer"] is None
+
+
+# The whole path with both ends doubled, which is what the CI smoke test runs: a turn in, a generated answer out.
+def test_turns_generates_when_a_provider_answers() -> None:
+    connection = FakeConnection(tables())
+    doubled = Settings(
+        _env_file=None,
+        database_url="postgresql://sonia:sonia@127.0.0.1:5432/sonia",
+        brain_internal_token="test-token",
+        environment="test",
+        llm_use_double=True,
+    )
+
+    with client(connection, doubled) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    assert payload["completion_text"].endswith("hola"), "the answer has to carry the message that arrived"
+    # Absent because generations is not written yet: the id of evidence nobody recorded would be a lie.
+    assert payload["generation_id"] is None
 
 
 def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) -> None:

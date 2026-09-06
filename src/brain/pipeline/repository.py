@@ -4,11 +4,12 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
-from infra.enums import MessageDirection, SenderType
+from infra.enums import GenerationStatus, MessageDirection, SenderType
 
 logger = logging.getLogger("sonia.pipeline.repository")
 
@@ -147,4 +148,70 @@ def _message(row: dict) -> Message:
         sender_type=SenderType(row["sender_type"]),
         content_text=row["content_text"],
         sent_at=row["sent_at"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# The write. Everything above reads; this is the only INSERT the brain makes in a turn, and generations is an
+# evidence table, which is the only kind it may write (regla 3).
+# ---------------------------------------------------------------------------
+
+
+# One turn's evidence, as 07-secuencia section 2 declares it.
+@dataclass(frozen=True)
+class Generation:
+    id: UUID
+    conversation_id: UUID
+    ai_agent_id: UUID
+    message_batch_id: UUID
+    # Which client actually answered, so a doubled run is recognisable by its own provider name and excludable from a cost.
+    llm_provider: str
+    llm_model: str
+    prompt_rendered: str
+    completion_text: str
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+    # Decimal and never float: money is numeric everywhere, in the database and in both languages (C08).
+    cost: Decimal
+    currency: str
+    status: GenerationStatus
+
+
+# message_id is absent on purpose: the message does not exist yet, and the core links it inside the transaction of
+# section 2 -- the one column of this table the core writes (ADR-0017 (i).2).
+# temperature and cached_input_tokens stay NULL by a decision of the team, deferred out of Fase 1 (02-decisiones/README.md).
+_GENERATION = """
+INSERT INTO generations (
+    id, conversation_id, ai_agent_id, message_batch_id,
+    llm_provider, llm_model, prompt_rendered, completion_text,
+    prompt_tokens, completion_tokens, latency_ms, cost, currency, status
+) VALUES (
+    %(id)s, %(conversation_id)s, %(ai_agent_id)s, %(message_batch_id)s,
+    %(llm_provider)s, %(llm_model)s, %(prompt_rendered)s, %(completion_text)s,
+    %(prompt_tokens)s, %(completion_tokens)s, %(latency_ms)s, %(cost)s, %(currency)s, %(status)s
+)
+"""
+
+
+# Takes the connection like every read here, so the caller keeps owning the transaction (regla 5 on the Python side).
+async def write_generation(conn: AsyncConnection, generation: Generation) -> None:
+    await conn.execute(
+        _GENERATION,
+        {
+            "id": generation.id,
+            "conversation_id": generation.conversation_id,
+            "ai_agent_id": generation.ai_agent_id,
+            "message_batch_id": generation.message_batch_id,
+            "llm_provider": generation.llm_provider,
+            "llm_model": generation.llm_model,
+            "prompt_rendered": generation.prompt_rendered,
+            "completion_text": generation.completion_text,
+            "prompt_tokens": generation.prompt_tokens,
+            "completion_tokens": generation.completion_tokens,
+            "latency_ms": generation.latency_ms,
+            "cost": generation.cost,
+            "currency": generation.currency,
+            "status": generation.status,
+        },
     )

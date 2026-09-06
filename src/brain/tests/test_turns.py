@@ -86,6 +86,8 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
             {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1},
             {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2},
         ],
+        # Declared so the fake connection records the INSERT: the write is the only one the brain makes in a turn.
+        "generations": [],
     }
     base.update(overrides)
     return base
@@ -160,8 +162,9 @@ def test_turns_generates_when_a_provider_answers() -> None:
     # The double echoes the last user message, so the answer proves the assembled envelope is what reached the model.
     assert payload["completion_text"].endswith("hola"), "the answer has to carry the message that arrived"
     assert "[MENSAJE DEL CLIENTE]" in payload["completion_text"], "the turn reached the model without the envelope of Regla 1"
-    # Absent because generations is not written yet: the id of evidence nobody recorded would be a lie.
-    assert payload["generation_id"] is None
+    # Present because the evidence exists: it is the id the core writes back into generations.message_id.
+    assert payload["generation_id"] is not None
+    assert "generations" in connection.seen, "the turn generated an answer and left no evidence of it"
 
 
 def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) -> None:
@@ -251,3 +254,23 @@ async def test_read_turn_names_the_batch_it_could_not_find() -> None:
         await read_turn(connection, BATCH_ID, CONVERSATION_ID, AGENT_ID)
 
     assert raised.value.message_batch_id == BATCH_ID
+
+
+# A model with no tariff fails the turn instead of writing a cost nobody can defend into the table OE2 reads.
+def test_turns_fails_when_the_model_has_no_tariff() -> None:
+    agent = tables()["ai_agents"][0] | {"llm_model": "un-modelo-que-nadie-tarifo"}
+    connection = FakeConnection(tables(ai_agents=[agent]))
+    doubled = Settings(
+        _env_file=None,
+        database_url="postgresql://sonia:sonia@127.0.0.1:5432/sonia",
+        brain_internal_token="test-token",
+        environment="test",
+        llm_use_double=True,
+    )
+
+    with client(connection, doubled) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.status_code == 200, "a configuration error is not a reason to tell the core to retry"
+    assert response.json()["outcome"] == "failed"
+    assert "generations" not in connection.seen, "a turn that never ran left evidence saying it did"

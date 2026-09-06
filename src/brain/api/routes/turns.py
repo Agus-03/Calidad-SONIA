@@ -4,11 +4,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from adapters.llm.base import LLMError, LLMMessage
+from adapters.llm.base import LLMError
 from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
-from infra.enums import MessageDirection
-from pipeline.repository import Turn, TurnNotFound, read_turn
+from pipeline.generation import UnpricedModel, generate
+from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -46,44 +46,37 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     client = resolve(turn.agent.llm_provider, request.app.state.settings)
     try:
-        completion = await client.complete(
-            model=turn.agent.llm_model,
-            system=prompt.system,
-            messages=_messages(turn, prompt.user),
-            temperature=turn.agent.temperature,
-            max_tokens=turn.agent.max_tokens,
-        )
-    except LLMError as err:
-        # failed and a 200: an unusable provider does not improve on a retry, so the core must not be told to try again.
+        generation = await generate(client=client, turn=turn, prompt=prompt)
+    except (LLMError, UnpricedModel) as err:
+        # failed and a 200: neither an unusable provider nor a model with no tariff improves on a retry, so the core
+        # must not be told to try again.
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
         return TurnResponse(outcome="failed")
+
+    # A new connection and not the first one held open: the call above takes seconds and the pool is shared.
+    async with request.app.state.database.connection() as conn:
+        await write_generation(conn, generation)
 
     logger.info(
         "turn generated",
         extra={
             "context": {
                 **context,
-                "prompt_tokens": completion.prompt_tokens,
-                "completion_tokens": completion.completion_tokens,
+                "generation_id": str(generation.id),
+                "prompt_tokens": generation.prompt_tokens,
+                "completion_tokens": generation.completion_tokens,
+                "latency_ms": generation.latency_ms,
+                # As text, the same way the core reads it out of the row: money never travels as a float (C08).
+                "cost": str(generation.cost),
+                "currency": generation.currency,
             }
         },
     )
-    # generation_id stays absent until the row exists: it is the id of evidence nobody wrote yet.
-    return TurnResponse(outcome="generated", completion_text=completion.text)
-
-
-# The history travels as real user/assistant turns and the batch as one final user message, never flattened into one
-# string: that is the shape Regla 1 declares, and it is what lets the model read the conversation as a conversation.
-def _messages(turn: Turn, envelope: str) -> tuple[LLMMessage, ...]:
-    # The operator's replies reach the model as the assistant's own: from the contact's side there is one voice answering.
-    history = tuple(
-        LLMMessage(
-            role="user" if m.direction == MessageDirection.INBOUND else "assistant",
-            text=m.content_text,
-        )
-        for m in turn.history
+    return TurnResponse(
+        outcome="generated",
+        generation_id=generation.id,
+        completion_text=generation.completion_text,
     )
-    return (*history, LLMMessage(role="user", text=envelope))
 
 
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).

@@ -11,8 +11,7 @@ dependencies = [
     "pydantic-settings>=2.5",
     # The brain does DML, never DDL: src/core/migrations/ owns the schema (regla 3).
     "psycopg[binary,pool]>=3.2",
-    # The three candidates of section 8.4, behind the port of adapters/llm: no service imports one of these directly,
-    # which is what lets OE2 compare providers without touching the rest of the brain (ADR-0018).
+    # The three candidates of section 8.4, behind the port of adapters/llm so OE2 can compare them (ADR-0018).
     "cohere>=5.13",
     "anthropic>=0.40",
     "openai>=1.50",

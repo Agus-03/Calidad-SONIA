@@ -43,8 +43,7 @@ func scanInbox(row pgx.Row) (Inbox, error) {
 	return inbox, nil
 }
 
-// The single seam ADR-0006 will fill: today the column holds the bytes as they were written, and only this function changes.
-// The NUL bytes are trimmed because that is what the seed writes to mean "no number connected yet", and no real token carries one.
+// The single seam ADR-0006 will fill; the NUL bytes are what the seed writes to mean no number connected yet.
 func decryptToken(stored []byte) string {
 	return strings.Trim(string(stored), "\x00")
 }

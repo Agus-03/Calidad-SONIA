@@ -1,5 +1,4 @@
-# The turn's reads, next to what uses them: the brain gets four ids and finds everything else here (07-secuencia section 1).
-# DML only, and not even that here: this module reads, because the brain writes evidence and nothing else (regla 3).
+# The turn's reads, next to what uses them: the brain gets four ids and finds everything else here (07-secuencia 1).
 
 import logging
 from dataclasses import dataclass
@@ -151,10 +150,7 @@ def _message(row: dict) -> Message:
     )
 
 
-# ---------------------------------------------------------------------------
-# The write. Everything above reads; this is the only INSERT the brain makes in a turn, and generations is an
-# evidence table, which is the only kind it may write (regla 3).
-# ---------------------------------------------------------------------------
+# The write: the only INSERT of a turn, and generations is an evidence table, the only kind the brain may write (regla 3).
 
 
 # One turn's evidence, as 07-secuencia section 2 declares it.
@@ -178,9 +174,7 @@ class Generation:
     status: GenerationStatus
 
 
-# message_id is absent on purpose: the message does not exist yet, and the core links it inside the transaction of
-# section 2 -- the one column of this table the core writes (ADR-0017 (i).2).
-# temperature and cached_input_tokens stay NULL by a decision of the team, deferred out of Fase 1 (02-decisiones/README.md).
+# message_id is absent on purpose: the core links it inside the transaction of section 2 (ADR-0017 (i).2).
 _GENERATION = """
 INSERT INTO generations (
     id, conversation_id, ai_agent_id, message_batch_id,

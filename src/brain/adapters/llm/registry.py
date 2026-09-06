@@ -1,5 +1,4 @@
-# Resolves ai_agents.llm_provider to a client, once per turn: the provider is a property of the row and not of the deployment,
-# so the process cannot decide it at boot (regla 10, and the reason no key is required to start).
+# Resolves ai_agents.llm_provider once per turn: the provider is a property of the row, not of the deployment (regla 10).
 
 from collections.abc import Callable
 from dataclasses import dataclass

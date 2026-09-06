@@ -51,8 +51,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- The six of F01, with the illustrative content of 03-capa-prompts section 4.1: the real ones come from the cooperante's
--- survey (section 8.6). Position is the administrator's order and the assembler obeys it, it does not impose one (Regla 1).
+-- The six of F01 with the illustrative content of 03-capa-prompts 4.1; position is the administrator's order (Regla 1).
 INSERT INTO prompt_components (id, ai_agent_id, type, position, content)
 VALUES
     ('01930000-0000-7000-8000-000000000005', '01930000-0000-7000-8000-000000000002', 'objective', 1,
@@ -69,8 +68,7 @@ VALUES
      'No confirmar reservas ni tomar pagos por este canal. Si la conversación se deriva a un asesor, avisarle al cliente antes y resumirle brevemente lo hablado hasta ahí.')
 ON CONFLICT (id) DO NOTHING;
 
--- The content is copied from the rows above and never retyped: with the same text in two tables, typing it twice is how
--- the evidence starts lying (H-20). Only the id and the type are paired by hand, and neither of those can drift in meaning.
+-- Copied from the rows above and never retyped: the same text in two tables is how the evidence starts lying (H-20).
 INSERT INTO prompt_component_versions (id, prompt_component_id, version_number, content, active)
 SELECT v.id, c.id, 1, c.content, c.active
 FROM   prompt_components c

@@ -42,8 +42,7 @@ class Settings(BaseSettings):
 
     brain_internal_token: str = Field(min_length=1)
 
-    # Which provider a turn uses is a property of the agent (ai_agents.llm_provider), so no key can be required at boot:
-    # the process cannot know which agents exist without reading the database. A missing one fails when that agent runs.
+    # No key can be required at boot: the provider is per agent (ai_agents.llm_provider), so a missing one fails when it runs.
     cohere_api_key: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""

@@ -223,8 +223,7 @@ func TestMarkProcessedClosesTheTurn(t *testing.T) {
 	}
 }
 
-// The one column of an evidence table the core writes (ADR-0017 (i).2), checked against the real DDL: a unit test with
-// a stub would pass on a column name that does not exist, and this statement is written nowhere else.
+// Checked against the real DDL because a stub would pass on a column name that does not exist (ADR-0017 (i).2).
 func TestLinkGenerationJoinsTheEvidenceToTheAnswer(t *testing.T) {
 	ctx := context.Background()
 

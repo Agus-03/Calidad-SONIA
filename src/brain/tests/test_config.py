@@ -73,8 +73,7 @@ def test_get_settings_raises_a_readable_error(clean_env, monkeypatch: pytest.Mon
     get_settings.cache_clear()
 
 
-# Regla 10 stops a process that cannot serve, and a provider key is not that: it is per agent, and which agents exist
-# is only known by reading the database. A missing one has to surface when that agent runs, not at boot.
+# Regla 10 stops a process that cannot serve, and a provider key is not that: it is per agent and has to fail when it runs.
 def test_a_provider_key_is_not_required_to_boot(clean_env) -> None:
     settings = Settings(_env_file=None, **_MINIMUM)
 

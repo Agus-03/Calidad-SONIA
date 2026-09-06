@@ -57,8 +57,7 @@ func (c *Client) Turn(ctx context.Context, req TurnRequest) (TurnResponse, error
 
 		var status *httpclient.StatusError
 		if errors.As(err, &status) && status.Status == http.StatusNotFound {
-			// Wrapped and not replaced: the caller asks errors.Is for what happened and Retryable for what to do, and
-			// a bare sentinel would lose the 404 that makes this the one failure not worth asking again about.
+			// Wrapped and not replaced: the caller asks errors.Is what happened and Retryable what to do, and a bare sentinel loses the 404.
 			c.log.Warn("brain does not know the turn", conversation, cause)
 			return TurnResponse{}, fmt.Errorf("%w: %w", ErrTurnNotFound, err)
 		}

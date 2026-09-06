@@ -1,6 +1,4 @@
-# The generate step of ADR-0016, and the only place a provider is actually called. What the call cost is measured here
-# and not estimated later, because generations is the evidence OE2 and F35 read: a cost nobody measured is a number
-# nobody can defend in the report.
+# The generate step of ADR-0016: the cost is measured here and not estimated later, because generations is what OE2 reads.
 
 import time
 from dataclasses import dataclass
@@ -22,9 +20,7 @@ _PRICING_FILE = Path(__file__).resolve().parent.parent / "rules" / "pricing.yaml
 # Providers publish per million tokens, and keeping the file in those units is what makes it transcribable by hand.
 _PER_MILLION = Decimal(1_000_000)
 
-# The scale of generations.cost, numeric(14,6). Quantising here and not at the database means the row, the log and the
-# report carry the same number. A turn cheaper than a millionth of a dollar rounds to zero: that is the precision the
-# schema fixed, not the float defect C08 forbids -- with a float the whole sum would drift, not just its last digit.
+# The scale of generations.cost, numeric(14,6), quantised here so the row, the log and the report carry the same number.
 _SCALE = Decimal("0.000001")
 
 
@@ -33,8 +29,7 @@ class PricingError(RuntimeError):
     pass
 
 
-# The model the agent is configured with has no tariff. It is a configuration error and not a provider failure, so it
-# stays out of the LLMError hierarchy, whose only job is to decide what is worth asking again for.
+# A configuration error and not a provider failure, so it stays out of the LLMError hierarchy that decides what to retry.
 class UnpricedModel(RuntimeError):
     pass
 
@@ -48,8 +43,7 @@ class Rate:
 
 @dataclass(frozen=True)
 class Pricing:
-    # Not a column of generations: the tariff version reaches the log and nothing else, so a row priced before a tariff
-    # change cannot be told apart in a query. Worth knowing before quoting costs across a date on which this file moved.
+    # Not a column of generations: the tariff version reaches the log and nothing else, so no query can tell two tariffs apart.
     version: int
     currency: str
     rates: dict[tuple[str, str], Rate]
@@ -158,20 +152,17 @@ async def generate(*, client: LLMClient, turn: Turn, prompt: Prompt) -> Generati
         latency_ms=latency_ms,
         cost=cost_of(rate, completion.prompt_tokens, completion.completion_tokens),
         currency=rate.currency,
-        # Written once and already with its verdict (07-secuencia section 4.2). pending_review is the suggestion mode
-        # of F02 and blocked the output guardrail of ADR-0016; neither exists yet, so neither can be reached from here.
+        # Written once and already with its verdict (07-secuencia 4.2): pending_review and blocked have no path here yet.
         status=GenerationStatus.AUTO_SENT,
     )
 
 
-# The history is left out on purpose: those messages are rows in messages and can be read back, while the assembled
-# envelope exists nowhere else. Storing it too would duplicate the largest table in the database for nothing.
+# The history is left out on purpose: it is rows in messages, while the assembled envelope exists nowhere else.
 def _rendered(prompt: Prompt) -> str:
     return f"{prompt.system}\n\n{prompt.user}"
 
 
-# The history travels as real user/assistant turns and the batch as one final user message, never flattened into one
-# string: that is the shape Regla 1 declares, and it is what lets the model read the conversation as a conversation.
+# Real user/assistant turns and never one flattened string, which is the shape Regla 1 declares.
 def _messages(turn: Turn, envelope: str) -> tuple[LLMMessage, ...]:
     # The operator's replies reach the model as the assistant's own: from the contact's side there is one voice answering.
     history = tuple(

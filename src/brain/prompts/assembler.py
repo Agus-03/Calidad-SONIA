@@ -1,5 +1,4 @@
-# The one implementation of the assembler (F03): the structure comes from rules/generation.yaml and the content from
-# prompt_components, which is what makes the prompt dynamic - the frame never moves, the agent's text does.
+# The assembler of F03: the structure comes from rules/generation.yaml and the content from prompt_components.
 
 import logging
 from collections.abc import Sequence
@@ -23,8 +22,7 @@ _AGENT_NAME = "{agent_name}"
 _USER_SECTIONS = ("context", "knowledge", "message")
 
 
-# Raised while loading and never while answering: a scaffolding that cannot be read is a deployment mistake, and a turn
-# answered without it would be an agent with no instructions talking to a real customer.
+# Raised while loading and never while answering: a scaffolding that cannot be read is a deployment mistake.
 class RulesError(RuntimeError):
     pass
 
@@ -68,8 +66,7 @@ def _load(path: Path) -> Rules:
 
     system = _mapping(raw, "system")
     headings = _mapping(system, "headings")
-    # Checked here and not at assembly time: a type with no heading would drop out of the prompt in silence, which is
-    # precisely what OE1 measures, and it must not be discovered by reading a generation weeks later.
+    # Checked here and not at assembly time: a type with no heading would drop out of the prompt in silence, which OE1 measures.
     missing = [t for t in PromptComponentType if t.value not in headings]
     if missing:
         raise RulesError(f"prompts: no heading for {', '.join(t.value for t in missing)}")
@@ -102,8 +99,7 @@ def _text(parent: dict, key: str) -> str:
     return value.strip()
 
 
-# context and knowledge are absent for now - conversation_contexts is Fase 9 and the RAG is Fase 12 - and the signature
-# carries them because Regla 1 declares three sections, not one, and a caller should not have to rediscover the order.
+# context and knowledge are empty until Fase 9 and Fase 12, but Regla 1 declares three sections and the caller should see them.
 def assemble(
     *,
     agent_name: str,

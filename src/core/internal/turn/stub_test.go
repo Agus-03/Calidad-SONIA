@@ -218,8 +218,7 @@ func (s *stubSender) Send(_ context.Context, _ whatsapp.Inbox, _, text string) (
 	return s.wamid, nil
 }
 
-// Carries a generation id because a real brain always writes the row before answering: without it the core has
-// nothing to link, and every case here would silently exercise the evidence-less path.
+// Carries a generation id because a real brain always writes the row first, or every case would exercise the evidence-less path.
 func generated(text string) brainclient.TurnResponse {
 	id := uuid.New()
 	return brainclient.TurnResponse{

@@ -54,12 +54,10 @@ test-brain:
 	cd src/brain && poetry run pytest
 
 # Run through the brain venv because that is where pyyaml and FastAPI live; the generator belongs to neither service.
-# Writes the three: the two enumeration files and the brain's OpenAPI, which is dumped from the app itself.
 contracts:
 	cd src/brain && poetry run python ../../contracts/generate.py
 
-# The only way a generated file drifts is a contract that changed and was never regenerated: the enumerations in
-# their three copies, and the OpenAPI against the routes and schemas the brain actually serves.
+# A generated file only drifts when a contract changed and nobody regenerated it: the enumerations and the OpenAPI.
 contracts-check:
 	cd src/brain && poetry run python ../../contracts/generate.py --check
 
@@ -72,7 +70,6 @@ migrate-status:
 	$(COMPOSE) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
 
 # Never run by the application at boot (regla 3): demo data is a decision someone takes, not a side effect of starting.
-# Idempotent, so running it twice is not an error and a half-seeded database can be finished by running it again.
 seed:
 	$(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) < src/core/seeds/0001_demo.sql
 
@@ -88,11 +85,7 @@ pgadmin-down:
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 test-integration: test
 
-# Everything the smoke case needs, in the order it needs it: the doubled stack, the demo rows, and then the drive.
-# --wait blocks on the healthchecks both services declare, because up returns when the container started and not when
-# the process inside it can answer, and seeding a database the core has not migrated yet fails on the first table.
-# -count=1 because a cached pass would report a stack that is not even running as green, which is the one lie this
-# test exists to prevent. The stack is left up on purpose: a failure is read in the logs of the containers that caused it.
+# -count=1 so a cached pass cannot call a dead stack green, and --wait blocks until both healthchecks actually answer.
 smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
 smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000

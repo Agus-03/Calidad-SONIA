@@ -1,5 +1,4 @@
-# The doubled provider: it is what lets the CI smoke test run the whole turn without a key and without spending credits.
-# Its guard is in Settings, not here: LLM_USE_DOUBLE only takes effect outside production (regla 10).
+# The doubled provider: it runs the whole turn without a key, and Settings is what keeps it out of production (regla 10).
 
 from adapters.llm.base import Completion, LLMMessage, LLMUnavailable
 

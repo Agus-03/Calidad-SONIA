@@ -1,5 +1,4 @@
 -- The whole model of docs/design/DER: 37 tables, ordered so every foreign key points at something that already exists.
--- Rewritable until Fase 4: fixing this file and recreating the database beats carrying a corrective migration (README).
 
 -- Bloque 5 - the container the six root entities hang from (ADR-0012).
 CREATE TABLE accounts (
@@ -136,8 +135,7 @@ CREATE TABLE message_batches (
 -- ADR-0022 makes this the source of truth of the turn number, and three tables copy it from here.
 CREATE UNIQUE INDEX message_batches_turn_unique ON message_batches (conversation_id, turn_number);
 
--- No deleted_at of any kind: messages are the record of facts F34 to F36 and OE7 are computed on (C09).
--- wamid is nullable: an outbound message is written before it is sent, so it has no channel id yet (07-secuencia, hallazgo 3).
+-- No deleted_at of any kind: messages are the record F34 to F36 and OE7 are computed on (C09).
 CREATE TABLE messages (
     id                 uuid        PRIMARY KEY,
     conversation_id    uuid        NOT NULL REFERENCES conversations (id),
@@ -262,8 +260,7 @@ CREATE TABLE conversation_context_versions (
     created_at         timestamptz NOT NULL DEFAULT now()
 );
 
--- H-21 - ai_agent_id is the agent that produced this generation, frozen; conversations.ai_agent_id is the current one and mutates.
--- conversation_context_version_id is nullable: relaciones.md declares it 0..1, and before the rewriter of F04 there is no version to point at.
+-- H-21 - ai_agent_id is the agent that produced this generation, frozen; conversations.ai_agent_id is the current one.
 CREATE TABLE generations (
     id                              uuid          PRIMARY KEY,
     conversation_id                 uuid          NOT NULL REFERENCES conversations (id),

@@ -118,8 +118,7 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, a
 			continue
 		}
 		if errors.Is(err, conversations.ErrDuplicateWAMID) {
-			// Meta redelivers what it did not hear a 200 for, and 07-secuencia leans on the wamid to cover exactly this.
-			// It is skipped and not answered again: the turn already ran for this message the first time it arrived.
+			// Meta redelivers what it did not hear a 200 for, and skipping is right: the turn already ran the first time (07-secuencia).
 			s.log.Info("message already stored, redelivery ignored", slog.String("wamid", message.ID))
 			continue
 		}

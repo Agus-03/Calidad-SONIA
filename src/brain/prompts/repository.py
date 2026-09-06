@@ -1,5 +1,4 @@
-# The read of layer 1 (03-capa-prompts section 1): the six components the administrator edits, next to what assembles them.
-# Reads and nothing else, because prompt_components belongs to the core and the brain only writes evidence (regla 3).
+# The read of layer 1 (03-capa-prompts 1): prompt_components belongs to the core, so the brain only reads it (regla 3).
 
 from dataclasses import dataclass
 from uuid import UUID
@@ -8,8 +7,7 @@ from psycopg import AsyncConnection
 
 from infra.enums import PromptComponentType
 
-# Ordered by position because that is the order Regla 1 assembles them in, and it belongs to the administrator.
-# active and deleted_at both filter: the first is F01's ablation switch and the second is the definitive removal (C09).
+# Ordered by position because that order is the administrator's (Regla 1); active is F01's ablation switch and deleted_at is C09.
 _COMPONENTS = """
 SELECT c.type, c.content, c.position
 FROM   prompt_components c

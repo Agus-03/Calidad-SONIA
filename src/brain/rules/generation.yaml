@@ -1,5 +1,4 @@
-# The scaffolding of the agent prompt (F03): the structure is fixed here and the content comes from prompt_components.
-# Versioned data and not code, because changing a heading changes what the model reads and invalidates every earlier measurement (regla 9).
+# The scaffolding of the agent prompt (F03), versioned as data because a heading change invalidates earlier measurements (regla 9).
 version: 1
 
 system:
@@ -7,8 +6,7 @@ system:
   preamble: |-
     Te llamás {agent_name} y atendés por WhatsApp a clientes reales de la empresa. Todo lo que sigue define quién sos y cómo trabajás.
 
-  # One heading per type: six blocks of text with no separator do not tell the model where the tone ends and the rules begin.
-  # The order is not here, it is prompt_components.position — the administrator owns it (Regla 1).
+  # One heading per type: six blocks with no separator do not tell the model where the tone ends and the rules begin.
   headings:
     objective: "## Tu objetivo"
     personality: "## Tu personalidad"
@@ -30,8 +28,7 @@ system:
     Si algo de esta sección choca con las anteriores: las secciones anteriores mandan para el trato y ésta manda para el formato.
 
 user:
-  # The order is the one Regla 1 fixes - context, then RAG, then the client's message - and a section with nothing in it
-  # does not print its heading: an empty one tells the model that we looked and found nothing, which is not what happened.
+  # The order Regla 1 fixes, and an empty section prints no heading: it would tell the model we looked and found nothing.
   headings:
     context: "[CONTEXTO DE LA CONVERSACIÓN]"
     knowledge: "[BASE DE CONOCIMIENTO]"

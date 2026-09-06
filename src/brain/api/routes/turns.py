@@ -48,8 +48,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     try:
         generation = await generate(client=client, turn=turn, prompt=prompt)
     except (LLMError, UnpricedModel) as err:
-        # failed and a 200: neither an unusable provider nor a model with no tariff improves on a retry, so the core
-        # must not be told to try again.
+        # failed and a 200: neither an unusable provider nor an unpriced model improves on a retry, so the core must not try again.
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
         return TurnResponse(outcome="failed")
 

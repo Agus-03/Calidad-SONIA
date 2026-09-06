@@ -17,8 +17,7 @@ var ErrInboxNotConfigured = errors.New("whatsapp: the inbox has no access token"
 // ErrEmptyMessage guards the channel from a turn that generated nothing: Meta rejects an empty body with a 400 anyway.
 var ErrEmptyMessage = errors.New("whatsapp: refusing to send an empty message")
 
-// Sender is declared here because whatsapp/ is the only package that knows what sending means; the turn only knows this method.
-// It never retries: ADR-0020 sends at most once, and a duplicate answer to a customer is worse than one that never arrived.
+// Declared here because whatsapp/ is the only package that knows what sending means, and it never retries (ADR-0020).
 type Sender interface {
 	Send(ctx context.Context, inbox Inbox, to, text string) (string, error)
 }
@@ -104,8 +103,7 @@ func (c *Client) Send(ctx context.Context, inbox Inbox, to, text string) (string
 	return res.Messages[0].ID, nil
 }
 
-// DoubleSender answers without reaching Meta, which is the only way Fase 1 runs at all: there is no approved number yet.
-// Its guard is in config: WHATSAPP_USE_DOUBLE is refused outside development and test.
+// DoubleSender is the only way Fase 1 runs at all, and config refuses it outside development and test.
 type DoubleSender struct{ log *slog.Logger }
 
 func NewDoubleSender(log *slog.Logger) *DoubleSender {

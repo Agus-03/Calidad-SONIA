@@ -44,8 +44,7 @@ func (r *Repository) OpenByContact(ctx context.Context, contactID uuid.UUID) (Co
 	return c, nil
 }
 
-// ON CONFLICT and not a rescued error: a statement that fails aborts the whole transaction, so the re-read would never run (SQLSTATE 25P02).
-// The predicate is repeated because that is how Postgres infers the partial index of ADR-0002.
+// ON CONFLICT and not a rescued error: a failed statement aborts the transaction, so the re-read would never run (SQLSTATE 25P02).
 const conversationInsert = `
 INSERT INTO conversations (id, contact_id, inbox_id, ai_agent_id, status, mode, last_inbound_at, window_expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

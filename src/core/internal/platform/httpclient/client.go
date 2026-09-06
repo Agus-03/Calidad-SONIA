@@ -1,5 +1,4 @@
-// Package httpclient is the outgoing side of the boundaries the core calls: it classifies a failure, it never decides on it.
-// Retrying is the turn's call (ADR-0020), so nothing here loops: a retry hidden in the transport cannot know about the transaction.
+// Package httpclient classifies a failure and never decides on it: retrying is the turn's call (ADR-0020), so nothing here loops.
 package httpclient
 
 import (

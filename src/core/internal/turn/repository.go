@@ -39,8 +39,7 @@ func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Targ
 	return t, nil
 }
 
-// The turn number is derived in the statement and the unique index of ADR-0022 is the arbiter, not the read that preceded it.
-// Opened and closed at once because Fase 1 has no timer: one message is one turn until F10 groups them.
+// The unique index of ADR-0022 is the arbiter of the turn number, not the read that preceded it.
 const batchInsert = `
 INSERT INTO message_batches (id, conversation_id, messages_count, turn_number, timer_ms_used, opened_at, closed_at)
 SELECT $1, $2, 1, COALESCE(MAX(b.turn_number), 0) + 1, 0, $3, $3
@@ -83,8 +82,7 @@ func (r *Repository) MarkFailed(ctx context.Context, batchID uuid.UUID, reason s
 	return nil
 }
 
-// generations.message_id is the one column of an evidence table the core writes (ADR-0017 (i).2): the brain cannot know
-// which message carried its answer, because that row does not exist until the transaction of section 2 writes it.
+// The one column of an evidence table the core writes (ADR-0017 (i).2): that row does not exist until section 2 writes it.
 const generationLink = `UPDATE generations SET message_id = $2 WHERE id = $1`
 
 func (r *Repository) LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error {

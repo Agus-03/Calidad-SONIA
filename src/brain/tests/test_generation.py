@@ -112,8 +112,7 @@ def test_the_cost_is_exact_at_the_scale_of_the_column() -> None:
     assert cost.as_tuple().exponent == -6, "the row is numeric(14,6) and the number written has to match it"
 
 
-# The limit of the column, said out loud: below a millionth of a dollar the row stores zero. It is the schema's
-# precision and not a float defect -- with a float the whole sum would drift, and here only the last digit is lost.
+# The limit of the column said out loud: under a millionth of a dollar the row stores zero, which is precision and not drift.
 def test_a_turn_cheaper_than_the_scale_is_stored_as_zero() -> None:
     assert cost_of(COHERE, prompt_tokens=0, completion_tokens=0) == Decimal("0.000000")
 

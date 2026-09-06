@@ -1,5 +1,4 @@
-# The port of one of the four declared boundaries (regla 11), and the only one OE2 turns into an instrument:
-# comparing providers is a requirement, so the seam has to exist before there is anything to compare.
+# The port of one of the four declared boundaries (regla 11), and the only one OE2 turns into an instrument.
 
 import asyncio
 from collections.abc import AsyncIterator

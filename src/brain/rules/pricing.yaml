@@ -1,13 +1,8 @@
-# What each model costs, versioned as data because a tariff change re-prices nothing that was already measured (regla 9):
-# generations.cost is evidence, and a row priced with today's tariff cannot be compared to one priced with yesterday's.
-# USD per million tokens. PENDING VERIFICATION: these numbers were written from memory and nobody has read them
-# against a provider's price list yet, so generations.cost is exact arithmetic over a figure that may not be. The day
-# somebody checks them, that date goes in checked_at -- an empty one is what says the check has not happened.
+# USD per million tokens, versioned as data (regla 9). PENDING VERIFICATION: written from memory, checked_at is empty.
 version: 1
 checked_at:
 
-# Deliberately short: a model gets a price the day the team decides to use it, and a turn whose model is not here
-# fails before calling the provider. The alternative -- a default tariff -- writes a cost nobody can defend into OE2.
+# Deliberately short: a turn whose model is not here fails before calling the provider, and a default tariff would lie to OE2.
 providers:
   cohere:
     # The model the demo agent runs on, and the primary provider of ADR-0018.
@@ -21,6 +16,5 @@ providers:
       input: 3.00
       output: 15.00
 
-# One currency for the whole file, because generations.currency is char(3) per row and mixing them would need a rate
-# of exchange and a date -- neither of which the model has (C08).
+# One currency per file, because generations.currency is char(3) and mixing them would need a rate and a date (C08).
 currency: USD

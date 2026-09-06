@@ -35,8 +35,7 @@ func TestTheTurnWritesInTheOrderSectionTwoDeclares(t *testing.T) {
 	}
 }
 
-// The outbound row is written before the send and processed_at with it: sending first and crashing would leave a
-// delivered message with no row, and messages admits neither correction nor deletion (F29, C09).
+// The outbound row precedes the send: crashing after it would leave a delivered message with no row (F29, C09).
 func TestTheAnswerIsWrittenBeforeItIsSent(t *testing.T) {
 	h := conductor()
 
@@ -156,8 +155,7 @@ func TestTheBrainIsAskedNoMoreThanTheConfiguredTimes(t *testing.T) {
 	}
 }
 
-// A turn that could not be answered leaves processed_at NULL and its reason written: with closed_at set, that is the
-// one marker of a turn nobody finished (07-secuencia section 5).
+// With closed_at set, processed_at NULL and a reason written is the one marker of a turn nobody finished (07-secuencia 5).
 func TestAFailedTurnLeavesItselfMarkedAndUnprocessed(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -296,8 +294,7 @@ func (b *blockingSender) Send(context.Context, whatsapp.Inbox, string, string) (
 	return "wamid.HBg", nil
 }
 
-// generations.message_id is the join OE2 and F35 read through: without it the evidence and the answer are two rows
-// that nothing connects, and section 5 cannot tell a generation that was sent from one that was not.
+// Without generations.message_id the evidence and the answer are two rows that nothing connects (OE2, F35).
 func TestTheGenerationIsLinkedToTheMessageItProduced(t *testing.T) {
 	h := conductor()
 
@@ -318,8 +315,7 @@ func TestTheGenerationIsLinkedToTheMessageItProduced(t *testing.T) {
 	}
 }
 
-// Inside the transaction of section 2, so its failure abandons the turn: a link written outside could be lost by a
-// restart, and then the answer went out with no evidence naming it.
+// Inside the transaction of section 2: a link written outside could be lost, and the answer would go out unnamed.
 func TestALinkThatFailsAbandonsTheTurn(t *testing.T) {
 	h := conductor()
 	h.store.linkErr = errors.New("turn: link generation: connection reset")

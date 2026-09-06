@@ -1,6 +1,4 @@
-// Package smoke drives the Fase 1 path from outside the two services: one webhook in, one answer out, and the evidence
-// the report reads left behind. Everything else in the repository tests a piece; this tests that the pieces are wired,
-// which is the only thing no unit test can tell. Every later phase has to keep it green.
+// Package smoke drives the whole Fase 1 path from outside: the only test that can say the two services are wired.
 package smoke
 
 import (
@@ -25,8 +23,7 @@ const (
 	seededContactPhone  = "5493510000000"
 )
 
-// The webhook acks before the turn runs (ADR-0029), so there is nothing to wait on but the rows themselves. Generous
-// because the deadline is only reached when something is broken: a healthy doubled turn lands in well under a second.
+// Generous because it is only reached when something is broken: a healthy doubled turn lands in well under a second.
 const turnDeadline = 30 * time.Second
 
 // What the phase promised to leave behind, read in one query so a half-written turn cannot look finished.
@@ -46,13 +43,11 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	core, brain, pool := stack(t)
 	ctx := context.Background()
 
-	// Both ends and not only the one being called: the core answers /health without the brain, so a brain that is still
-	// booting turns into a turn that fails thirty seconds later for a reason that has nothing to do with the code.
+	// Both ends: the core answers /health without the brain, so a booting brain fails the turn thirty seconds later (ADR-0029).
 	waitForHealth(t, core)
 	waitForHealth(t, brain)
 
-	// Fresh on every run: the core ignores a wamid it already stored, because that is how Meta's redeliveries are
-	// covered, and a fixed one would make the second run assert the rows of the first.
+	// Fresh per run: the core ignores a wamid it already stored, so a fixed one would assert the rows of the previous run.
 	wamid := "wamid.smoke." + uuid.New().String()
 
 	if status := postWebhook(t, core, wamid); status != http.StatusOK {
@@ -67,8 +62,7 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	if got.batchError != "" {
 		t.Errorf("message_batches.error_message: got %q, want empty", got.batchError)
 	}
-	// The row the generation points at has to be the answer and not the question: a link to the inbound message would
-	// satisfy the join above and mean the opposite of what the turn promised.
+	// A link to the inbound message would satisfy the join above and mean the opposite of what the turn promised.
 	if got.messageDirection != "outbound" {
 		t.Errorf("the message the generation points at: got %q, want outbound", got.messageDirection)
 	}
@@ -89,16 +83,14 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	}
 }
 
-// stack skips instead of failing: the suite runs on every commit and this case needs the three services up, which is
-// a decision someone takes with make smoke and not something a plain go test can assume.
+// Skips instead of failing: this case needs the three services up, which make smoke decides and a plain go test cannot.
 func stack(t *testing.T) (string, string, db.Pool) {
 	t.Helper()
 
 	core := os.Getenv("SONIA_SMOKE_CORE_URL")
 	brain := os.Getenv("SONIA_SMOKE_BRAIN_URL")
 	dsn := os.Getenv("SONIA_TEST_DATABASE_URL")
-	// Named rather than defaulted: a default that points at the wrong port fails as a timeout, which reads like a bug
-	// in the turn and is the most expensive kind of false alarm this file can produce.
+	// Named rather than defaulted: a default on the wrong port fails as a timeout, which reads like a bug in the turn.
 	if core == "" || brain == "" || dsn == "" {
 		t.Skip("SONIA_SMOKE_CORE_URL, SONIA_SMOKE_BRAIN_URL and SONIA_TEST_DATABASE_URL are not all set: run make smoke")
 	}
@@ -132,8 +124,7 @@ func waitForHealth(t *testing.T, base string) {
 func postWebhook(t *testing.T, base, wamid string) int {
 	t.Helper()
 
-	// Written out rather than built from structs: this is Meta's shape and not ours, and a fixture that mirrors the
-	// core's own parser would stop being able to catch the day the parser drifts from what Meta actually sends.
+	// Meta's shape and not ours: a fixture built from the core's own parser could not catch the parser drifting from Meta.
 	payload := fmt.Sprintf(`{"object":"whatsapp_business_account","entry":[{"id":"%[1]s","changes":[{"field":"messages",`+
 		`"value":{"metadata":{"display_phone_number":"%[2]s","phone_number_id":"%[1]s"},`+
 		`"contacts":[{"wa_id":"%[2]s","profile":{"name":"Contacto Demo"}}],`+
@@ -149,10 +140,7 @@ func postWebhook(t *testing.T, base, wamid string) int {
 	return res.StatusCode
 }
 
-// The answer is reached through generations.message_id and not through a batch column, because messages.message_batch_id
-// groups only the incoming fragments of F10 (entidades.md): that link is the whole path from the turn to what was said,
-// so a join that finds nothing is exactly the hole ADR-0017 (i).2 exists to close. Its absence is what "not yet" means,
-// which is why the case needs no sleep. cost travels as text because money is never read into a float (C08).
+// The answer hangs from generations.message_id, the link of ADR-0017 (i).2: no batch column points at it (F10).
 const turnOutcome = `
 SELECT b.processed_at IS NOT NULL,
        coalesce(b.error_message, ''),
@@ -192,8 +180,7 @@ func awaitTurn(ctx context.Context, t *testing.T, pool db.Pool, wamid string) ou
 	}
 }
 
-// Runs only on the timeout, and earns its place there: without it a broken turn and a stack that never got the message
-// fail the same way, and the error_message of section 5 is exactly the sentence that tells them apart.
+// Only on the timeout: without it a broken turn and a stack that never got the message fail in exactly the same way.
 func diagnose(ctx context.Context, pool db.Pool, wamid string) string {
 	var batch, processed, reason string
 	var written, linked int

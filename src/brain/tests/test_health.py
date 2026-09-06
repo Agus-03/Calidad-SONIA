@@ -40,8 +40,7 @@ def test_an_unreachable_database_answers_service_unavailable() -> None:
     assert response.json() == {"status": "unavailable"}
 
 
-# Quantified over the routes instead of listing them: a new route extends this test rather than breaking it, and the
-# failure it catches is the one that matters, which is mounting an endpoint outside the internal router by accident.
+# Quantified over the routes so a new one extends this test instead of breaking it, and mounting outside the internal router fails.
 def test_only_health_answers_without_the_shared_secret(settings: Settings) -> None:
     app = create_app(settings)
     app.state.database = _StubDatabase(True)

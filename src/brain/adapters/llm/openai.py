@@ -1,5 +1,4 @@
-# The third candidate of section 8.4. Nothing outside this file imports the openai SDK.
-# It is not in ADR-0018, which decides two providers: the ADR is short one line, and the code is what has three.
+# The third candidate of section 8.4, which ADR-0018 does not name: the ADR is short one line and the code has three.
 
 from typing import Any
 

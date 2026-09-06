@@ -52,8 +52,7 @@ type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
-// TxFunc runs fn inside one transaction with both collaborators bound to it, which is what regla 5 asks of whoever conducts.
-// It is a function and not the pool so a test can conduct a turn without PostgreSQL; deps.go wraps db.InTx in it.
+// TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
 type TxFunc func(ctx context.Context, fn func(Store, Aggregate) error) error
 
 type Options struct {
@@ -85,8 +84,7 @@ func New(opts Options) *Orchestrator {
 	return &Orchestrator{opts: opts}
 }
 
-// Start returns immediately and the turn runs behind it (ADR-0029): the webhook already answered 200 and must not wait.
-// The registration happens here and not inside the goroutine, so a shutdown that begins right now still finds this turn.
+// Registered here and not inside the goroutine, so a shutdown that begins right now still finds this turn (ADR-0029).
 func (o *Orchestrator) Start(ctx context.Context, conversationID, messageID uuid.UUID, aiAgentID *uuid.UUID) {
 	if aiAgentID == nil {
 		// A conversation with no agent has nobody to answer it: the operator sees it in the inbox and that is the whole flow.
@@ -157,8 +155,7 @@ func (o *Orchestrator) run(ctx context.Context, conversationID, messageID, aiAge
 	}
 
 	if answer.GenerationID == nil {
-		// The customer still gets the answer: a missing audit link is not a reason to stay silent. But it is a hole in
-		// what OE2 measures, and a generation nobody can find is indistinguishable from one nobody wrote.
+		// The customer still gets the answer, but a generation nobody can find is indistinguishable from one nobody wrote (OE2).
 		o.opts.Logger.Warn("turn answered with no evidence to link",
 			slog.String("conversation_id", conversationID.String()),
 		)
@@ -211,8 +208,7 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 	return res, nil
 }
 
-// The transaction of 07-secuencia section 2: the outbound row and processed_at together, or a restart cannot tell a
-// finished turn from one that never ran.
+// The transaction of 07-secuencia section 2: without it a restart cannot tell a finished turn from one that never ran.
 func (o *Orchestrator) persist(
 	ctx context.Context, batch Batch, conversationID, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
 ) (conversations.Message, error) {
@@ -220,13 +216,11 @@ func (o *Orchestrator) persist(
 
 	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
 		var err error
-		// Written before it is sent: sending first and crashing would leave a delivered message with no row, and messages
-		// admits neither correction nor deletion (F29, C09).
+		// Written before it is sent: crashing after the send would leave a delivered message with no row (F29, C09).
 		if message, err = aggregate.RecordOutbound(ctx, conversationID, aiAgentID, answer.Text(), at); err != nil {
 			return err
 		}
-		// Linked here and not afterwards: with the link outside, a restart in between leaves message_id NULL, which is
-		// what section 5 reads as a generation that was never sent.
+		// Linked here and not afterwards: a restart in between would leave message_id NULL, which section 5 reads as never sent.
 		if answer.GenerationID != nil {
 			if err = store.LinkGeneration(ctx, *answer.GenerationID, message.ID); err != nil {
 				return err

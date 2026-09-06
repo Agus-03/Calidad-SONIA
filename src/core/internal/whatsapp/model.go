@@ -16,6 +16,8 @@ type Inbox struct {
 	DefaultAIAgentID *uuid.UUID
 	PhoneNumberID    string
 	VerifyToken      string
+	// Configured once per number through the screen of F29, which is why it is a row and not an environment variable.
+	AccessToken string
 }
 
 // WebhookEvent is the log F20 asks for, written before anything is interpreted so an unparseable payload still leaves a trace.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ type Repository struct{ exec db.Executor }
 func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
 const inboxSelect = `
-SELECT id, account_id, default_ai_agent_id, phone_number_id, verify_token
+SELECT id, account_id, default_ai_agent_id, phone_number_id, verify_token, access_token_encrypted
 FROM   inboxes
 WHERE  deleted_at IS NULL`
 
@@ -30,14 +31,22 @@ func (r *Repository) InboxByVerifyToken(ctx context.Context, token string) (Inbo
 
 func scanInbox(row pgx.Row) (Inbox, error) {
 	var inbox Inbox
-	err := row.Scan(&inbox.ID, &inbox.AccountID, &inbox.DefaultAIAgentID, &inbox.PhoneNumberID, &inbox.VerifyToken)
+	var accessToken []byte
+	err := row.Scan(&inbox.ID, &inbox.AccountID, &inbox.DefaultAIAgentID, &inbox.PhoneNumberID, &inbox.VerifyToken, &accessToken)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Inbox{}, ErrInboxNotFound
 	}
 	if err != nil {
 		return Inbox{}, fmt.Errorf("whatsapp: scan inbox: %w", err)
 	}
+	inbox.AccessToken = decryptToken(accessToken)
 	return inbox, nil
+}
+
+// The single seam ADR-0006 will fill: today the column holds the bytes as they were written, and only this function changes.
+// The NUL bytes are trimmed because that is what the seed writes to mean "no number connected yet", and no real token carries one.
+func decryptToken(stored []byte) string {
+	return strings.Trim(string(stored), "\x00")
 }
 
 // InboxByPhoneNumberID is how an incoming payload names the number: Meta identifies it by this and not by our id.

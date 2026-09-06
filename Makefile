@@ -49,11 +49,13 @@ test-core:
 test-brain:
 	cd src/brain && poetry run pytest
 
-# Run through the brain venv because that is where pyyaml is declared; the generator belongs to neither service.
+# Run through the brain venv because that is where pyyaml and FastAPI live; the generator belongs to neither service.
+# Writes the three: the two enumeration files and the brain's OpenAPI, which is dumped from the app itself.
 contracts:
 	cd src/brain && poetry run python ../../contracts/generate.py
 
-# The only way the three copies of an enumeration drift is a contract that changed and was never regenerated.
+# The only way a generated file drifts is a contract that changed and was never regenerated: the enumerations in
+# their three copies, and the OpenAPI against the routes and schemas the brain actually serves.
 contracts-check:
 	cd src/brain && poetry run python ../../contracts/generate.py --check
 

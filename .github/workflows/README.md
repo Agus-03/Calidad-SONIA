@@ -16,9 +16,11 @@ Los umbrales **no van en el workflow**. Viven en el repositorio —`Makefile` pa
 | Núcleo | `src/core` | `go vet ./...` y después `go build ./...` |
 | Núcleo | raíz | `make test-core` — corre los tests, filtra lo generado y corta abajo del 80 % |
 | Cerebro | `src/brain` | `poetry install` y después `poetry run pytest` — el corte está en `addopts` |
-| Contrato | raíz | `make contracts-check` — falla si las enumeraciones generadas quedaron viejas |
+| Contrato | raíz | `make contracts-check` — falla si las enumeraciones generadas o `contracts/brain.openapi.json` quedaron viejos |
 
 Si no se quiere depender de `make`, los dos targets están en el [`Makefile`](../../Makefile) y son una línea cada uno.
+
+> **`contracts-check` cubre dos cosas distintas con un solo comando.** Las 22 enumeraciones, que viven tres veces —`enums.yaml`, Go y Python—, y el contrato del único salto sincrónico entre los dos desplegables: `contracts/brain.openapi.json` se vuelca de la propia app de FastAPI, así que un campo agregado en un esquema de Pydantic **cambia el archivo y rompe el chequeo si nadie lo regeneró**. Lo que todavía no cubre es que los structs de Go en `brainclient/contract.go` cumplan ese contrato: eso sigue siendo una transcripción a mano.
 
 ## Lo que el runner tiene que proveer
 

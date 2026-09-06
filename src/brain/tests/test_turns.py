@@ -81,6 +81,11 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
             }
         ],
         "messages": [message("hola")],
+        # The six of F01: without them the agent reaches the model with no instructions at all (Regla 1).
+        "prompt_components": [
+            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1},
+            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2},
+        ],
     }
     base.update(overrides)
     return base
@@ -152,7 +157,9 @@ def test_turns_generates_when_a_provider_answers() -> None:
 
     payload = response.json()
     assert payload["outcome"] == "generated"
+    # The double echoes the last user message, so the answer proves the assembled envelope is what reached the model.
     assert payload["completion_text"].endswith("hola"), "the answer has to carry the message that arrived"
+    assert "[MENSAJE DEL CLIENTE]" in payload["completion_text"], "the turn reached the model without the envelope of Regla 1"
     # Absent because generations is not written yet: the id of evidence nobody recorded would be a lie.
     assert payload["generation_id"] is None
 
@@ -163,9 +170,13 @@ def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) ->
     with client(connection, settings) as http:
         http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
-    assert connection.seen == ["message_batches", "ai_agents", "messages", "messages"], (
-        "the brain did not read the turn from PostgreSQL, which is what section 1 replaces the payload with"
-    )
+    assert connection.seen == [
+        "message_batches",
+        "ai_agents",
+        "messages",
+        "messages",
+        "prompt_components",
+    ], "the brain did not read the turn from PostgreSQL, which is what section 1 replaces the payload with"
 
 
 # Four ids that name nothing is the caller's mistake; a 500 would tell the core to retry something that cannot improve.

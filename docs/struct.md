@@ -96,7 +96,7 @@ sonia/
 │   │   ├── rules/                      datos versionados, no código
 │   │   │   ├── blocklist.yaml   ·   grounding.yaml
 │   │   │   ├── guardrails.yaml  ·   triage.yaml
-│   │   │   ├── rewriter.yaml
+│   │   │   ├── generation.yaml  ·   rewriter.yaml
 │   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py

@@ -78,6 +78,7 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
+│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan

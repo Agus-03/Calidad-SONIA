@@ -33,6 +33,8 @@ func Load() (Config, error) {
 
 		TurnMaxRetries:   3,
 		TurnRetryBackoff: 250 * time.Millisecond,
+		// Bounds how long one turn goroutine can live, and with it how long a deployment waits before cutting (ADR-0029).
+		TurnBudget: 30 * time.Second,
 
 		MetaGraphBaseURL: env("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
 		// Pinned and never floating: Meta versions the path, and an unpinned one changes the contract without a deploy.
@@ -78,6 +80,9 @@ func Load() (Config, error) {
 		problems = append(problems, err.Error())
 	}
 	if cfg.TurnRetryBackoff, err = durationMS("TURN_RETRY_BACKOFF_MS", cfg.TurnRetryBackoff); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.TurnBudget, err = durationMS("TURN_BUDGET_MS", cfg.TurnBudget); err != nil {
 		problems = append(problems, err.Error())
 	}
 

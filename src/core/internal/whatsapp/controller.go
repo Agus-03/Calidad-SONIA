@@ -17,6 +17,7 @@ import (
 const maxPayloadBytes = 1 << 20
 
 // TurnStarter is declared by the channel and implemented by turn/, because the webhook is the side that must not wait for it.
+// Start returns immediately: it registers the turn and runs it in a goroutine of its own (ADR-0029).
 type TurnStarter interface {
 	Start(ctx context.Context, conversationID, messageID uuid.UUID, aiAgentID *uuid.UUID)
 }
@@ -75,10 +76,12 @@ func (c *Controller) receive(gc *gin.Context) {
 
 	soniahttp.OK(gc, gin.H{"received": len(inbound)})
 
-	// The turn takes seconds and Meta retries anything slower, so it runs outside the request and with a context that outlives it.
+	// Start returns at once and the turn runs behind it (ADR-0029). The goroutine is its own and not launched here, so the
+	// turn is registered before this handler returns and a shutdown that begins now still waits for it.
 	if c.starter != nil {
 		for _, in := range inbound {
-			go c.starter.Start(context.WithoutCancel(gc.Request.Context()), in.ConversationID, in.MessageID, in.AIAgentID)
+			// The request's context is cancelled the moment this returns, and the turn outlives it by seconds.
+			c.starter.Start(context.WithoutCancel(gc.Request.Context()), in.ConversationID, in.MessageID, in.AIAgentID)
 		}
 	}
 }

@@ -34,6 +34,7 @@ sonia/
 │   ├── brain.Dockerfile
 │   ├── core.Dockerfile
 │   ├── docker-compose.yml              el puerto del cerebro NO se publica al host
+│   ├── docker-compose.smoke.yml        los dos dobles · sólo lo aplica `make smoke`
 │   └── frontend.Dockerfile
 │
 ├── docs/
@@ -58,7 +59,7 @@ sonia/
 │   │   ├── pyproject.toml              Poetry · absorbe la config de pytest
 │   │   │
 │   │   ├── adapters/                   los cuatro puertos, menos el canal
-│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · anthropic
+│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · cohere · anthropic · openai · double
 │   │   │   ├── storage/                lee los bytes que subió el núcleo
 │   │   │   └── vectorstore/            base · qdrant
 │   │   │
@@ -78,6 +79,7 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
+│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
@@ -95,7 +97,7 @@ sonia/
 │   │   ├── rules/                      datos versionados, no código
 │   │   │   ├── blocklist.yaml   ·   grounding.yaml
 │   │   │   ├── guardrails.yaml  ·   triage.yaml
-│   │   │   ├── rewriter.yaml
+│   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
 │   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py
@@ -187,7 +189,9 @@ sonia/
 │   │   │   ├── 0003_conversations.sql
 │   │   │   └── 0004_turn_evidence.sql
 │   │   │
-│   │   └── seeds/                      demo · idempotentes · nunca en producción
+│   │   ├── seeds/                      demo · idempotentes · nunca en producción
+│   │   │
+│   │   └── smoke/                      el camino entero desde afuera · el arnés de regresión de la Fase 1
 │   │
 │   ├── frontend/                       ── DESPLEGABLE 3 · A DEFINIR (8.4) ──
 │   │

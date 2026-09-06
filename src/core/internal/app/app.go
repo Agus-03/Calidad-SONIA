@@ -49,6 +49,8 @@ func Run(ctx context.Context) error {
 		Logger:      log,
 		ActorLookup: deps.actorLookup,
 		Controllers: deps.controllers,
+
+		PublicControllers: deps.publicControllers,
 		Ready: func() error {
 			pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -79,5 +81,15 @@ func Run(ctx context.Context) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+
+	// The server first, so no new turn starts, and only then the ones already running (ADR-0029).
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+
+	// A turn cut in half leaves the customer without an answer, and with the 200 already sent Meta will not send it again.
+	if err := deps.turns.Wait(shutdownCtx); err != nil {
+		log.Warn("shutdown cut turns still running", slog.String("cause", err.Error()))
+	}
+	return nil
 }

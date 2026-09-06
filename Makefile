@@ -5,11 +5,14 @@ COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 # The same project plus the development tooling, so pgadmin lands on the network the database is already on.
 COMPOSE_DEV := $(COMPOSE) -f deploy/docker-compose.dev.yml
 
+# The same three services with both ends doubled, which is what lets the whole path run without a key and without a WABA.
+COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
+
 # Read so the integration DSN is assembled here and nobody has to type a password into a shell.
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check migrate migrate-status pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -18,10 +21,12 @@ help:
 	@echo "build      reconstruye las dos imagenes"
 	@echo "test       corre los tests de los dos servicios"
 	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
+	@echo "smoke      levanta el stack doblado y recorre el camino entero: webhook, respuesta y evidencia"
 	@echo "contracts  regenera las enumeraciones de Go y de Python"
 	@echo "contracts-check   falla si lo generado quedo viejo"
 	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
 	@echo "migrate-status    lista lo que la base dice que ya corrio"
+	@echo "seed       carga los datos de demo: agente, inbox y contacto fijos"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 
@@ -48,11 +53,11 @@ test-core:
 test-brain:
 	cd src/brain && poetry run pytest
 
-# Run through the brain venv because that is where pyyaml is declared; the generator belongs to neither service.
+# Run through the brain venv because that is where pyyaml and FastAPI live; the generator belongs to neither service.
 contracts:
 	cd src/brain && poetry run python ../../contracts/generate.py
 
-# The only way the three copies of an enumeration drift is a contract that changed and was never regenerated.
+# A generated file only drifts when a contract changed and nobody regenerated it: the enumerations and the OpenAPI.
 contracts-check:
 	cd src/brain && poetry run python ../../contracts/generate.py --check
 
@@ -63,6 +68,10 @@ migrate:
 # Reads the runner's own bookkeeping, which is the only place that knows what actually ran.
 migrate-status:
 	$(COMPOSE) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT version, applied_at FROM schema_migrations ORDER BY version"
+
+# Never run by the application at boot (regla 3): demo data is a decision someone takes, not a side effect of starting.
+seed:
+	$(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) < src/core/seeds/0001_demo.sql
 
 # Brings the database with it, because pgadmin against nothing is an empty tree.
 pgadmin:
@@ -75,3 +84,12 @@ pgadmin-down:
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 test-integration: test
+
+# -count=1 so a cached pass cannot call a dead stack green, and --wait blocks until both healthchecks actually answer.
+smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
+smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
+smoke:
+	$(COMPOSE_SMOKE) up -d --build --wait
+	$(MAKE) seed
+	cd src/core && go test ./smoke/... -count=1 -v

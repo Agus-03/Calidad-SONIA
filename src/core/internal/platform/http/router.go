@@ -18,9 +18,12 @@ type RouterOptions struct {
 	ActorLookup ActorLookup
 	Controllers []Controller
 	Ready       func() error
+
+	// PublicControllers hang outside /api/v1: an external callback has no operator, so no role can describe it.
+	PublicControllers []Controller
 }
 
-// NewRouter puts /health outside authentication, every context under /api/v1, and panics on a route that declares no roles.
+// NewRouter puts /health and the public controllers outside authentication, every context under /api/v1, and panics on a route whose roles contradict its zone.
 func NewRouter(opts RouterOptions) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -40,6 +43,16 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 		}
 		OK(c, gin.H{"status": "ok"})
 	})
+
+	// The guard is the mirror of the authenticated one: a public route naming a role is a contradiction, and it is cheaper to hear it at boot.
+	for _, controller := range opts.PublicControllers {
+		for _, route := range controller.Routes() {
+			if len(route.Roles) > 0 {
+				panic(fmt.Sprintf("http: public route %s %s declares roles", route.Method, route.Path))
+			}
+			engine.Handle(route.Method, route.Path, route.Handler)
+		}
+	}
 
 	api := engine.Group("/api/v1", Authenticate(opts.ActorLookup))
 	for _, controller := range opts.Controllers {

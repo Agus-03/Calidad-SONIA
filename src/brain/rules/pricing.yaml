@@ -1,0 +1,20 @@
+# USD per million tokens, versioned as data (regla 9). PENDING VERIFICATION: written from memory, checked_at is empty.
+version: 1
+checked_at:
+
+# Deliberately short: a turn whose model is not here fails before calling the provider, and a default tariff would lie to OE2.
+providers:
+  cohere:
+    # The model the demo agent runs on, and the primary provider of ADR-0018.
+    command-a-03-2025:
+      input: 2.50
+      output: 10.00
+
+  anthropic:
+    # The backup provider of ADR-0018; no agent is configured with it yet.
+    claude-sonnet-4-5:
+      input: 3.00
+      output: 15.00
+
+# One currency per file, because generations.currency is char(3) and mixing them would need a rate and a date (C08).
+currency: USD

@@ -1,5 +1,7 @@
 # The healthcheck of docker-compose and the CI read this endpoint, so it has to be able to say no.
 
+import re
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -38,5 +40,22 @@ def test_an_unreachable_database_answers_service_unavailable() -> None:
     assert response.json() == {"status": "unavailable"}
 
 
-def test_create_app_mounts_health(settings: Settings) -> None:
-    assert list(create_app(settings).openapi()["paths"]) == ["/health"]
+# Quantified over the routes so a new one extends this test instead of breaking it, and mounting outside the internal router fails.
+def test_only_health_answers_without_the_shared_secret(settings: Settings) -> None:
+    app = create_app(settings)
+    app.state.database = _StubDatabase(True)
+    client = TestClient(app)
+
+    paths = app.openapi()["paths"]
+    assert "/health" in paths, "the healthcheck of docker-compose and the CI has to stay mounted"
+
+    for path, operations in paths.items():
+        for method in operations:
+            # A path parameter has to be filled for the route to match at all; the token is checked before the handler.
+            url = re.sub(r"\{[^}]+\}", "00000000-0000-0000-0000-000000000000", path)
+            status = client.request(method, url).status_code
+
+            if path == "/health":
+                assert status != 401, "the container healthcheck cannot be asked for a secret"
+            else:
+                assert status == 401, f"{method.upper()} {path} answers without the shared secret"

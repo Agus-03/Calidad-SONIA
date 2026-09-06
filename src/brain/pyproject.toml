@@ -2,7 +2,8 @@
 name = "sonia-brain"
 version = "0.1.0"
 description = "SONIA — cerebro: ensamblado de prompts, RAG y clasificadores (desplegable 2 de ADR-0017)"
-requires-python = ">=3.14"
+# Capped because the provider SDKs are: an open upper bound makes the resolver refuse a range they cannot satisfy.
+requires-python = ">=3.14,<4.0"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -10,6 +11,12 @@ dependencies = [
     "pydantic-settings>=2.5",
     # The brain does DML, never DDL: src/core/migrations/ owns the schema (regla 3).
     "psycopg[binary,pool]>=3.2",
+    # The three candidates of section 8.4, behind the port of adapters/llm so OE2 can compare them (ADR-0018).
+    "cohere>=5.13",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    # Runtime and not development: rules/ is read while a turn runs, so the production image needs it (regla 9).
+    "pyyaml>=6.0",
 ]
 
 [tool.poetry]
@@ -23,8 +30,6 @@ pytest-asyncio = ">=0.24"
 pytest-cov = ">=5.0"
 # Exercises the FastAPI app without a live server.
 httpx2 = "^2.12.0"
-# Declared and not inherited from uvicorn: contracts/generate.py reads the enumerations with it.
-pyyaml = ">=6.0"
 
 [tool.pytest.ini_options]
 # The brain root is the import root: api, prompts, adapters and infra are flat (regla 12).

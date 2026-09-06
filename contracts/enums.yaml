@@ -1,5 +1,4 @@
-# SONIA - the 22 enumerations. Source of truth: DER/entidades.md; this is its transcription.
-# C07: in PostgreSQL these are varchar + CHECK and never a native ENUM, so sql_name names a column type and is not a type to create.
+# The 22 enumerations, transcribed from DER/entidades.md: varchar + CHECK in PostgreSQL and never a native ENUM (C07).
 
 version: 1
 

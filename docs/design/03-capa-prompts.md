@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -37,9 +37,11 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 ### Regla 1 — Composición del prompt
 
+> **Enmendada el 2026-09-06** al construir el ensamblador (Fase 1, tarea 12). La redacción anterior decía que `system` contenía **únicamente** los seis componentes concatenados; el texto de abajo admite el andamiaje fijo que los enmarca.
+
 **Decisión.** El prompt no es un texto plano: usa la estructura de roles de la API del LLM.
 
-- **`system`** contiene **únicamente** los seis `prompt_components` activos del agente, concatenados según su `position`. No cambia entre bloques de la misma conversación salvo que el administrador edite un componente.
+- **`system`** tiene una **estructura fija** —declarada y versionada en `src/brain/rules/generation.yaml`— dentro de la cual se insertan los seis `prompt_components` activos del agente, cada uno bajo su encabezado y en el orden de su `position`. El andamiaje aporta tres cosas que el administrador no edita: un encabezado de canal, un encabezado por componente y un bloque final de formato de salida. **El único contenido variable siguen siendo los seis componentes**, así que el `system` no cambia entre bloques de la misma conversación salvo que el administrador edite uno. Un componente que falta no imprime su sección: F01 declara seis, pero una empresa puede no tener voz de marca y eso es un estado válido, no un error.
 - **`user`** contiene, en este orden: **(1)** el contexto dinámico del bloque (`conversation_contexts`: `primary_intent`, objeciones, urgencia, señal de presupuesto, datos extraídos), **(2)** los fragmentos recuperados por RAG (`retrieval_logs`), **(3)** el mensaje del cliente ya redactado (Regla 4).
 - **El historial** de bloques anteriores viaja como turnos reales `user`/`assistant` entre `system` y el `user` del bloque actual — no se aplana dentro de un solo mensaje.
 
@@ -48,8 +50,14 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 - Mantener `system` estático y limitado a los seis componentes lo vuelve **cacheable** entre bloques (Anthropic, OpenAI y otros proveedores ofrecen *prompt caching* sobre el contenido que no cambia). Si el contexto dinámico viviera en `system`, se perdería ese ahorro en el 100% de los bloques, porque nunca habría dos `system` iguales. El costo y la latencia por bloque que ya registra `generations.cost` / `latency_ms` son insumo directo de la viabilidad económica ante el cooperante — este orden los protege.
 - F04 usa el verbo "inyecta" para describir el contexto dinámico, y no impone en qué rol de la API ocurre esa inyección: no hay conflicto entre esta decisión y el texto del anteproyecto.
 - El orden dentro de `user` — contexto, luego RAG, luego la pregunta — sigue el razonamiento con que un operador humano encararía el mismo caso: primero "qué sé de este cliente ahora", después "qué dice mi base de conocimiento", y al final la pregunta literal.
+- **Por qué el andamiaje.** Seis textos pegados sin separador no le dicen al modelo dónde termina el tono y empiezan las reglas. Y el formato de salida es una decisión del sistema, no del administrador: WhatsApp no renderiza Markdown, así que un modelo sin esa instrucción contesta con viñetas y negritas que llegan al cliente como símbolos sueltos. Si esa instrucción viviera dentro de un componente, el administrador podría borrarla sin querer; si viviera en el `user`, se repetiría en cada bloque — gastando tokens y rompiendo el mismo caché que esta regla protege.
+- El andamiaje no afecta a OE1, que mide que **estén** los seis componentes activos, no que estén solos: entran enteros y en su orden.
 
-**Costo asumido.** El `system` deja de reflejar el estado de la conversación; cualquier lectura aislada del `system` sin su `user` correspondiente da una imagen incompleta del agente en ese momento. Es aceptable porque `generations` siempre guarda ambos juntos.
+**Costo asumido.**
+
+- El `system` deja de reflejar el estado de la conversación; cualquier lectura aislada del `system` sin su `user` correspondiente da una imagen incompleta del agente en ese momento. Es aceptable porque `generations` siempre guarda ambos juntos.
+- `generations.prompt_rendered` pasa a guardar texto que el administrador nunca escribió, así que leer la evidencia exige saber qué parte es del agente y cuál del sistema. La versión de `generation.yaml` es lo que permite reconstruir cuál era el andamiaje ese día.
+- Un componente puede **contradecir** al andamiaje — un `rules` que pida listas de opciones contra un bloque de formato que prohíbe viñetas. La precedencia se declara dentro del propio andamiaje (el componente manda para el trato, el andamiaje para el formato), pero está escrita en lenguaje natural y ningún código la hace cumplir.
 
 ---
 

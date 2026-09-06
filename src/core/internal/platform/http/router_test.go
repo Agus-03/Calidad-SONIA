@@ -31,6 +31,45 @@ func TestNewRouterPanicsOnARouteWithNoRoles(t *testing.T) {
 	})
 }
 
+// TestNewRouterPanicsOnAPublicRouteWithRoles is the mirror guard: a public route naming a role hides which zone it is really in.
+func TestNewRouterPanicsOnAPublicRouteWithRoles(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatalf("NewRouter accepted a public route with roles, want a panic")
+		}
+	}()
+
+	NewRouter(RouterOptions{
+		PublicControllers: []Controller{stubController{routes: []Route{{
+			Method:  http.MethodGet,
+			Path:    "/webhooks/whatsapp",
+			Roles:   []string{RoleAdmin},
+			Handler: func(c *gin.Context) { OK(c, gin.H{}) },
+		}}}},
+	})
+}
+
+// TestPublicRoutesSkipAuthentication protects the decision: an external callback carries no operator header and must still get through.
+func TestPublicRoutesSkipAuthentication(t *testing.T) {
+	engine := NewRouter(RouterOptions{
+		ActorLookup: func(context.Context, uuid.UUID) (Actor, error) {
+			return Actor{}, Unauthorized("unreachable", "a public route must never consult the lookup")
+		},
+		PublicControllers: []Controller{stubController{routes: []Route{{
+			Method:  http.MethodGet,
+			Path:    "/webhooks/whatsapp",
+			Handler: func(c *gin.Context) { Text(c, "challenge") },
+		}}}},
+	})
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp", nil))
+
+	if rec.Code != http.StatusOK || rec.Body.String() != "challenge" {
+		t.Fatalf("public route answered %d %q, want 200 \"challenge\"", rec.Code, rec.Body.String())
+	}
+}
+
 // TestRouterAuthorizesBeforeTheHandler protects Anexo B: a role checked inside the service has already let the request in.
 func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 	admin, operator := uuid.New(), uuid.New()

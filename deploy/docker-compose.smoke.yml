@@ -1,0 +1,13 @@
+# The two doubles the Fase 1 smoke test runs on, apart from the main compose so nothing deploys a fake sender by accident.
+
+services:
+  core:
+    environment:
+      # Declared here and not left to the .env, because both configs refuse a double outside development and test (regla 10).
+      ENVIRONMENT: test
+      WHATSAPP_USE_DOUBLE: "true"
+
+  brain:
+    environment:
+      ENVIRONMENT: test
+      LLM_USE_DOUBLE: "true"

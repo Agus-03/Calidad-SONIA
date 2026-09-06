@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -28,6 +29,9 @@ type store interface {
 	Create(ctx context.Context, c Conversation) error
 	AppendMessage(ctx context.Context, m Message) error
 	TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error
+	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
+	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
+	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 }
 
 type Service struct {
@@ -103,10 +107,10 @@ func (s *Service) RecordInbound(ctx context.Context, c Conversation, wamid, text
 }
 
 // DraftOutbound builds the row the turn writes before sending: no wamid and no status, because Meta has not answered yet.
-func (s *Service) DraftOutbound(c Conversation, aiAgentID uuid.UUID, text string, at time.Time) Message {
+func (s *Service) DraftOutbound(conversationID, aiAgentID uuid.UUID, text string, at time.Time) Message {
 	return Message{
 		ID:              id.New(),
-		ConversationID:  c.ID,
+		ConversationID:  conversationID,
 		Direction:       enums.MessageDirectionOutbound,
 		SenderType:      enums.SenderTypeAiAgent,
 		SenderAIAgentID: &aiAgentID,
@@ -114,4 +118,36 @@ func (s *Service) DraftOutbound(c Conversation, aiAgentID uuid.UUID, text string
 		ContentType:     enums.MessageContentTypeText,
 		SentAt:          at,
 	}
+}
+
+// RecordOutbound writes the answer before it leaves, so a send that fails leaves a visible row and never a hole (07-secuencia).
+func (s *Service) RecordOutbound(ctx context.Context, conversationID, aiAgentID uuid.UUID, text string, at time.Time) (Message, error) {
+	message := s.DraftOutbound(conversationID, aiAgentID, text, at)
+	if err := s.repo.AppendMessage(ctx, message); err != nil {
+		return Message{}, fmt.Errorf("conversations: record outbound: %w", err)
+	}
+	return message, nil
+}
+
+// LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.
+func (s *Service) LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error {
+	return s.repo.LinkToBatch(ctx, messageID, batchID)
+}
+
+func (s *Service) MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error {
+	return s.repo.MarkSent(ctx, messageID, wamid, at)
+}
+
+func (s *Service) MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error {
+	return s.repo.MarkFailed(ctx, messageID, errorCode)
+}
+
+// WithExecutor returns the same service bound to a transaction, so the turn that conducts can carry it across packages (regla 5).
+func (s *Service) WithExecutor(exec db.Executor) *Service {
+	repo, ok := s.repo.(*Repository)
+	if !ok {
+		// A doubled store has no transaction to bind to, and a test that conducts one is testing the pool and not this.
+		return s
+	}
+	return &Service{repo: repo.WithExecutor(exec), log: s.log}
 }

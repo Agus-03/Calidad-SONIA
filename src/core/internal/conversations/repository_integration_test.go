@@ -120,7 +120,7 @@ func TestTheOutboundMessageIsWrittenBeforeItIsSent(t *testing.T) {
 			t.Fatalf("RecordInbound: %v", err)
 		}
 
-		draft := service.DraftOutbound(conversation, agent, "buenas, en que puedo ayudarte", at)
+		draft := service.DraftOutbound(conversation.ID, agent, "buenas, en que puedo ayudarte", at)
 		if err := repo.AppendMessage(ctx, draft); err != nil {
 			t.Fatalf("the outbound message could not be written before being sent: %v", err)
 		}
@@ -145,7 +145,7 @@ func TestTheOutboundMessageIsWrittenBeforeItIsSent(t *testing.T) {
 		}
 
 		// ADR-0020 sends at most once, so a rejected send has to stay readable instead of being retried or removed.
-		failed := service.DraftOutbound(conversation, agent, "esta no sale", at)
+		failed := service.DraftOutbound(conversation.ID, agent, "esta no sale", at)
 		if err := repo.WithExecutor(exec).AppendMessage(ctx, failed); err != nil {
 			t.Fatalf("append the message that will fail: %v", err)
 		}

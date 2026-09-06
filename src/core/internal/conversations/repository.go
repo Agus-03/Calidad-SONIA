@@ -83,6 +83,18 @@ func (r *Repository) AppendMessage(ctx context.Context, m Message) error {
 	return nil
 }
 
+// LinkToBatch is the one column of messages that is written after the fact: the batch is opened by turn/ once the message exists.
+func (r *Repository) LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, `UPDATE messages SET message_batch_id = $2 WHERE id = $1`, messageID, batchID)
+	if err != nil {
+		return fmt.Errorf("conversations: link message to batch: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // MarkSent writes what only Meta knows, which is why the row was written without it (07-secuencia, hallazgo 3).
 func (r *Repository) MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error {
 	tag, err := r.exec.Exec(ctx,

@@ -54,6 +54,11 @@ func (r *Repository) InboxByPhoneNumberID(ctx context.Context, phoneNumberID str
 	return scanInbox(r.exec.QueryRow(ctx, inboxSelect+" AND phone_number_id = $1", phoneNumberID))
 }
 
+// InboxByID is how the turn resolves which number answers: it holds the conversation's inbox_id and nothing else about it.
+func (r *Repository) InboxByID(ctx context.Context, inboxID uuid.UUID) (Inbox, error) {
+	return scanInbox(r.exec.QueryRow(ctx, inboxSelect+" AND id = $1", inboxID))
+}
+
 const webhookEventInsert = `
 INSERT INTO webhook_events (id, inbox_id, event_type, wamid, payload_json, signature_valid, status, received_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`

@@ -22,6 +22,33 @@ type fakeStore struct {
 	appended    []Message
 	touched     int
 	openFailure error
+	linked      map[uuid.UUID]uuid.UUID
+	sent        map[uuid.UUID]string
+	failed      map[uuid.UUID]string
+}
+
+func (f *fakeStore) LinkToBatch(_ context.Context, messageID, batchID uuid.UUID) error {
+	if f.linked == nil {
+		f.linked = map[uuid.UUID]uuid.UUID{}
+	}
+	f.linked[messageID] = batchID
+	return nil
+}
+
+func (f *fakeStore) MarkSent(_ context.Context, messageID uuid.UUID, wamid string, _ time.Time) error {
+	if f.sent == nil {
+		f.sent = map[uuid.UUID]string{}
+	}
+	f.sent[messageID] = wamid
+	return nil
+}
+
+func (f *fakeStore) MarkFailed(_ context.Context, messageID uuid.UUID, errorCode string) error {
+	if f.failed == nil {
+		f.failed = map[uuid.UUID]string{}
+	}
+	f.failed[messageID] = errorCode
+	return nil
 }
 
 func (f *fakeStore) OpenByContact(context.Context, uuid.UUID) (Conversation, error) {
@@ -156,7 +183,7 @@ func TestRecordInboundStoresBeforeItMovesTheWindow(t *testing.T) {
 // TestDraftOutboundCarriesNoChannelIdYet protects the write before the send: Meta has not answered when this row is built.
 func TestDraftOutboundCarriesNoChannelIdYet(t *testing.T) {
 	agent := uuid.New()
-	draft := NewService(&fakeStore{}, slog.Default()).DraftOutbound(Conversation{ID: uuid.New()}, agent, "buenas", time.Now())
+	draft := NewService(&fakeStore{}, slog.Default()).DraftOutbound(uuid.New(), agent, "buenas", time.Now())
 
 	if draft.WAMID != nil {
 		t.Fatalf("the draft already carries a wamid, which only Meta can give it")
@@ -166,5 +193,49 @@ func TestDraftOutboundCarriesNoChannelIdYet(t *testing.T) {
 	}
 	if draft.SenderAIAgentID == nil || *draft.SenderAIAgentID != agent {
 		t.Fatalf("the outbound message does not name the agent, and the sender check constraint rejects that")
+	}
+}
+
+// The answer is written before it is sent, because a send that crashes must leave a visible row and never a hole (07-secuencia).
+func TestRecordOutboundWritesTheRowBeforeAnybodySends(t *testing.T) {
+	store := &fakeStore{}
+	agent := uuid.New()
+	conversation := uuid.New()
+
+	message, err := NewService(store, slog.Default()).
+		RecordOutbound(context.Background(), conversation, agent, "buenas", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RecordOutbound: got %v, want no error", err)
+	}
+
+	if len(store.appended) != 1 {
+		t.Fatalf("appended %d rows, want 1", len(store.appended))
+	}
+	if message.WAMID != nil || message.Status != nil {
+		t.Fatalf("the row was written as if it had already been sent: %+v", message)
+	}
+	if message.Direction != enums.MessageDirectionOutbound || message.SenderType != enums.SenderTypeAiAgent {
+		t.Fatalf("direction %q and sender %q, want outbound and ai_agent", message.Direction, message.SenderType)
+	}
+}
+
+// The turn writes messages through here and never with SQL of its own (regla 1), so the three passthroughs have to exist.
+func TestTheAggregateExposesWhatTheTurnNeeds(t *testing.T) {
+	store := &fakeStore{}
+	service := NewService(store, slog.Default())
+	message, batch := uuid.New(), uuid.New()
+
+	if err := service.LinkToBatch(context.Background(), message, batch); err != nil {
+		t.Fatalf("LinkToBatch: %v", err)
+	}
+	if err := service.MarkSent(context.Background(), message, "wamid.HBg", time.Now()); err != nil {
+		t.Fatalf("MarkSent: %v", err)
+	}
+	if err := service.MarkFailed(context.Background(), message, "131047"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+
+	if store.linked[message] != batch || store.sent[message] != "wamid.HBg" || store.failed[message] != "131047" {
+		t.Fatalf("the aggregate did not reach the store: %+v %+v %+v", store.linked, store.sent, store.failed)
 	}
 }

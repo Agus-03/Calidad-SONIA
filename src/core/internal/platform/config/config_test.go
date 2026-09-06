@@ -118,6 +118,7 @@ func TestLoadFallsBackToDefaults(t *testing.T) {
 		"DB_POOL_MIN_SIZE", "DB_POOL_MAX_SIZE",
 		"BRAIN_TIMEOUT_MS", "BRAIN_PREVIEW_TIMEOUT_MS",
 		"TURN_MAX_RETRIES", "TURN_RETRY_BACKOFF_MS",
+		"META_GRAPH_BASE_URL", "META_API_VERSION", "WHATSAPP_TIMEOUT_MS", "WHATSAPP_USE_DOUBLE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -138,5 +139,53 @@ func TestLoadFallsBackToDefaults(t *testing.T) {
 	}
 	if cfg.PreviewTimeout != 3*time.Second {
 		t.Fatalf("PreviewTimeout = %v, want 3s", cfg.PreviewTimeout)
+	}
+	if cfg.MetaGraphBaseURL != "https://graph.facebook.com" || cfg.MetaAPIVersion != "v21.0" {
+		t.Fatalf("Meta defaults = %q %q, want the pinned Cloud API host and version", cfg.MetaGraphBaseURL, cfg.MetaAPIVersion)
+	}
+	if cfg.WhatsAppTimeout != 5*time.Second {
+		t.Fatalf("WhatsAppTimeout = %v, want 5s", cfg.WhatsAppTimeout)
+	}
+	// Off by default, because the deployment that forgets to say anything is the one that must not answer with a fake send.
+	if cfg.WhatsAppUseDouble {
+		t.Fatal("WhatsAppUseDouble defaulted to true")
+	}
+}
+
+// An allowlist and not a ban on production: with a ban, an ENVIRONMENT typed "prod" would quietly let a fake send through.
+func TestLoadRefusesTheDoubleOutsideDevelopmentAndTest(t *testing.T) {
+	cases := []struct {
+		name        string
+		environment string
+		wantErr     bool
+	}{
+		{"development is where there is no approved number, which is every machine today", "development", false},
+		{"test is the CI, which has no WABA either", "test", false},
+		{"production must never answer a customer without reaching Meta", "production", true},
+		{"staging talks to real numbers too", "staging", true},
+		{"a typo is not a permission: prod is not on the list", "prod", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv("ENVIRONMENT", tc.environment)
+			t.Setenv("WHATSAPP_USE_DOUBLE", "true")
+
+			_, err := Load()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Load() error = %v, want an error: %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A typo must not silently mean off: a deployment that meant to double and did not would try to reach Meta with no token.
+func TestLoadRefusesAFlagThatIsNotTrueOrFalse(t *testing.T) {
+	validEnv(t)
+	t.Setenv("WHATSAPP_USE_DOUBLE", "si")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted WHATSAPP_USE_DOUBLE=si")
 	}
 }

@@ -4,10 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// An allowlist and not a ban on production: with a ban, an ENVIRONMENT typed "prod" would quietly let a fake send through.
+var doubleAllowedEnvironments = []string{"development", "test"}
 
 // Load reads the environment and reports every problem at once instead of failing on the first.
 func Load() (Config, error) {
@@ -29,6 +33,12 @@ func Load() (Config, error) {
 
 		TurnMaxRetries:   3,
 		TurnRetryBackoff: 250 * time.Millisecond,
+
+		MetaGraphBaseURL: env("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
+		// Pinned and never floating: Meta versions the path, and an unpinned one changes the contract without a deploy.
+		MetaAPIVersion: env("META_API_VERSION", "v21.0"),
+		// Shorter than the brain's: Meta answers in hundreds of milliseconds, and the turn already spent its budget upstream.
+		WhatsAppTimeout: 5 * time.Second,
 	}
 
 	for _, required := range []struct {
@@ -71,6 +81,18 @@ func Load() (Config, error) {
 		problems = append(problems, err.Error())
 	}
 
+	if cfg.WhatsAppTimeout, err = durationMS("WHATSAPP_TIMEOUT_MS", cfg.WhatsAppTimeout); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.WhatsAppUseDouble, err = boolean("WHATSAPP_USE_DOUBLE", false); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.WhatsAppUseDouble && !slices.Contains(doubleAllowedEnvironments, cfg.Environment) {
+		problems = append(problems, fmt.Sprintf(
+			"WHATSAPP_USE_DOUBLE answers without reaching Meta and ENVIRONMENT=%q is not one of %s",
+			cfg.Environment, strings.Join(doubleAllowedEnvironments, ", ")))
+	}
+
 	switch cfg.LogLevel {
 	case "debug", "info", "warning", "error":
 	default:
@@ -102,6 +124,19 @@ func durationMS(key string, fallback time.Duration) (time.Duration, error) {
 		return fallback, fmt.Errorf("%s=%q is not a positive number of milliseconds", key, raw)
 	}
 	return time.Duration(ms) * time.Millisecond, nil
+}
+
+// boolean reads a flag, refusing anything that is not clearly true or false: a typo must not silently mean off.
+func boolean(key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback, fmt.Errorf("%s=%q is not true or false", key, raw)
+	}
+	return v, nil
 }
 
 // positiveInt reads an integer greater than zero.

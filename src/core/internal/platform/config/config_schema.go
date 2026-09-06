@@ -19,4 +19,10 @@ type Config struct {
 
 	TurnMaxRetries   int
 	TurnRetryBackoff time.Duration
+
+	// The access token is not here: it belongs to the inbox row, because one account can connect several numbers (F29).
+	MetaGraphBaseURL  string
+	MetaAPIVersion    string
+	WhatsAppTimeout   time.Duration
+	WhatsAppUseDouble bool
 }

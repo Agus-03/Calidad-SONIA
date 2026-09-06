@@ -51,6 +51,32 @@ func TestPostJSONSendsTheHeadersAndTheBody(t *testing.T) {
 	}
 }
 
+// Meta's token belongs to the inbox row and one core serves several, so it cannot be fixed when the client is built.
+func TestPostJSONLetsOneCallSetItsOwnHeader(t *testing.T) {
+	var gotAuth, gotFixed string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotFixed = r.Header.Get("Authorization"), r.Header.Get("X-Fixed")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := New(Options{BaseURL: server.URL, Headers: map[string]string{"X-Fixed": "siempre", "Authorization": "Bearer viejo"}})
+
+	err := client.PostJSON(context.Background(), "/messages", payload{}, nil, Header("Authorization", "Bearer nuevo"))
+	if err != nil {
+		t.Fatalf("PostJSON() error = %v, want nil", err)
+	}
+
+	// The per-call value wins, and what was fixed at construction survives untouched.
+	if gotAuth != "Bearer nuevo" {
+		t.Fatalf("Authorization = %q, want the per-call value", gotAuth)
+	}
+	if gotFixed != "siempre" {
+		t.Fatalf("X-Fixed = %q, want the value fixed at construction", gotFixed)
+	}
+}
+
 func TestPostJSONReturnsTheStatusAndTheBodyItGotBack(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -134,6 +160,15 @@ func TestPostJSONStopsAtItsOwnTimeout(t *testing.T) {
 	}
 	if !Retryable(err) {
 		t.Fatal("a timeout never reached an answer, so it has to stay retryable")
+	}
+}
+
+// The message is what ends up in the log and in the operator's view, so it has to carry both halves of what happened.
+func TestStatusErrorNamesTheStatusAndWhatCameBack(t *testing.T) {
+	err := &StatusError{Status: 400, Body: `{"error":{"code":131047}}`}
+
+	if !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "131047") {
+		t.Fatalf("Error() = %q, want the status and the body in it", err.Error())
 	}
 }
 

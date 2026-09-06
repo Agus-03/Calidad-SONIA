@@ -65,8 +65,15 @@ func New(opts Options) *Client {
 	}
 }
 
+// Option customises one call. The brain's shared secret is the same on every request, but Meta's token belongs to the inbox.
+type Option func(req *http.Request)
+
+func Header(name, value string) Option {
+	return func(req *http.Request) { req.Header.Set(name, value) }
+}
+
 // PostJSON sends in and decodes out, with its own deadline: whoever waits decides how long, not the transport.
-func (c *Client) PostJSON(ctx context.Context, path string, in, out any) error {
+func (c *Client) PostJSON(ctx context.Context, path string, in, out any, opts ...Option) error {
 	body, err := json.Marshal(in)
 	if err != nil {
 		return fmt.Errorf("httpclient: encode %s: %w", path, err)
@@ -85,6 +92,10 @@ func (c *Client) PostJSON(ctx context.Context, path string, in, out any) error {
 	req.Header.Set("Content-Type", "application/json")
 	for name, value := range c.headers {
 		req.Header.Set(name, value)
+	}
+	// Applied last so a per-call value wins over the one fixed at construction.
+	for _, opt := range opts {
+		opt(req)
 	}
 
 	res, err := c.http.Do(req)

@@ -23,10 +23,12 @@ type stubStore struct {
 	targetErr    error
 	openErr      error
 	processedErr error
+	linkErr      error
 
 	batch     Batch
 	processed []uuid.UUID
 	failed    map[uuid.UUID]string
+	linked    map[uuid.UUID]uuid.UUID
 	steps     *[]string
 }
 
@@ -65,6 +67,20 @@ func (s *stubStore) MarkFailed(_ context.Context, batchID uuid.UUID, reason stri
 		s.failed = map[uuid.UUID]string{}
 	}
 	s.failed[batchID] = reason
+	return nil
+}
+
+func (s *stubStore) LinkGeneration(_ context.Context, generationID, messageID uuid.UUID) error {
+	if s.linkErr != nil {
+		return s.linkErr
+	}
+	s.record("generation_linked")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.linked == nil {
+		s.linked = map[uuid.UUID]uuid.UUID{}
+	}
+	s.linked[generationID] = messageID
 	return nil
 }
 
@@ -202,8 +218,15 @@ func (s *stubSender) Send(_ context.Context, _ whatsapp.Inbox, _, text string) (
 	return s.wamid, nil
 }
 
+// Carries a generation id because a real brain always writes the row before answering: without it the core has
+// nothing to link, and every case here would silently exercise the evidence-less path.
 func generated(text string) brainclient.TurnResponse {
-	return brainclient.TurnResponse{Outcome: brainclient.OutcomeGenerated, CompletionText: &text}
+	id := uuid.New()
+	return brainclient.TurnResponse{
+		Outcome:        brainclient.OutcomeGenerated,
+		GenerationID:   &id,
+		CompletionText: &text,
+	}
 }
 
 type harness struct {

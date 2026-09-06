@@ -82,3 +82,18 @@ func (r *Repository) MarkFailed(ctx context.Context, batchID uuid.UUID, reason s
 	}
 	return nil
 }
+
+// generations.message_id is the one column of an evidence table the core writes (ADR-0017 (i).2): the brain cannot know
+// which message carried its answer, because that row does not exist until the transaction of section 2 writes it.
+const generationLink = `UPDATE generations SET message_id = $2 WHERE id = $1`
+
+func (r *Repository) LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, generationLink, generationID, messageID)
+	if err != nil {
+		return fmt.Errorf("turn: link generation: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrGenerationNotFound
+	}
+	return nil
+}

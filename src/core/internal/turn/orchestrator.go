@@ -21,6 +21,7 @@ var (
 	ErrConversationNotFound = errors.New("turn: conversation not found")
 	ErrBatchNotFound        = errors.New("turn: message batch not found")
 	ErrNoAnswer             = errors.New("turn: the brain produced no answer")
+	ErrGenerationNotFound   = errors.New("turn: generation not found")
 )
 
 // Indirected so a test can conduct a turn without a database; everything else takes its ids from outside.
@@ -32,6 +33,7 @@ type Store interface {
 	OpenBatch(ctx context.Context, conversationID uuid.UUID, at time.Time) (Batch, error)
 	MarkProcessed(ctx context.Context, batchID uuid.UUID, at time.Time) error
 	MarkFailed(ctx context.Context, batchID uuid.UUID, reason string) error
+	LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error
 }
 
 // Aggregate is conversations/: this package never writes messages with SQL of its own (regla 1).
@@ -154,7 +156,15 @@ func (o *Orchestrator) run(ctx context.Context, conversationID, messageID, aiAge
 		return o.abandon(ctx, batch, err)
 	}
 
-	message, err := o.persist(ctx, batch, conversationID, aiAgentID, answer.Text(), time.Now().UTC())
+	if answer.GenerationID == nil {
+		// The customer still gets the answer: a missing audit link is not a reason to stay silent. But it is a hole in
+		// what OE2 measures, and a generation nobody can find is indistinguishable from one nobody wrote.
+		o.opts.Logger.Warn("turn answered with no evidence to link",
+			slog.String("conversation_id", conversationID.String()),
+		)
+	}
+
+	message, err := o.persist(ctx, batch, conversationID, aiAgentID, answer, time.Now().UTC())
 	if err != nil {
 		return o.abandon(ctx, batch, err)
 	}
@@ -204,7 +214,7 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 // The transaction of 07-secuencia section 2: the outbound row and processed_at together, or a restart cannot tell a
 // finished turn from one that never ran.
 func (o *Orchestrator) persist(
-	ctx context.Context, batch Batch, conversationID, aiAgentID uuid.UUID, text string, at time.Time,
+	ctx context.Context, batch Batch, conversationID, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
 ) (conversations.Message, error) {
 	var message conversations.Message
 
@@ -212,8 +222,15 @@ func (o *Orchestrator) persist(
 		var err error
 		// Written before it is sent: sending first and crashing would leave a delivered message with no row, and messages
 		// admits neither correction nor deletion (F29, C09).
-		if message, err = aggregate.RecordOutbound(ctx, conversationID, aiAgentID, text, at); err != nil {
+		if message, err = aggregate.RecordOutbound(ctx, conversationID, aiAgentID, answer.Text(), at); err != nil {
 			return err
+		}
+		// Linked here and not afterwards: with the link outside, a restart in between leaves message_id NULL, which is
+		// what section 5 reads as a generation that was never sent.
+		if answer.GenerationID != nil {
+			if err = store.LinkGeneration(ctx, *answer.GenerationID, message.ID); err != nil {
+				return err
+			}
 		}
 		return store.MarkProcessed(ctx, batch.ID, at)
 	})

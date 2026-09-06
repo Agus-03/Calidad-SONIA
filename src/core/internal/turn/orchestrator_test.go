@@ -23,7 +23,7 @@ func TestTheTurnWritesInTheOrderSectionTwoDeclares(t *testing.T) {
 
 	h.turn()
 
-	want := []string{"open_batch", "link_to_batch", "outbound_message", "processed_at", "message_sent"}
+	want := []string{"open_batch", "link_to_batch", "outbound_message", "generation_linked", "processed_at", "message_sent"}
 	if !slices.Equal(*h.steps, want) {
 		t.Fatalf("steps = %v, want %v", *h.steps, want)
 	}
@@ -294,4 +294,63 @@ type blockingSender struct {
 func (b *blockingSender) Send(context.Context, whatsapp.Inbox, string, string) (string, error) {
 	b.once.Do(func() { <-b.release })
 	return "wamid.HBg", nil
+}
+
+// generations.message_id is the join OE2 and F35 read through: without it the evidence and the answer are two rows
+// that nothing connects, and section 5 cannot tell a generation that was sent from one that was not.
+func TestTheGenerationIsLinkedToTheMessageItProduced(t *testing.T) {
+	h := conductor()
+
+	h.turn()
+
+	if len(h.store.linked) != 1 {
+		t.Fatalf("linked %d generations, want 1", len(h.store.linked))
+	}
+	wantID := *h.brain.response.GenerationID
+	messageID, ok := h.store.linked[wantID]
+	if !ok {
+		t.Fatalf("the generation the brain answered with was not linked: %s", wantID)
+	}
+	for sentID := range h.aggregate.sent {
+		if messageID != sentID {
+			t.Fatalf("the generation was linked to %s and the message sent is %s", messageID, sentID)
+		}
+	}
+}
+
+// Inside the transaction of section 2, so its failure abandons the turn: a link written outside could be lost by a
+// restart, and then the answer went out with no evidence naming it.
+func TestALinkThatFailsAbandonsTheTurn(t *testing.T) {
+	h := conductor()
+	h.store.linkErr = errors.New("turn: link generation: connection reset")
+
+	h.turn()
+
+	if h.sender.calls != 0 {
+		t.Fatal("the answer was sent although the transaction of section 2 did not commit")
+	}
+	if len(h.store.failed) != 1 {
+		t.Fatal("the batch was not marked failed, so nothing says why the turn stopped (section 5)")
+	}
+	if slices.Contains(*h.steps, "processed_at") {
+		t.Fatalf("processed_at was written after the link failed: %v", *h.steps)
+	}
+}
+
+// The customer comes first: a brain that answered without leaving evidence is a gap to log, not a reason to stay silent.
+func TestAnAnswerWithNoEvidenceIsStillDelivered(t *testing.T) {
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:        brainclient.OutcomeGenerated,
+		CompletionText: h.brain.response.CompletionText,
+	}
+
+	h.turn()
+
+	if h.sender.calls != 1 {
+		t.Fatal("the answer was not sent because the brain left no generation to link")
+	}
+	if slices.Contains(*h.steps, "generation_linked") {
+		t.Fatalf("a generation nobody named was linked: %v", *h.steps)
+	}
 }

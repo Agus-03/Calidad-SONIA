@@ -222,3 +222,91 @@ func TestMarkProcessedClosesTheTurn(t *testing.T) {
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
 	}
 }
+
+// The one column of an evidence table the core writes (ADR-0017 (i).2), checked against the real DDL: a unit test with
+// a stub would pass on a column name that does not exist, and this statement is written nowhere else.
+func TestLinkGenerationJoinsTheEvidenceToTheAnswer(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		batch, err := repo.OpenBatch(ctx, conversationID, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("OpenBatch: got %v, want no error", err)
+		}
+		generationID := evidence(t, ctx, exec, conversationID, batch.ID)
+		messageID := outbound(t, ctx, exec, conversationID)
+
+		if err := repo.LinkGeneration(ctx, generationID, messageID); err != nil {
+			t.Fatalf("LinkGeneration: got %v, want no error", err)
+		}
+
+		var linked uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT message_id FROM generations WHERE id = $1`, generationID).
+			Scan(&linked); err != nil {
+			t.Fatalf("read back the generation: %v", err)
+		}
+		if linked != messageID {
+			t.Fatalf("message_id = %s, want %s", linked, messageID)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A generation nobody wrote is not a link to retry: it means the brain named a row that is not there.
+func TestLinkGenerationReportsAGenerationThatIsNotThere(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		messageID := outbound(t, ctx, exec, conversationID)
+
+		if err := NewRepository(exec).LinkGeneration(ctx, id.New(), messageID); !errors.Is(err, ErrGenerationNotFound) {
+			t.Fatalf("LinkGeneration: got %v, want ErrGenerationNotFound", err)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// Written with SQL and not through the brain, because the brain is the other deployable and this case is about the DDL.
+func evidence(t *testing.T, ctx context.Context, exec db.Executor, conversationID, batchID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	generationID := id.New()
+	_, err := exec.Exec(ctx,
+		`INSERT INTO generations (id, conversation_id, ai_agent_id, message_batch_id, llm_provider, llm_model,
+		                          prompt_rendered, completion_text, prompt_tokens, completion_tokens,
+		                          latency_ms, cost, currency, status)
+		 SELECT $1, c.id, c.ai_agent_id, $2, 'double', 'command-a-03-2025', 'system', 'hola', 10, 5, 120, 0.000075, 'USD', $3
+		 FROM   conversations c WHERE c.id = $4`,
+		generationID, batchID, enums.GenerationStatusAutoSent, conversationID)
+	if err != nil {
+		t.Fatalf("insert generation: %v", err)
+	}
+	return generationID
+}
+
+func outbound(t *testing.T, ctx context.Context, exec db.Executor, conversationID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	messageID := id.New()
+	_, err := exec.Exec(ctx,
+		`INSERT INTO messages (id, conversation_id, direction, sender_type, sender_ai_agent_id, content_text, content_type, status, sent_at)
+		 SELECT $1, c.id, 'outbound', 'ai_agent', c.ai_agent_id, 'hola', 'text', 'sent', now()
+		 FROM   conversations c WHERE c.id = $2`,
+		messageID, conversationID)
+	if err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+	return messageID
+}

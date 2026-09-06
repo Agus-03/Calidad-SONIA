@@ -49,6 +49,8 @@ func Run(ctx context.Context) error {
 		Logger:      log,
 		ActorLookup: deps.actorLookup,
 		Controllers: deps.controllers,
+
+		PublicControllers: deps.publicControllers,
 		Ready: func() error {
 			pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()

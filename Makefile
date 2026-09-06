@@ -5,11 +5,14 @@ COMPOSE := docker compose --env-file .env -f deploy/docker-compose.yml
 # The same project plus the development tooling, so pgadmin lands on the network the database is already on.
 COMPOSE_DEV := $(COMPOSE) -f deploy/docker-compose.dev.yml
 
+# The same three services with both ends doubled, which is what lets the whole path run without a key and without a WABA.
+COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
+
 # Read so the integration DSN is assembled here and nobody has to type a password into a shell.
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -18,6 +21,7 @@ help:
 	@echo "build      reconstruye las dos imagenes"
 	@echo "test       corre los tests de los dos servicios"
 	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
+	@echo "smoke      levanta el stack doblado y recorre el camino entero: webhook, respuesta y evidencia"
 	@echo "contracts  regenera las enumeraciones de Go y de Python"
 	@echo "contracts-check   falla si lo generado quedo viejo"
 	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
@@ -83,3 +87,16 @@ pgadmin-down:
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 test-integration: test
+
+# Everything the smoke case needs, in the order it needs it: the doubled stack, the demo rows, and then the drive.
+# --wait blocks on the healthchecks both services declare, because up returns when the container started and not when
+# the process inside it can answer, and seeding a database the core has not migrated yet fails on the first table.
+# -count=1 because a cached pass would report a stack that is not even running as green, which is the one lie this
+# test exists to prevent. The stack is left up on purpose: a failure is read in the logs of the containers that caused it.
+smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
+smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
+smoke:
+	$(COMPOSE_SMOKE) up -d --build --wait
+	$(MAKE) seed
+	cd src/core && go test ./smoke/... -count=1 -v

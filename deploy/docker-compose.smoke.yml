@@ -1,0 +1,16 @@
+# The two doubles the smoke test of the Fase 1 runs on: no Cohere key and no WABA number, so the whole path can be
+# driven on any machine and in the CI without a single secret. Separate file and never merged into the main compose,
+# for the same reason pgadmin is separate: nothing should be able to deploy a fake sender by accident.
+
+services:
+  core:
+    environment:
+      # Declared here and not left to the .env, because both configs refuse a double outside development and test and a
+      # machine whose ENVIRONMENT says anything else would fail at boot with an error about a flag it never set.
+      ENVIRONMENT: test
+      WHATSAPP_USE_DOUBLE: "true"
+
+  brain:
+    environment:
+      ENVIRONMENT: test
+      LLM_USE_DOUBLE: "true"

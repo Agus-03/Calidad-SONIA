@@ -34,6 +34,7 @@ sonia/
 │   ├── brain.Dockerfile
 │   ├── core.Dockerfile
 │   ├── docker-compose.yml              el puerto del cerebro NO se publica al host
+│   ├── docker-compose.smoke.yml        los dos dobles · sólo lo aplica `make smoke`
 │   └── frontend.Dockerfile
 │
 ├── docs/
@@ -188,7 +189,9 @@ sonia/
 │   │   │   ├── 0003_conversations.sql
 │   │   │   └── 0004_turn_evidence.sql
 │   │   │
-│   │   └── seeds/                      demo · idempotentes · nunca en producción
+│   │   ├── seeds/                      demo · idempotentes · nunca en producción
+│   │   │
+│   │   └── smoke/                      el camino entero desde afuera · el arnés de regresión de la Fase 1
 │   │
 │   ├── frontend/                       ── DESPLEGABLE 3 · A DEFINIR (8.4) ──
 │   │

@@ -39,4 +39,4 @@ def test_an_unreachable_database_answers_service_unavailable() -> None:
 
 
 def test_create_app_mounts_health(settings: Settings) -> None:
-    assert list(create_app(settings).openapi()["paths"]) == ["/health"]
+    assert list(create_app(settings).openapi()["paths"]) == ["/health", "/turns"]

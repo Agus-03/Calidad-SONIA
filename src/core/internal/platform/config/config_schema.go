@@ -16,6 +16,11 @@ type Config struct {
 	JWTSecret string
 	JWTTTL    time.Duration
 
+	// Read but never required: only `make seed-admin` needs these, so a missing one must not stop the process from serving (regla 3).
+	SeedAdminEmail       string
+	SeedAdminPassword    string
+	SeedAdminAccountName string
+
 	BrainBaseURL       string
 	BrainInternalToken string
 	BrainTimeout       time.Duration

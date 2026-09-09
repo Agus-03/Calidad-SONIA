@@ -33,6 +33,11 @@ func Load() (Config, error) {
 		// Twelve hours so the session outlasts a long shift and expires outside working time, never mid-conversation (ADR-0030).
 		JWTTTL: 12 * time.Hour,
 
+		SeedAdminEmail:    os.Getenv("SEED_ADMIN_EMAIL"),
+		SeedAdminPassword: os.Getenv("SEED_ADMIN_PASSWORD"),
+		// Only used when the database has no account yet, which is the first run of an installation and nothing else.
+		SeedAdminAccountName: env("SEED_ADMIN_ACCOUNT_NAME", "SONIA"),
+
 		BrainBaseURL:       os.Getenv("BRAIN_BASE_URL"),
 		BrainInternalToken: os.Getenv("BRAIN_INTERNAL_TOKEN"),
 		BrainTimeout:       10 * time.Second,

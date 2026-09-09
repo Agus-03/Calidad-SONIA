@@ -160,3 +160,30 @@ func TestOnlyTheTokenLoginHandedOutOpensMe(t *testing.T) {
 		t.Fatalf("the password hash reached the response: %s", rec.Body)
 	}
 }
+
+// TestMeRefusesARowThatVanishedAfterTheMiddlewareReadIt covers the gap between the two reads: the handler reads again, so it can disagree.
+func TestMeRefusesARowThatVanishedAfterTheMiddlewareReadIt(t *testing.T) {
+	operator := hashed(t, "admin@coop.test", "la-correcta", true)
+	// A service with nobody in it, behind a lookup that still vouches for the operator: the row went away between the two reads.
+	service := NewService(newStubStore(), &stubIssuer{}, nil)
+
+	engine := soniahttp.NewRouter(soniahttp.RouterOptions{
+		Controllers:   []soniahttp.Controller{NewController(service, nil)},
+		TokenVerifier: func(string) (uuid.UUID, error) { return operator.ID, nil },
+		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
+			return soniahttp.Actor{OperatorID: operator.ID, Role: operator.Role}, nil
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/v1/me: got %d, want 401 — body %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "session_no_longer_valid") {
+		t.Fatalf("the refusal does not name the reason: %s", rec.Body)
+	}
+}

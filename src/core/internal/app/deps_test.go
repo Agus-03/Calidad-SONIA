@@ -1,0 +1,137 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+)
+
+const testSecret = "a-secret-long-enough-to-clear-the-floor"
+
+// codeOf reads the stable code out of the error, which is the only part of a refusal the frontend is allowed to branch on.
+func codeOf(t *testing.T, err error) string {
+	t.Helper()
+
+	var apiErr *soniahttp.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("the adapter returned %v, want an http error the router can write", err)
+	}
+	return apiErr.Code
+}
+
+// TestAnExpiredSessionIsNotTheSameAnswerAsABrokenToken is why the mapping lives in deps.go: one sends you to log in again, the other does not.
+func TestAnExpiredSessionIsNotTheSameAnswerAsABrokenToken(t *testing.T) {
+	tokens := auth.NewTokens(testSecret, 12*time.Hour)
+	verify := verifyToken(tokens)
+
+	operatorID := uuid.New()
+	now := time.Now().UTC()
+
+	valid, _, err := tokens.Issue(operatorID, now)
+	if err != nil {
+		t.Fatalf("Issue: got %v, want no error", err)
+	}
+	// Issued thirteen hours ago, so a twelve-hour life has already run out.
+	expired, _, err := tokens.Issue(operatorID, now.Add(-13*time.Hour))
+	if err != nil {
+		t.Fatalf("Issue: got %v, want no error", err)
+	}
+
+	got, err := verify(valid)
+	if err != nil || got != operatorID {
+		t.Fatalf("a token this core signed: got %v, %v, want %v and no error", got, err, operatorID)
+	}
+
+	if code := codeOf(t, mustFail(t, verify, expired)); code != "session_expired" {
+		t.Fatalf("an expired token answered %q, want session_expired", code)
+	}
+
+	for _, raw := range []string{
+		"",
+		"no-soy-un-token",
+		// Signed with another key, which is the shape a stolen token from another deployment would have.
+		issuedWith(t, "another-secret-long-enough-for-hs256", operatorID, now),
+	} {
+		if code := codeOf(t, mustFail(t, verify, raw)); code != "invalid_credentials" {
+			t.Fatalf("token %q answered %q, want invalid_credentials", raw, code)
+		}
+	}
+}
+
+// TestTheLookupRefusesWhoeverTheRowNoLongerBacks protects regla 2: the token stays valid and the row is what takes the access away.
+func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
+	ctx := context.Background()
+	active := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleAdmin, Active: true}
+	disabled := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleOperator, Active: false}
+
+	lookup := resolveActor(operators.NewService(
+		&fakeStore{rows: map[uuid.UUID]operators.Operator{active.ID: active, disabled.ID: disabled}}, nil, nil))
+
+	actor, err := lookup(ctx, active.ID)
+	if err != nil {
+		t.Fatalf("an active operator: got %v, want no error", err)
+	}
+	if actor.OperatorID != active.ID || actor.Role != enums.OperatorRoleAdmin {
+		t.Fatalf("the actor is %+v, want the admin row", actor)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		operatorID uuid.UUID
+	}{
+		{"an operator that was taken down", disabled.ID},
+		{"an operator whose row is not there any more", uuid.New()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := lookup(ctx, tc.operatorID)
+			if code := codeOf(t, err); code != "session_no_longer_valid" {
+				t.Fatalf("got %q, want session_no_longer_valid", code)
+			}
+		})
+	}
+}
+
+func mustFail(t *testing.T, verify soniahttp.TokenVerifier, raw string) error {
+	t.Helper()
+
+	if _, err := verify(raw); err != nil {
+		return err
+	}
+	t.Fatalf("verify accepted %q, want a refusal", raw)
+	return nil
+}
+
+func issuedWith(t *testing.T, secret string, operatorID uuid.UUID, now time.Time) string {
+	t.Helper()
+
+	token, _, err := auth.NewTokens(secret, time.Hour).Issue(operatorID, now)
+	if err != nil {
+		t.Fatalf("Issue: got %v, want no error", err)
+	}
+	return token
+}
+
+// fakeStore answers from memory because what is under test is the mapping of an absent or disabled row, not the SQL that finds it.
+type fakeStore struct {
+	rows map[uuid.UUID]operators.Operator
+}
+
+func (f *fakeStore) ByEmail(context.Context, string) (operators.Operator, error) {
+	return operators.Operator{}, operators.ErrNotFound
+}
+
+func (f *fakeStore) ByID(_ context.Context, operatorID uuid.UUID) (operators.Operator, error) {
+	row, ok := f.rows[operatorID]
+	if !ok {
+		return operators.Operator{}, operators.ErrNotFound
+	}
+	return row, nil
+}

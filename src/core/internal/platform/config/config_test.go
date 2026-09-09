@@ -13,6 +13,7 @@ func validEnv(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://sonia:sonia@localhost:5432/sonia")
 	t.Setenv("BRAIN_BASE_URL", "http://brain:8000")
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "internal-token")
+	t.Setenv("JWT_SECRET", strings.Repeat("k", minJWTSecretBytes))
 
 	t.Setenv("CORE_HTTP_ADDR", ":8080")
 	t.Setenv("ENVIRONMENT", "test")
@@ -82,6 +83,21 @@ func TestLoadRejectsAnEnvironmentThatCannotServe(t *testing.T) {
 			key:   "BRAIN_TIMEOUT_MS",
 			value: "diez segundos",
 		},
+		{
+			name:  "no signing secret means every operator session could be forged (ADR-0030)",
+			key:   "JWT_SECRET",
+			value: "",
+		},
+		{
+			name:  "a short secret is an HS256 signature that is brute-forced offline (ADR-0030)",
+			key:   "JWT_SECRET",
+			value: "corto",
+		},
+		{
+			name:  "a session lifetime that is not a number would silently become zero",
+			key:   "JWT_TTL_MS",
+			value: "doce horas",
+		},
 	}
 
 	for _, tc := range cases {
@@ -110,14 +126,14 @@ func TestLoadAcceptsRetriesDisabled(t *testing.T) {
 	}
 }
 
-// TestLoadFallsBackToDefaults protects the optional half: only the three secrets are required, the rest has a working default.
+// TestLoadFallsBackToDefaults protects the optional half: only the four secrets are required, the rest has a working default.
 func TestLoadFallsBackToDefaults(t *testing.T) {
 	validEnv(t)
 	for _, key := range []string{
 		"CORE_HTTP_ADDR", "ENVIRONMENT", "LOG_LEVEL",
 		"DB_POOL_MIN_SIZE", "DB_POOL_MAX_SIZE",
 		"BRAIN_TIMEOUT_MS", "BRAIN_PREVIEW_TIMEOUT_MS",
-		"TURN_MAX_RETRIES", "TURN_RETRY_BACKOFF_MS",
+		"TURN_MAX_RETRIES", "TURN_RETRY_BACKOFF_MS", "JWT_TTL_MS",
 		"META_GRAPH_BASE_URL", "META_API_VERSION", "WHATSAPP_TIMEOUT_MS", "WHATSAPP_USE_DOUBLE",
 	} {
 		t.Setenv(key, "")
@@ -125,7 +141,7 @@ func TestLoadFallsBackToDefaults(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() rejected an environment with only the three secrets: %v", err)
+		t.Fatalf("Load() rejected an environment with only the four secrets: %v", err)
 	}
 
 	if cfg.HTTPAddr != ":8080" {
@@ -139,6 +155,9 @@ func TestLoadFallsBackToDefaults(t *testing.T) {
 	}
 	if cfg.PreviewTimeout != 3*time.Second {
 		t.Fatalf("PreviewTimeout = %v, want 3s", cfg.PreviewTimeout)
+	}
+	if cfg.JWTTTL != 12*time.Hour {
+		t.Fatalf("JWTTTL = %v, want 12h", cfg.JWTTTL)
 	}
 	if cfg.MetaGraphBaseURL != "https://graph.facebook.com" || cfg.MetaAPIVersion != "v21.0" {
 		t.Fatalf("Meta defaults = %q %q, want the pinned Cloud API host and version", cfg.MetaGraphBaseURL, cfg.MetaAPIVersion)

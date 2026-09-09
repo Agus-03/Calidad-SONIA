@@ -12,6 +12,10 @@ type Config struct {
 	DBPoolMinSize int
 	DBPoolMaxSize int
 
+	// Signs the session token of the operator API and bounds how long one is accepted (ADR-0030).
+	JWTSecret string
+	JWTTTL    time.Duration
+
 	BrainBaseURL       string
 	BrainInternalToken string
 	BrainTimeout       time.Duration

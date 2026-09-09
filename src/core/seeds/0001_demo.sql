@@ -5,11 +5,13 @@ INSERT INTO accounts (id, name)
 SELECT '01930000-0000-7000-8000-000000000001', 'SONIA - demo'
 WHERE NOT EXISTS (SELECT 1 FROM accounts);
 
+-- Everything below looks the account up instead of naming it: `make seed-admin` may have created it first, with an id only it knows.
+
 -- The model lives in the row and not in the brain config, so trying another one is a seed and not a deploy (ADR-0018).
 INSERT INTO ai_agents (id, account_id, name, description, default_mode, llm_provider, llm_model, temperature, max_tokens)
 VALUES (
     '01930000-0000-7000-8000-000000000002',
-    '01930000-0000-7000-8000-000000000001',
+    (SELECT id FROM accounts),
     'Agente demo',
     'Agente fijo del esqueleto de la Fase 1: con los seis componentes de F01, sin RAG y sin clasificadores.',
     'autonomous',
@@ -25,7 +27,7 @@ INSERT INTO inboxes (id, account_id, default_ai_agent_id, phone_number_id, waba_
                      access_token_encrypted, verify_token, app_secret_encrypted, status)
 VALUES (
     '01930000-0000-7000-8000-000000000003',
-    '01930000-0000-7000-8000-000000000001',
+    (SELECT id FROM accounts),
     '01930000-0000-7000-8000-000000000002',
     '000000000000000',
     '000000000000000',
@@ -41,7 +43,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
 VALUES (
     '01930000-0000-7000-8000-000000000004',
-    '01930000-0000-7000-8000-000000000001',
+    (SELECT id FROM accounts),
     '5493510000000',
     'Contacto',
     'Demo',

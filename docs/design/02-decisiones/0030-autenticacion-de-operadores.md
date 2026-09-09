@@ -36,7 +36,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 |---|---|
 | 1 | **El token lleva únicamente `sub`** —el `operator_id`—, más `iat` y `exp`. Ni el rol, ni el correo, ni el nombre |
 | 2 | **`role` y `active` se leen de la fila de `operators` en cada petición.** El token dice quién es; la base dice qué puede |
-| 3 | **Vida de 8 horas, sin *refresh token*.** Vencido, se vuelve a loguear |
+| 3 | **Vida de 12 horas, sin *refresh token*.** Vencido, se vuelve a loguear |
 | 4 | **Transporte en el header `Authorization`, nunca en cookie** |
 | 5 | **El secreto sale de `JWT_SECRET`, del entorno, validado al arrancar:** si falta, el proceso no levanta (regla 10 de `CLAUDE.md`) |
 | 6 | **Se usa `github.com/golang-jwt/jwt/v5`, con el algoritmo esperado verificado explícitamente** al validar |
@@ -51,13 +51,13 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 
 - **El header y no la cookie, porque el frontend está en otro origen.** Una cookie cruzando orígenes exige `SameSite=None` más `Secure`, CORS con credenciales, y defensa de CSRF encima — porque el navegador la manda sola, que es justamente lo que la hace vulnerable. `Authorization` no lo manda nadie sin escribirlo, así que no hay CSRF que defender. La cookie compra protección contra XSS que el header no da; se elige el problema que el otro equipo resuelve en su propio código sobre el que obliga a coordinar configuración entre dos equipos.
 
-- **El rol no viaja en el token porque la fila se lee igual.** El middleware necesita saber si el operador sigue activo, y eso no se puede firmar de antemano. Ya que se va a la base, el rol sale de ahí. Lo que compra: **desactivar o borrar un operador le corta el acceso en la petición siguiente, y un cambio de rol pega enseguida** — que es exactamente lo que ADR-0011 necesita para que "el módulo de contactos es de `admin`" sea un control y no una promesa. Un token que llevara el rol adentro convertiría revocar un permiso en algo que tarda hasta ocho horas.
+- **El rol no viaja en el token porque la fila se lee igual.** El middleware necesita saber si el operador sigue activo, y eso no se puede firmar de antemano. Ya que se va a la base, el rol sale de ahí. Lo que compra: **desactivar o borrar un operador le corta el acceso en la petición siguiente, y un cambio de rol pega enseguida** — que es exactamente lo que ADR-0011 necesita para que "el módulo de contactos es de `admin`" sea un control y no una promesa. Un token que llevara el rol adentro convertiría revocar un permiso en algo que tarda hasta doce horas.
 
 - **bcrypt y no argon2id, porque hay un solo número que defender.** argon2id es mejor **bien calibrado** y peor **mal calibrado**, y calibrarlo exige elegir memoria, iteraciones y paralelismo contra el hardware donde va a correr. OE7 pide despliegue en producción real y esa infraestructura no está elegida: serían tres números puestos a ciegas, que después nadie vuelve a revisar. bcrypt con costo 12 es una decisión con un parámetro, treinta años de uso y ninguna calibración pendiente. El límite de 72 bytes es real y no molesta a nadie.
 
 - **La librería y no HMAC escrito a mano.** Firmar un JWT son sesenta líneas; verificarlo sin aceptar `alg: none` ni confundir HMAC con RSA es donde se cometen los errores conocidos. Es la clase de código donde escribirlo uno mismo no demuestra nada y cuesta una vulnerabilidad.
 
-- **Vida corta y sin *refresh*, porque el *refresh* existe para arreglar un problema que acá no duele.** Un token de refresco es lo que permite que la sesión sobreviva sin volver a escribir la contraseña, y trae consigo almacenamiento, rotación y revocación — o sea, la tabla de sesiones que esta decisión evitó. Ocho horas es una jornada de trabajo: el operador se loguea una vez por día.
+- **Vida corta y sin *refresh*, porque el *refresh* existe para arreglar un problema que acá no duele.** Un token de refresco es lo que permite que la sesión sobreviva sin volver a escribir la contraseña, y trae consigo almacenamiento, rotación y revocación — o sea, la tabla de sesiones que esta decisión evitó. Doce horas cubren una jornada larga con margen, así que el vencimiento cae fuera del horario de atención y no en la mitad de una conversación: el operador se loguea una vez por día.
 
 ## 4. Consecuencias
 
@@ -70,7 +70,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 
 ### Negativas / costos asumidos
 
-- **Un token robado vale hasta que expire, y no hay forma de matarlo.** Sin estado del lado del servidor no hay lista de revocación: se puede desactivar al operador —y eso sí corta—, pero no invalidar un token puntual sin desactivar a la persona. Las ocho horas y HTTPS acotan la ventana; acotar no es controlar, y esto es lo que se paga por no tener tabla de sesiones.
+- **Un token robado vale hasta que expire, y no hay forma de matarlo.** Sin estado del lado del servidor no hay lista de revocación: se puede desactivar al operador —y eso sí corta—, pero no invalidar un token puntual sin desactivar a la persona. Las doce horas y HTTPS acotan la ventana; acotar no es controlar, y esto es lo que se paga por no tener tabla de sesiones.
 - **El *logout* es una promesa del cliente.** Si el frontend no borra el token, la sesión sigue viva aunque el usuario haya apretado el botón. El servidor no tiene manera de saberlo ni de garantizarlo.
 - **`JWT_SECRET` es un secreto nuevo, y rotarlo desloguea a todos a la vez.** No hay procedimiento escrito. Es el mismo costo que [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md) (k) declaró para `BRAIN_INTERNAL_TOKEN`, y conviene decirlo antes de que aparezca como sorpresa.
 - **El JWT no ahorra la ida a la base que suele ser su argumento.** Se paga firmar y verificar, y se consulta Postgres igual en cada petición. Es deliberado —la regla 2 es lo que compra la revocación—, pero deja escrito el reverso: **si algún día ese ahorro hiciera falta, habría que meter el rol en el token y se perdería la revocación inmediata.** Es una decisión que se puede revertir, no una que se pueda tener de los dos lados.
@@ -96,7 +96,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 | **argon2id** | Recomendación primera de OWASP, y descartada por sus tres parámetros: exigen calibrarse contra un hardware de despliegue que OE7 todavía no eligió |
 | **scrypt** | Duro en memoria como argon2id, con el mismo problema de calibración y menos uso para contraseñas. Ninguna ventaja sobre los otros dos acá |
 | **JWT firmado a mano con HMAC-SHA256** | Ahorra una dependencia a cambio de escribir el código donde vive `alg: none` |
-| **Meter el rol dentro del token** | Ahorraría la lectura de la fila, y a cambio una baja o un cambio de rol tardarían hasta ocho horas en tener efecto. Es lo contrario de lo que ADR-0011 necesita |
+| **Meter el rol dentro del token** | Ahorraría la lectura de la fila, y a cambio una baja o un cambio de rol tardarían hasta doce horas en tener efecto. Es lo contrario de lo que ADR-0011 necesita |
 | **Agregar un *refresh token*** | Trae de vuelta el almacenamiento y la rotación que la decisión evitó, para resolver una fricción —volver a loguearse una vez por jornada— que nadie reportó |
 | **Delegar la autenticación en Supabase** | [ADR-0019](0019-almacenamiento-de-objetos.md) declara que Supabase se usa **exclusivamente** como almacén de objetos, y explícitamente no como proveedor de autenticación |
 

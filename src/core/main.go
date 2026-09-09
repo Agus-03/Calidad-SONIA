@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,10 +14,19 @@ import (
 
 // main owns the signal and the exit code, and logs through slog because a configuration failure happens before the logger exists.
 func main() {
+	// One entrypoint with a flag, the same shape the brain has: seeding is something someone runs, never a side effect of serving (regla 3).
+	seedAdmin := flag.Bool("seed-admin", false, "create the account and its first admin, then exit")
+	flag.Parse()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.Run(ctx); err != nil {
+	run := app.Run
+	if *seedAdmin {
+		run = app.SeedAdmin
+	}
+
+	if err := run(ctx); err != nil {
 		slog.Error("core stopped", slog.String("error", err.Error()))
 		os.Exit(1)
 	}

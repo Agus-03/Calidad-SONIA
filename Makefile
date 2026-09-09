@@ -12,7 +12,7 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -27,6 +27,7 @@ help:
 	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
 	@echo "migrate-status    lista lo que la base dice que ya corrio"
 	@echo "seed       carga los datos de demo: agente, inbox y contacto fijos"
+	@echo "seed-admin crea la cuenta y su primer admin, con lo que dice SEED_ADMIN_* del .env"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 
@@ -72,6 +73,10 @@ migrate-status:
 # Never run by the application at boot (regla 3): demo data is a decision someone takes, not a side effect of starting.
 seed:
 	$(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) < src/core/seeds/0001_demo.sql
+
+# Idempotent, and the password lives only in the environment: a second run never resets one that was changed since (ADR-0030).
+seed-admin:
+	$(COMPOSE) exec -T core core --seed-admin
 
 # Brings the database with it, because pgadmin against nothing is an empty tree.
 pgadmin:

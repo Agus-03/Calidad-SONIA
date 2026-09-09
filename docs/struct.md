@@ -6,7 +6,7 @@
 | **Autoridad** | Detalla la sección *Estructura del código* de [`CLAUDE.md`](../CLAUDE.md), que es la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-04 |
+| **Última revisión** | 2026-09-09 |
 
 ---
 
@@ -22,7 +22,7 @@ sonia/
 ├── .gitignore                          go.mod, go.sum y contracts/ SÍ se commitean
 ├── CLAUDE.md
 ├── LICENSE
-├── Makefile                            db-migrate · db-seed · db-reset · test
+├── Makefile                            up · migrate · seed · seed-admin · test · test-integration · smoke
 ├── README.md
 │
 ├── contracts/                          fuente única compartida por los dos servicios
@@ -114,7 +114,8 @@ sonia/
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
 │   │   │   │   ├── app.go              Run(ctx): config, pool, router, apagado ordenado
-│   │   │   │   └── deps.go             el grafo de objetos · lo único que crece por contexto
+│   │   │   │   ├── deps.go             el grafo de objetos · lo único que crece por contexto
+│   │   │   │   └── seed.go             --seed-admin: la cuenta y su primer admin · nunca al arrancar (regla 3)
 │   │   │   │
 │   │   │   ├── brainclient/            puerto de salida hacia el cerebro
 │   │   │   │   ├── client.go           agrega X-Internal-Token
@@ -146,13 +147,21 @@ sonia/
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
-│   │   │   ├── operators/              usuarios y roles · F18
+│   │   │   │
+│   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators
+│   │   │   │   ├── controller.go       login (público) y /me (autenticado): dos tipos, dos zonas
+│   │   │   │   ├── routes.go           POST /auth/login fuera de /api/v1: quien se loguea no es actor
+│   │   │   │   ├── service.go          una sola respuesta para las tres formas de fallar (ADR-0030)
+│   │   │   │   ├── repository.go       normaliza el email: el índice único es sobre la columna cruda
+│   │   │   │   ├── model.go            Operator lleva el hash, así que nunca se serializa
+│   │   │   │   └── password.go         bcrypt cost 12 · gasta una comparación si el email no existe
 │   │   │   │
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
+│   │   │   │   ├── auth/               emite y verifica el token de sesión · sin gin y sin base (ADR-0030)
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
 │   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml
-│   │   │   │   ├── http/               router · route · middleware · auth · errors
+│   │   │   │   ├── http/               router · route · middleware · errors
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7
 │   │   │   │   ├── logging/
@@ -184,12 +193,11 @@ sonia/
 │   │   │
 │   │   ├── migrations/                 DUEÑO ÚNICO del esquema
 │   │   │   ├── README.md
-│   │   │   ├── 0001_foundations.sql    incluye la fila única de accounts
-│   │   │   ├── 0002_agents.sql
-│   │   │   ├── 0003_conversations.sql
-│   │   │   └── 0004_turn_evidence.sql
+│   │   │   ├── embed.go                el go:embed que el runner de platform/db lee
+│   │   │   └── 0001_initial_schema.sql las 37 tablas · incluye la fila única de accounts
 │   │   │
 │   │   ├── seeds/                      demo · idempotentes · nunca en producción
+│   │   │   └── 0001_demo.sql           cuelga de la cuenta que haya: no asume que ella la crea
 │   │   │
 │   │   └── smoke/                      el camino entero desde afuera · el arnés de regresión de la Fase 1
 │   │
@@ -202,3 +210,54 @@ sonia/
 │
 └── z_helps/                            material de trabajo · sin peso oficial · ignorado
 ```
+
+---
+
+## 2. El dueño de cada tabla
+
+Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las escribe. Es la regla 1 de `CLAUDE.md` puesta en una lista: **escribir en la tabla de otro se hace por su repositorio, dentro de la transacción de quien conduce**, nunca con SQL propio.
+
+### 2.1. Núcleo (Go) — 24 tablas
+
+| Paquete | Tablas | Nota |
+|---|---|---|
+| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente (ADR-0007) |
+| `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
+| `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/` y `whatsapp/` escriben por acá |
+| `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |
+| `inbox/` | `conversation_assignments` · `internal_notes` · `conversation_labels` | |
+| `labels/` | `labels` | El catálogo; las dos tablas de unión son de quien etiqueta |
+| `meta_templates/` | `meta_templates` | |
+| `operators/` | `operators` | |
+| `quick_replies/` | `quick_replies` | La lee el cerebro (F07), no la escribe |
+| `reminders/` | `reminders` | |
+| `sales/` | `sales` | |
+| `turn/` | `message_batches` · `transfer_events` | Más `generations.message_id`, en la misma transacción (regla 5) |
+| `whatsapp/` | `inboxes` · `webhook_events` | |
+
+### 2.2. Cerebro (Python) — 7 tablas, todas de evidencia
+
+La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conversations`, `messages` ni `contact_attributes`.** Lo que no es evidencia lo devuelve, y el núcleo lo persiste y lo envía.
+
+| Tablas | Nota |
+|---|---|
+| `pipeline_steps` · `generations` · `retrieval_logs` · `signal_evaluations` · `detected_intents` · `document_chunks` | Las seis que nombra la regla 3 |
+| `generation_components` | Por adyacencia a `generations`; la regla 3 no la nombra |
+
+### 2.3. Fuera de los dos despliegues — 2 tablas
+
+| Tabla | Quién la escribe | Nota |
+|---|---|---|
+| `conversation_annotations` | `test/datasets/` | *Ground truth* de OE3 y OE4 (ADR-0014) |
+| `tone_evaluations` | `test/evals/` | El juicio de tono de F36; `reporting/` la lee |
+
+### 2.4. Sin dueño declarado — 4 tablas
+
+No es un olvido de este documento: **son decisiones que todavía no se tomaron**, y ponerles un paquete acá sería inventarlas.
+
+| Tabla | Por qué sigue abierta |
+|---|---|
+| `accounts` | Fila única por invariante. Hoy la crea quien instala —`make seed-admin`— y ningún paquete la reclama |
+| `transfer_policies` | El umbral es configuración mutable y F12 es del cerebro, pero la regla 3 le prohíbe escribir lo que no es evidencia |
+| `conversation_contexts` | El cerebro produce el resumen y el núcleo lo persiste; falta decir cuál paquete del núcleo |
+| `conversation_context_versions` | La misma decisión que la anterior, y se resuelve con ella |

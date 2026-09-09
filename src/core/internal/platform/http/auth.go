@@ -6,19 +6,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
-// Roles of Anexo B, renamed by C01.
-const (
-	RoleOperator   = "operator"
-	RoleSupervisor = "supervisor"
-	RoleAdmin      = "admin"
-)
-
-// Actor is who is making the request.
+// Actor is who is making the request, with the role typed: the three words are generated from Anexo B and not retyped here (C01).
 type Actor struct {
 	OperatorID uuid.UUID
-	Role       string
+	Role       enums.OperatorRole
 }
 
 // TokenVerifier answers who the bearer is and returns the error the caller should see, so this package never learns the token is a JWT (ADR-0030).
@@ -73,8 +68,8 @@ func ActorFrom(c *gin.Context) (Actor, bool) {
 }
 
 // RequireRole rejects a role outside the allowed set.
-func RequireRole(allowed ...string) gin.HandlerFunc {
-	permitted := make(map[string]struct{}, len(allowed))
+func RequireRole(allowed ...enums.OperatorRole) gin.HandlerFunc {
+	permitted := make(map[enums.OperatorRole]struct{}, len(allowed))
 	for _, r := range allowed {
 		permitted[r] = struct{}{}
 	}

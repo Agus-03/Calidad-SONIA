@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
 type stubController struct{ routes []Route }
@@ -43,7 +45,25 @@ func TestNewRouterPanicsOnAPublicRouteWithRoles(t *testing.T) {
 		PublicControllers: []Controller{stubController{routes: []Route{{
 			Method:  http.MethodGet,
 			Path:    "/webhooks/whatsapp",
-			Roles:   []string{RoleAdmin},
+			Roles:   []enums.OperatorRole{enums.OperatorRoleAdmin},
+			Handler: func(c *gin.Context) { OK(c, gin.H{}) },
+		}}}},
+	})
+}
+
+// TestNewRouterPanicsOnARoleTheContractDoesNotDeclare is what makes typing the role worth it: a typo would otherwise only ever answer 403.
+func TestNewRouterPanicsOnARoleTheContractDoesNotDeclare(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatalf("NewRouter accepted a role outside Anexo B, want a panic")
+		}
+	}()
+
+	NewRouter(RouterOptions{
+		Controllers: []Controller{stubController{routes: []Route{{
+			Method:  http.MethodGet,
+			Path:    "/agents",
+			Roles:   []enums.OperatorRole{"admni"},
 			Handler: func(c *gin.Context) { OK(c, gin.H{}) },
 		}}}},
 	})
@@ -89,14 +109,14 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 		},
 		ActorLookup: func(_ context.Context, operatorID uuid.UUID) (Actor, error) {
 			if operatorID == admin {
-				return Actor{OperatorID: admin, Role: RoleAdmin}, nil
+				return Actor{OperatorID: admin, Role: enums.OperatorRoleAdmin}, nil
 			}
-			return Actor{OperatorID: operatorID, Role: RoleOperator}, nil
+			return Actor{OperatorID: operatorID, Role: enums.OperatorRoleOperator}, nil
 		},
 		Controllers: []Controller{stubController{routes: []Route{{
 			Method:  http.MethodGet,
 			Path:    "/agents",
-			Roles:   []string{RoleAdmin},
+			Roles:   []enums.OperatorRole{enums.OperatorRoleAdmin},
 			Handler: func(c *gin.Context) { reached = true; OK(c, gin.H{}) },
 		}}}},
 	})

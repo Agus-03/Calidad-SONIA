@@ -3,6 +3,7 @@ package operators
 import (
 	"net/http"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -13,13 +14,13 @@ func (c *LoginController) Routes() []soniahttp.Route {
 	}
 }
 
-// Routes lists the three roles because any authenticated operator may ask who they are: the finer split is Fase 11 (F18).
+// The contract's own list and not three words: any authenticated operator may ask who they are, so a role added later is included by itself (F18).
 func (c *Controller) Routes() []soniahttp.Route {
 	return []soniahttp.Route{
 		{
 			Method:  http.MethodGet,
 			Path:    "/me",
-			Roles:   []string{soniahttp.RoleOperator, soniahttp.RoleSupervisor, soniahttp.RoleAdmin},
+			Roles:   enums.OperatorRoleValues,
 			Handler: c.me,
 		},
 	}

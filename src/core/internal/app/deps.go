@@ -98,7 +98,7 @@ func resolveActor(people *operators.Service) soniahttp.ActorLookup {
 			return soniahttp.Actor{}, soniahttp.Unauthorized(
 				"session_no_longer_valid", "this session no longer belongs to an active operator").WithCause(err)
 		}
-		return soniahttp.Actor{OperatorID: operator.ID, Role: string(operator.Role)}, nil
+		return soniahttp.Actor{OperatorID: operator.ID, Role: operator.Role}, nil
 	}
 }
 

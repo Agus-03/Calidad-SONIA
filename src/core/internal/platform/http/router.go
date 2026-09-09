@@ -63,6 +63,12 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 			if len(route.Roles) == 0 {
 				panic(fmt.Sprintf("http: route %s %s declares no roles", route.Method, route.Path))
 			}
+			// The type alone admits a typo, so the generated contract is what says the word exists: a misspelled role would only ever 403 (C01).
+			for _, role := range route.Roles {
+				if !role.IsValid() {
+					panic(fmt.Sprintf("http: route %s %s declares role %q, which Anexo B does not", route.Method, route.Path, role))
+				}
+			}
 			api.Handle(route.Method, route.Path, RequireRole(route.Roles...), route.Handler)
 		}
 	}

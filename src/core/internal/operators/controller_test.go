@@ -37,7 +37,7 @@ func mount(t *testing.T, operators ...Operator) http.Handler {
 			if err != nil {
 				return soniahttp.Actor{}, soniahttp.Unauthorized("session_no_longer_valid", "no such operator")
 			}
-			return soniahttp.Actor{OperatorID: operator.ID, Role: string(operator.Role)}, nil
+			return soniahttp.Actor{OperatorID: operator.ID, Role: operator.Role}, nil
 		},
 	})
 }

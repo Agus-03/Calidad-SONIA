@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Estado** | Aceptada |
-| **Fecha** | 2026-09-06 |
+| **Fecha** | 2026-09-09 |
 | **Etapa** | Construcción — Fase 2 (login y operadores) |
 | **Resuelve** | Cómo se autentica un operador ante el núcleo y cómo se guarda su contraseña |
 | **Requisitos afectados** | F18 (parcial: autenticación, no todavía los tres roles finos) |
@@ -43,7 +43,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 | 7 | **No hay *logout* del lado del servidor.** El cliente descarta el token |
 | 8 | **La verificación de bcrypt corre también cuando el correo no existe**, contra un hash descartable, para que el tiempo de respuesta no diga qué direcciones están registradas |
 
-**Dónde se implementa:** `platform/auth/` emite y verifica el token; `operators/` es el paquete del contexto —repositorio, servicio, controlador y su `routes.go`—; `platform/http/auth.go` cambia el header confiado por la verificación del Bearer; `app/deps.go` reemplaza el `denyEveryone` provisorio por el lookup real. `JWT_SECRET` y `JWT_TTL` entran en `.env.example` y en `platform/config`.
+**Dónde se implementa:** `platform/auth/` emite y verifica el token; `operators/` es el paquete del contexto —repositorio, servicio, controlador y su `routes.go`—; `platform/http/auth.go` cambia el header confiado por la verificación del Bearer; `app/deps.go` reemplaza el `denyEveryone` provisorio por el lookup real. `JWT_SECRET` y `JWT_TTL_MS` entran en `.env.example` y en `platform/config`.
 
 **Esta fase no lleva DDL.** La decisión no crea ninguna tabla.
 
@@ -97,6 +97,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 | **scrypt** | Duro en memoria como argon2id, con el mismo problema de calibración y menos uso para contraseñas. Ninguna ventaja sobre los otros dos acá |
 | **JWT firmado a mano con HMAC-SHA256** | Ahorra una dependencia a cambio de escribir el código donde vive `alg: none` |
 | **Meter el rol dentro del token** | Ahorraría la lectura de la fila, y a cambio una baja o un cambio de rol tardarían hasta doce horas en tener efecto. Es lo contrario de lo que ADR-0011 necesita |
+| **Una vida de una semana** | Evaluada y descartada: sin lista de revocación, la duración del token **es** la única mitigación que la decisión tiene, y estirarla a 168 horas la multiplica por 21 sobre una aplicación que le da a un `admin` el DNI, el CUIT y el CBU de toda la cartera. Doce horas resuelven lo que la semana buscaba —no volver a loguearse en la mitad de la jornada— sin ampliar esa ventana |
 | **Agregar un *refresh token*** | Trae de vuelta el almacenamiento y la rotación que la decisión evitó, para resolver una fricción —volver a loguearse una vez por jornada— que nadie reportó |
 | **Delegar la autenticación en Supabase** | [ADR-0019](0019-almacenamiento-de-objetos.md) declara que Supabase se usa **exclusivamente** como almacén de objetos, y explícitamente no como proveedor de autenticación |
 

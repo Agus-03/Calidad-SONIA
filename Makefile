@@ -19,8 +19,8 @@ help:
 	@echo "down       los baja y borra los contenedores"
 	@echo "logs       sigue la salida de los tres servicios"
 	@echo "build      reconstruye las dos imagenes"
-	@echo "test       corre los tests de los dos servicios"
-	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
+	@echo "test       corre los tests de los dos servicios, sin exigir el umbral"
+	@echo "test-integration  los mismos, mas los que necesitan la base, y exige el 80% de ADR-0028"
 	@echo "smoke      levanta el stack doblado y recorre el camino entero: webhook, respuesta y evidencia"
 	@echo "contracts  regenera las enumeraciones de Go y de Python"
 	@echo "contracts-check   falla si lo generado quedo viejo"
@@ -46,9 +46,9 @@ build:
 # Each service is tested with its own tooling, because ADR-0028 measures coverage per service and never aggregates.
 test: test-core test-brain
 
-# Go carries no threshold of its own, so the 80% of ADR-0028 is enforced here and not in the workflow.
+# Reports the number without judging it: with no database the SQL half of the core never runs, and the figure would refuse a healthy tree.
 test-core:
-	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3; if ($$3 + 0 < 80) { print "below the 80% of ADR-0028"; exit 1 } }'
+	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3 }'
 
 # The threshold is in pyproject.toml, so running pytest by hand enforces the same number the CI does.
 test-brain:
@@ -88,7 +88,9 @@ pgadmin-down:
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+# The 80% of ADR-0028 is enforced here and nowhere else: this is the only target where every line of the core actually gets a chance to run.
 test-integration: test
+	cd src/core && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); if ($$3 + 0 < 80) { printf "core coverage %s%% is below the 80%% of ADR-0028\n", $$3; exit 1 } }'
 
 # -count=1 so a cached pass cannot call a dead stack green, and --wait blocks until both healthchecks actually answer.
 smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)

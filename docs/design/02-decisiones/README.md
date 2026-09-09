@@ -55,6 +55,7 @@ Dos reglas que conviene sostener:
 | [0027](0027-nucleo-de-instancia-unica.md) | El núcleo opera en una única instancia | Pendiente de ADR-0017 | Aceptada |
 | [0028](0028-cobertura-de-pruebas-por-servicio.md) | La cobertura del ≥ 80 % se exige por servicio | Pendiente de ADR-0017 | Aceptada |
 | [0029](0029-el-acuse-del-webhook-no-espera-al-turno.md) | El acuse del webhook no espera al turno | Fase 1 | Aceptada |
+| [0030](0030-autenticacion-de-operadores.md) | Autenticación de operadores: JWT de vida corta y bcrypt | Fase 2 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

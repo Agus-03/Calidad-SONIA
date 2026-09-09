@@ -19,6 +19,9 @@ type RouterOptions struct {
 	Controllers []Controller
 	Ready       func() error
 
+	// TokenVerifier is separate from ActorLookup because one answers who the caller claims to be and the other what they may do.
+	TokenVerifier TokenVerifier
+
 	// PublicControllers hang outside /api/v1: an external callback has no operator, so no role can describe it.
 	PublicControllers []Controller
 }
@@ -54,7 +57,7 @@ func NewRouter(opts RouterOptions) *gin.Engine {
 		}
 	}
 
-	api := engine.Group("/api/v1", Authenticate(opts.ActorLookup))
+	api := engine.Group("/api/v1", Authenticate(opts.TokenVerifier, opts.ActorLookup))
 	for _, controller := range opts.Controllers {
 		for _, route := range controller.Routes() {
 			if len(route.Roles) == 0 {

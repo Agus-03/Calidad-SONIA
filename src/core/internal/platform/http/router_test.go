@@ -49,9 +49,12 @@ func TestNewRouterPanicsOnAPublicRouteWithRoles(t *testing.T) {
 	})
 }
 
-// TestPublicRoutesSkipAuthentication protects the decision: an external callback carries no operator header and must still get through.
+// TestPublicRoutesSkipAuthentication protects the decision: an external callback carries no bearer token and must still get through.
 func TestPublicRoutesSkipAuthentication(t *testing.T) {
 	engine := NewRouter(RouterOptions{
+		TokenVerifier: func(string) (uuid.UUID, error) {
+			return uuid.Nil, Unauthorized("unreachable", "a public route must never verify a token")
+		},
 		ActorLookup: func(context.Context, uuid.UUID) (Actor, error) {
 			return Actor{}, Unauthorized("unreachable", "a public route must never consult the lookup")
 		},
@@ -76,6 +79,14 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 
 	var reached bool
 	engine := NewRouter(RouterOptions{
+		// A token that is just the id, because what this test asserts is the order of the two guards and not the signature of a JWT.
+		TokenVerifier: func(token string) (uuid.UUID, error) {
+			operatorID, err := uuid.Parse(token)
+			if err != nil {
+				return uuid.Nil, Unauthorized("invalid_credentials", "the session token is not valid")
+			}
+			return operatorID, nil
+		},
 		ActorLookup: func(_ context.Context, operatorID uuid.UUID) (Actor, error) {
 			if operatorID == admin {
 				return Actor{OperatorID: admin, Role: RoleAdmin}, nil
@@ -92,7 +103,7 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 
 	cases := []struct {
 		name       string
-		operatorID string
+		authorize  string
 		wantStatus int
 		wantReach  bool
 	}{
@@ -101,13 +112,29 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
+			name:       "a token the verifier refuses never reaches the lookup",
+			authorize:  "Bearer no-soy-un-token",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "an identity sent in another scheme is no identity at all",
+			authorize:  admin.String(),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
 			name:       "an operator is rejected on an admin route before the handler runs",
-			operatorID: operator.String(),
+			authorize:  "Bearer " + operator.String(),
 			wantStatus: http.StatusForbidden,
 		},
 		{
 			name:       "an admin gets through",
-			operatorID: admin.String(),
+			authorize:  "Bearer " + admin.String(),
+			wantStatus: http.StatusOK,
+			wantReach:  true,
+		},
+		{
+			name:       "the scheme is read without regard to case, as the rfc defines it",
+			authorize:  "bearer " + admin.String(),
 			wantStatus: http.StatusOK,
 			wantReach:  true,
 		},
@@ -118,8 +145,8 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 			reached = false
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
-			if tc.operatorID != "" {
-				req.Header.Set("X-Operator-Id", tc.operatorID)
+			if tc.authorize != "" {
+				req.Header.Set("Authorization", tc.authorize)
 			}
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)

@@ -7,26 +7,35 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// mount builds the real router, so the zone of each route is asserted by the same guard that runs in production.
+// mount builds the real router and the real issuer, so a token that opens /me here is one login actually handed out.
 func mount(t *testing.T, operators ...Operator) http.Handler {
 	t.Helper()
 
-	service := NewService(newStubStore(operators...), &stubIssuer{}, nil)
+	tokens := auth.NewTokens("a-secret-long-enough-to-clear-the-floor", 12*time.Hour)
+	service := NewService(newStubStore(operators...), tokens, nil)
 
 	return soniahttp.NewRouter(soniahttp.RouterOptions{
 		Controllers:       []soniahttp.Controller{NewController(service, nil)},
 		PublicControllers: []soniahttp.Controller{NewLoginController(service, nil)},
-		// Still the header seam of Fase 1: task 9 replaces it with the Bearer token and this line changes with it.
-		ActorLookup: func(_ context.Context, operatorID uuid.UUID) (soniahttp.Actor, error) {
-			operator, err := service.Resolve(context.Background(), operatorID)
+		TokenVerifier: func(raw string) (uuid.UUID, error) {
+			operatorID, err := tokens.Verify(raw)
 			if err != nil {
-				return soniahttp.Actor{}, soniahttp.Unauthorized("invalid_credentials", "no such operator")
+				return uuid.Nil, soniahttp.Unauthorized("invalid_credentials", "the session token is not valid")
+			}
+			return operatorID, nil
+		},
+		ActorLookup: func(ctx context.Context, operatorID uuid.UUID) (soniahttp.Actor, error) {
+			operator, err := service.Resolve(ctx, operatorID)
+			if err != nil {
+				return soniahttp.Actor{}, soniahttp.Unauthorized("session_no_longer_valid", "no such operator")
 			}
 			return soniahttp.Actor{OperatorID: operator.ID, Role: string(operator.Role)}, nil
 		},
@@ -95,20 +104,45 @@ func TestLoginRefusesWithoutSayingWhich(t *testing.T) {
 	}
 }
 
-// TestMeIsTheFirstRouteThatRefusesAnAnonymousCaller proves the zones: login answers without credentials and /api/v1 does not.
-func TestMeIsTheFirstRouteThatRefusesAnAnonymousCaller(t *testing.T) {
+// TestOnlyTheTokenLoginHandedOutOpensMe is the whole phase in one test: the two routes only work together, and only in that order.
+func TestOnlyTheTokenLoginHandedOutOpensMe(t *testing.T) {
 	operator := hashed(t, "admin@coop.test", "la-correcta", true)
 	engine := mount(t, operator)
 
-	anonymous := httptest.NewRecorder()
-	engine.ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, "/api/v1/me", nil))
-	if anonymous.Code != http.StatusUnauthorized {
-		t.Fatalf("GET /api/v1/me with no credentials: got %d, want 401", anonymous.Code)
+	for _, tc := range []struct {
+		name      string
+		authorize string
+	}{
+		{"nobody at all", ""},
+		{"an operator id, which is what opened this door before ADR-0030", "Bearer " + operator.ID.String()},
+		{"a token this core never signed", "Bearer eyJhbGciOiJIUzI1NiJ9.e30.no-es-una-firma"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+			if tc.authorize != "" {
+				req.Header.Set("Authorization", tc.authorize)
+			}
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("GET /api/v1/me: got %d, want 401 — body %s", rec.Code, rec.Body)
+			}
+		})
+	}
+
+	login := post(engine, "/auth/login", `{"email":"admin@coop.test","password":"la-correcta"}`)
+	if login.Code != http.StatusOK {
+		t.Fatalf("POST /auth/login: got %d, want 200 — body %s", login.Code, login.Body)
+	}
+	var session loginResponse
+	if err := json.Unmarshal(login.Body.Bytes(), &session); err != nil {
+		t.Fatalf("decoding the login: %v", err)
 	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
-	req.Header.Set("X-Operator-Id", operator.ID.String())
+	req.Header.Set("Authorization", "Bearer "+session.Token)
 	engine.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {

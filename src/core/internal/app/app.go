@@ -46,9 +46,10 @@ func Run(ctx context.Context) error {
 	deps := wire(cfg, pool, log)
 
 	router := soniahttp.NewRouter(soniahttp.RouterOptions{
-		Logger:      log,
-		ActorLookup: deps.actorLookup,
-		Controllers: deps.controllers,
+		Logger:        log,
+		TokenVerifier: deps.tokenVerifier,
+		ActorLookup:   deps.actorLookup,
+		Controllers:   deps.controllers,
 
 		PublicControllers: deps.publicControllers,
 		Ready: func() error {

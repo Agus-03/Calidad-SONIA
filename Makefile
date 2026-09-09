@@ -12,21 +12,22 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin pgadmin pgadmin-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
 	@echo "down       los baja y borra los contenedores"
 	@echo "logs       sigue la salida de los tres servicios"
 	@echo "build      reconstruye las dos imagenes"
-	@echo "test       corre los tests de los dos servicios"
-	@echo "test-integration  los mismos, mas los que necesitan la base levantada"
+	@echo "test       corre los tests de los dos servicios, sin exigir el umbral"
+	@echo "test-integration  los mismos, mas los que necesitan la base, y exige el 80% de ADR-0028"
 	@echo "smoke      levanta el stack doblado y recorre el camino entero: webhook, respuesta y evidencia"
 	@echo "contracts  regenera las enumeraciones de Go y de Python"
 	@echo "contracts-check   falla si lo generado quedo viejo"
 	@echo "migrate    aplica el esquema levantando el nucleo, que migra al arrancar"
 	@echo "migrate-status    lista lo que la base dice que ya corrio"
 	@echo "seed       carga los datos de demo: agente, inbox y contacto fijos"
+	@echo "seed-admin crea la cuenta y su primer admin, con lo que dice SEED_ADMIN_* del .env"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 
@@ -45,9 +46,9 @@ build:
 # Each service is tested with its own tooling, because ADR-0028 measures coverage per service and never aggregates.
 test: test-core test-brain
 
-# Go carries no threshold of its own, so the 80% of ADR-0028 is enforced here and not in the workflow.
+# Reports the number without judging it: with no database the SQL half of the core never runs, and the figure would refuse a healthy tree.
 test-core:
-	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3; if ($$3 + 0 < 80) { print "below the 80% of ADR-0028"; exit 1 } }'
+	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3 }'
 
 # The threshold is in pyproject.toml, so running pytest by hand enforces the same number the CI does.
 test-brain:
@@ -73,6 +74,10 @@ migrate-status:
 seed:
 	$(COMPOSE) exec -T db psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) < src/core/seeds/0001_demo.sql
 
+# Idempotent, and the password lives only in the environment: a second run never resets one that was changed since (ADR-0030).
+seed-admin:
+	$(COMPOSE) exec -T core core --seed-admin
+
 # Brings the database with it, because pgadmin against nothing is an empty tree.
 pgadmin:
 	$(COMPOSE_DEV) up -d db pgadmin
@@ -83,7 +88,9 @@ pgadmin-down:
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+# The 80% of ADR-0028 is enforced here and nowhere else: this is the only target where every line of the core actually gets a chance to run.
 test-integration: test
+	cd src/core && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); if ($$3 + 0 < 80) { printf "core coverage %s%% is below the 80%% of ADR-0028\n", $$3; exit 1 } }'
 
 # -count=1 so a cached pass cannot call a dead stack green, and --wait blocks until both healthchecks actually answer.
 smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)

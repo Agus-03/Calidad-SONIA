@@ -20,6 +20,8 @@ func TestRunServesHealthAndStopsWhenTheContextIsCancelled(t *testing.T) {
 	t.Setenv("DATABASE_URL", dsn)
 	t.Setenv("BRAIN_BASE_URL", "http://127.0.0.1:8000")
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "test-token")
+	// Required since ADR-0030, and the process refuses to boot without it: long enough to clear the 32-byte floor.
+	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
 	t.Setenv("CORE_HTTP_ADDR", testAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())

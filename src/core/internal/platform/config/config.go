@@ -13,6 +13,9 @@ import (
 // An allowlist and not a ban on production: with a ban, an ENVIRONMENT typed "prod" would quietly let a fake send through.
 var doubleAllowedEnvironments = []string{"development", "test"}
 
+// HS256 is no stronger than its key, and a short one is brute-forced offline without anything at runtime noticing (ADR-0030).
+const minJWTSecretBytes = 32
+
 // Load reads the environment and reports every problem at once instead of failing on the first.
 func Load() (Config, error) {
 	var problems []string
@@ -25,6 +28,15 @@ func Load() (Config, error) {
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 		DBPoolMinSize: 2,
 		DBPoolMaxSize: 10,
+
+		JWTSecret: os.Getenv("JWT_SECRET"),
+		// Twelve hours so the session outlasts a long shift and expires outside working time, never mid-conversation (ADR-0030).
+		JWTTTL: 12 * time.Hour,
+
+		SeedAdminEmail:    os.Getenv("SEED_ADMIN_EMAIL"),
+		SeedAdminPassword: os.Getenv("SEED_ADMIN_PASSWORD"),
+		// Only used when the database has no account yet, which is the first run of an installation and nothing else.
+		SeedAdminAccountName: env("SEED_ADMIN_ACCOUNT_NAME", "SONIA"),
 
 		BrainBaseURL:       os.Getenv("BRAIN_BASE_URL"),
 		BrainInternalToken: os.Getenv("BRAIN_INTERNAL_TOKEN"),
@@ -50,13 +62,23 @@ func Load() (Config, error) {
 		{"DATABASE_URL", cfg.DatabaseURL},
 		{"BRAIN_BASE_URL", cfg.BrainBaseURL},
 		{"BRAIN_INTERNAL_TOKEN", cfg.BrainInternalToken},
+		{"JWT_SECRET", cfg.JWTSecret},
 	} {
 		if strings.TrimSpace(required.value) == "" {
 			problems = append(problems, required.key+" is required")
 		}
 	}
 
+	// Guarded on the empty case so a missing secret is reported once, as missing, and not twice.
+	if n := len(strings.TrimSpace(cfg.JWTSecret)); n > 0 && n < minJWTSecretBytes {
+		problems = append(problems, fmt.Sprintf("JWT_SECRET is %d bytes and needs at least %d", n, minJWTSecretBytes))
+	}
+
 	var err error
+
+	if cfg.JWTTTL, err = durationMS("JWT_TTL_MS", cfg.JWTTTL); err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	if cfg.DBPoolMinSize, err = positiveInt("DB_POOL_MIN_SIZE", cfg.DBPoolMinSize); err != nil {
 		problems = append(problems, err.Error())

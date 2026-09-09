@@ -12,6 +12,15 @@ type Config struct {
 	DBPoolMinSize int
 	DBPoolMaxSize int
 
+	// Signs the session token of the operator API and bounds how long one is accepted (ADR-0030).
+	JWTSecret string
+	JWTTTL    time.Duration
+
+	// Read but never required: only `make seed-admin` needs these, so a missing one must not stop the process from serving (regla 3).
+	SeedAdminEmail       string
+	SeedAdminPassword    string
+	SeedAdminAccountName string
+
 	BrainBaseURL       string
 	BrainInternalToken string
 	BrainTimeout       time.Duration

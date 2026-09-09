@@ -10,7 +10,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
     ports:
-      - "5432:5432"
+      # Bound to the loopback and not to every interface: pgadmin and the integration tests come in through localhost, and nothing else should.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

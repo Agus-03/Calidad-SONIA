@@ -2,11 +2,15 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | **Reemplazada por [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md)** el 2026-09-09 |
 | **Fecha** | 2026-08-06 |
 | **Etapa** | Diseño — Paso 3 |
 | **Requisitos afectados** | F26, F30, F31, F32 · sección 7.3, Anexo B |
 | **Relacionada con** | [ADR-0004](0004-asignacion-de-conversaciones.md), [ADR-0006](0006-anonimizacion-de-pii.md), [ADR-0007](0007-alcance-del-registro-de-auditoria.md) |
+
+> **Esta decisión ya no rige.** La reemplaza [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md), que abre el módulo de contactos a los tres roles y restringe en cambio los cuatro campos sensibles. El motivo del reemplazo está en su sección 1: **el control central de este ADR —"el módulo de contactos es exclusivo de `admin`"— no lo pide ninguna fuente**. El Anexo A no nombra roles en F30, F32 ni F33, y el Anexo B nunca menciona contactos; este mismo documento lo admite al describirlo como *"una restricción adicional"*.
+>
+> **El texto se conserva sin editar** —regla 2 del README: un ADR no se corrige, se reemplaza— con la tabla de la sección 2 tachada para que se vea qué decía y que dejó de valer. El punto abierto sobre la vista de historial del operador (sección 4) **queda resuelto** por la regla 6 de ADR-0032.
 
 ---
 
@@ -22,11 +26,11 @@ Queda la pregunta que ninguno de los dos responde: **¿quién puede verlos en cl
 
 **El control de acceso es horizontal, por asignación, no vertical por rol.** Se apoya en la restricción que el Anexo B ya establece, más una restricción adicional sobre el módulo de contactos:
 
-| Rol | Conversaciones | Módulo de contactos (F30, F32, F33) |
+| ~~Rol~~ | ~~Conversaciones~~ | ~~Módulo de contactos (F30, F32, F33)~~ |
 |---|---|---|
-| `operator` | Únicamente las **asignadas** | Sin acceso |
-| `supervisor` | Todas las del equipo | Sin acceso |
-| `admin` | Todas | Acceso completo |
+| ~~`operator`~~ | ~~Únicamente las **asignadas**~~ | ~~Sin acceso~~ |
+| ~~`supervisor`~~ | ~~Todas las del equipo~~ | ~~Sin acceso~~ |
+| ~~`admin`~~ | ~~Todas~~ | ~~Acceso completo~~ |
 
 Es decir: **un vendedor ve los datos sensibles de los clientes que atiende, y de ningún otro.** El módulo de contactos —el listado navegable, el ABM y la segmentación— es exclusivo de los dueños del negocio.
 

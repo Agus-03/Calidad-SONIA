@@ -36,7 +36,7 @@ Dos reglas que conviene sostener:
 | [0008](0008-ventana-de-24-horas.md) | Ventana de 24 horas de WhatsApp: incorporación al anteproyecto | — | Aceptada |
 | [0009](0009-horario-de-atencion.md) | Horario de atención del agente: fuera del alcance | — | Aceptada |
 | [0010](0010-qdrant-como-base-vectorial.md) | Qdrant como base vectorial, una colección por agente | — | Aceptada |
-| [0011](0011-acceso-a-datos-sensibles.md) | Acceso a datos sensibles: acotado por asignación, no por rol | — | Aceptada |
+| [0011](0011-acceso-a-datos-sensibles.md) | Acceso a datos sensibles: acotado por asignación, no por rol | — | ~~Aceptada~~ · **Reemplazada por [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md)** |
 | [0012](0012-cuenta-y-bandejas-de-entrada.md) | Cuenta y bandejas de entrada: previsión estructural para el trabajo futuro declarado | Auditoría del DER | Aceptada |
 | [0013](0013-fuente-de-verdad-del-modelo.md) | La fuente de verdad del modelo es el catálogo, no el tablero | Enmienda C10 | Aceptada |
 | [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
@@ -56,6 +56,8 @@ Dos reglas que conviene sostener:
 | [0028](0028-cobertura-de-pruebas-por-servicio.md) | La cobertura del ≥ 80 % se exige por servicio | Pendiente de ADR-0017 | Aceptada |
 | [0029](0029-el-acuse-del-webhook-no-espera-al-turno.md) | El acuse del webhook no espera al turno | Fase 1 | Aceptada |
 | [0030](0030-autenticacion-de-operadores.md) | Autenticación de operadores: JWT de vida corta y bcrypt | Fase 2 | Aceptada |
+| [0031](0031-cifrado-en-reposo-de-datos-sensibles.md) | Cifrado en reposo: AES-256-GCM en la aplicación, llave del entorno | Fase 3 | Aceptada |
+| [0032](0032-acceso-a-contactos-y-datos-sensibles.md) | Acceso a contactos: la agenda la ven los tres roles, los datos sensibles no | H-32 a H-37, H-39 · reemplaza a ADR-0011 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
@@ -77,7 +79,7 @@ Ninguna de las primeras bloqueaba el avance a los Pasos 4 y 5. De las tres que a
 
 ### Derivadas de las decisiones tomadas
 
-- [ ] **Vista de historial del operador.** Con F32 restringido a `admin` ([ADR-0011](0011-acceso-a-datos-sensibles.md)) y las conversaciones divididas por cada reapertura ([ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md)), el operador atiende a un cliente recurrente sin ver sus conversaciones anteriores. ¿Ve al menos el listado de conversaciones previas desde el chat asignado? **Es el pendiente de mayor impacto.**
+- [x] **Vista de historial del operador** → **resuelto por [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md), regla 6**: el operador ve el historial unificado del contacto (F32), filtrado a las conversaciones asignadas a él. Desaparece la causa del pendiente: F32 ya no está restringido a `admin`, porque [ADR-0011](0011-acceso-a-datos-sensibles.md) fue reemplazada. **Queda una salvedad de calendario**: la regla está decidida y escrita, pero **la pantalla se construye en la Fase 14**.
 - [ ] **Registro de desencriptado de datos sensibles.** Mejora de trazabilidad, sin urgencia una vez acotado el acceso por asignación. Ver [ADR-0007](0007-alcance-del-registro-de-auditoria.md).
 - [ ] **Marcador único o por tipo para CUIT/CUIL.** Comparten formato, así que la redacción sobre texto libre no puede distinguirlos. Se resuelve al modelar, en el Paso 5. Ver [ADR-0006](0006-anonimizacion-de-pii.md).
 - [ ] **Método de asignación de agente cuando hay varios en una misma bandeja.** [ADR-0012](0012-cuenta-y-bandejas-de-entrada.md) define `inboxes.default_ai_agent_id`, que cubre toda la operación real: un agente atiende las conversaciones nuevas de su bandeja. Lo que queda abierto es el **único caso que necesita varios agentes sobre la misma bandeja**: la comparación de proveedores de LLM que contempla la sección 8.4 (GPT-4o / Claude / Cohere), de la que depende OE2.

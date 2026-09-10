@@ -154,6 +154,7 @@ Reglas que salieron de trabajar con nosotros. Valen para cualquiera del grupo.
 4. **Separar qué decide quién.** Marcar explícitamente qué ya está decidido, qué se resuelve solo y qué necesita una decisión del grupo. Preguntar únicamente por lo último.
 5. **Commits de una sola oración**, sin cuerpo. El razonamiento vive en los documentos, no en el historial de git.
 6. **El `.env` no se lee.** Tiene secretos reales. Para verificar configuración están `.env.example`, `deploy/docker-compose.yml` y los dos archivos de config.
+7. **Actualizar el CI ante tests validados.** Cada vez que se genere un test y sea validado por el usuario, verificar y actualizar el workflow de CI (`.github/workflows/ci.yml`) para asegurar que quede integrado en la suite de pruebas unitarias correspondiente respetando las buenas prácticas (aislado, hermético y sin dependencias externas innecesarias).
 
 ---
 

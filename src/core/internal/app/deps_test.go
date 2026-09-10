@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -10,6 +13,7 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
@@ -97,6 +101,51 @@ func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTheWiredRouterActuallyServesTheLabelRoutes is the half the labels tests cannot reach: they mount a router of their own, so they
+// prove the routes are declared and never that anybody mounts them. A 404 here would mean the package builds, tests green, and nothing serves it.
+func TestTheWiredRouterActuallyServesTheLabelRoutes(t *testing.T) {
+	// A nil pool is enough because wire only stores it: nothing here opens a connection, and the refusals happen before any handler runs.
+	deps := wire(config.Config{JWTSecret: testSecret, JWTTTL: 12 * time.Hour}, nil, slog.New(slog.DiscardHandler))
+
+	engine := soniahttp.NewRouter(soniahttp.RouterOptions{
+		TokenVerifier:     deps.tokenVerifier,
+		ActorLookup:       deps.actorLookup,
+		Controllers:       deps.controllers,
+		PublicControllers: deps.publicControllers,
+	})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/labels"},
+		{http.MethodPost, "/api/v1/labels"},
+		{http.MethodPatch, "/api/v1/labels/" + uuid.New().String()},
+		{http.MethodDelete, "/api/v1/labels/" + uuid.New().String()},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+
+			// 401 and not 404: the route is mounted and asked for a token. A 200 would mean it landed in the public zone by mistake.
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("got %d, want 401 - a 404 means nothing mounts it and a 200 means it is public", rec.Code)
+			}
+		})
+	}
+
+	// The guard that keeps the assertions above from being vacuous: an unmounted path under the same prefix must answer 404,
+	// or every 401 here would prove nothing more than that the prefix exists.
+	t.Run("una ruta que nadie monta", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/todavia-no-existe", nil))
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404 - if this is 401 the cases above cannot tell mounted from unmounted", rec.Code)
+		}
+	})
 }
 
 func mustFail(t *testing.T, verify soniahttp.TokenVerifier, raw string) error {

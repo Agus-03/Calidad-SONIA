@@ -79,7 +79,8 @@ CREATE TABLE contacts (
     cuit_encrypted     bytea,
     cuil_encrypted     bytea,
     cbu_encrypted      bytea,
-    consent_given_at   timestamptz NOT NULL,
+    -- Nullable porque un consentimiento que todavia no ocurrio no tiene instante: NULL es "no lo dio", no "lo dio cuando lo cargamos".
+    consent_given_at   timestamptz,
     consent_revoked_at timestamptz,
     opt_out            boolean     NOT NULL DEFAULT false,
     blocked            boolean     NOT NULL DEFAULT false,

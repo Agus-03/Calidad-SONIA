@@ -83,7 +83,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `cuit_encrypted` | bytea | ADR-0006 |
 | `cuil_encrypted` | bytea | ADR-0006 |
 | `cbu_encrypted` | bytea | ADR-0006 |
-| `consent_given_at` | timestamptz | Anexo C; sección 7.3 |
+| `consent_given_at` | timestamptz | Anexo C; sección 7.3. **Nullable**: un consentimiento que todavía no ocurrió no tiene instante, y `NULL` dice *"no lo dio"* sin fingir que lo dio cuando se cargó el contacto. Hoy se escribe siempre `NULL`, porque **nada en el sistema le pregunta al cliente todavía**; el día que exista ese acto, se sella con su instante |
 | `consent_revoked_at` | timestamptz | Nullable. Derecho de supresión de la Ley 25.326 (C09) |
 | `opt_out` | boolean | ⚙ El contacto pidió no recibir más mensajes. **Distinto de `consent_revoked_at`**: revocar el consentimiento alcanza al tratamiento de sus datos; el opt-out alcanza al envío. Se pueden dar por separado |
 | `blocked` | boolean | ⚙ Bloqueado por el equipo (spam, abuso). Decisión nuestra, no del contacto |

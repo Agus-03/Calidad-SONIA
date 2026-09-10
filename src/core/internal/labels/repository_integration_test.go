@@ -357,3 +357,68 @@ func names(p Page) []string {
 	}
 	return out
 }
+
+// TestByIDsAnswersOnlyTheOwnCatalogueEntries is what contacts/ leans on to draw a card: it hands over the ids its own union
+// table holds and gets back names, and the account is checked here because the union table cannot check it (struct.md, regla 1).
+func TestByIDsAnswersOnlyTheOwnCatalogueEntries(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, operator := seededOwners(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec)
+
+		ventas := newLabel(account, operator, "Ventas "+id.New().String())
+		moroso := newLabel(account, operator, "Moroso "+id.New().String())
+		retirada := newLabel(account, operator, "Retirada "+id.New().String())
+		for _, l := range []Label{ventas, moroso, retirada} {
+			if err := repo.Create(ctx, l); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+		asked := []uuid.UUID{ventas.ID, moroso.ID, retirada.ID}
+
+		// Ordered by the folded name for the same reason the listing is: a card draws its chips in the order the catalogue reads.
+		found, err := repo.ByIDs(ctx, account, asked)
+		if err != nil {
+			t.Fatalf("ByIDs: %v", err)
+		}
+		if len(found) != 3 {
+			t.Fatalf("the catalogue answered %d entries for three ids", len(found))
+		}
+
+		// A label retired after it was tagged stops showing, instead of drawing a chip with no name behind it (C09).
+		if err := repo.SoftDelete(ctx, account, retirada.ID); err != nil {
+			t.Fatalf("SoftDelete: %v", err)
+		}
+		found, err = repo.ByIDs(ctx, account, asked)
+		if err != nil {
+			t.Fatalf("ByIDs after the delete: %v", err)
+		}
+		if len(found) != 2 {
+			t.Fatalf("a deleted label is still in the answer: %d entries", len(found))
+		}
+
+		// Another account asking with the very same ids gets nothing, which is the check the foreign key never makes.
+		strangers, err := repo.ByIDs(ctx, id.New(), asked)
+		if err != nil {
+			t.Fatalf("ByIDs for another account: %v", err)
+		}
+		if len(strangers) != 0 {
+			t.Fatalf("another account read %d entries of this catalogue", len(strangers))
+		}
+
+		// No ids is no query: a contact nobody tagged must not cost a round trip, and must answer [] and not null.
+		none, err := repo.ByIDs(ctx, account, nil)
+		if err != nil {
+			t.Fatalf("ByIDs with no ids: %v", err)
+		}
+		if none == nil || len(none) != 0 {
+			t.Fatalf("ByIDs with no ids answered %v, want an empty slice", none)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -61,7 +62,7 @@ func TestApplyOnlyMovesWhatTheEditTouched(t *testing.T) {
 	row := newRow(account, "Ana", "Perez")
 	row.Email, row.Notes, row.Type = "ana@coop.test", "prefiere la tarde", enums.ContactTypeProspect
 	store := newStubStore(row)
-	service := NewService(store, nil)
+	service := NewService(store, newStubCatalogue(), nil)
 
 	got, err := service.Apply(ctx, scopeOf(account, operator, enums.OperatorRoleAdmin), row.ID, func(ch *Changes) {
 		ch.Name = "Ana Maria"
@@ -84,7 +85,7 @@ func TestApplyRefusesToLeaveAContactNameless(t *testing.T) {
 
 	row := newRow(account, "Bruno", "Diaz")
 	store := newStubStore(row)
-	service := NewService(store, nil)
+	service := NewService(store, newStubCatalogue(), nil)
 	scope := scopeOf(account, operator, enums.OperatorRoleAdmin)
 
 	for _, blank := range []string{"", "   "} {
@@ -103,7 +104,7 @@ func TestApplyRefusesATypeOutsideTheContract(t *testing.T) {
 	account := id.New()
 
 	row := newRow(account, "Carla", "Gomez")
-	service := NewService(newStubStore(row), nil)
+	service := NewService(newStubStore(row), newStubCatalogue(), nil)
 
 	_, err := service.Apply(ctx, scopeOf(account, id.New(), enums.OperatorRoleAdmin), row.ID, func(ch *Changes) {
 		ch.Type = "vip"
@@ -122,7 +123,7 @@ func TestEveryWriteReadsThroughTheScopeFirst(t *testing.T) {
 	row := newRow(account, "Diego", "Luna")
 	store := newStubStore(row)
 	store.assign(theirs, row.ID)
-	service := NewService(store, nil)
+	service := NewService(store, newStubCatalogue(), nil)
 
 	// An operator with no conversation on this contact: every write must answer as if the contact were not there.
 	scope := scopeOf(account, mine, enums.OperatorRoleOperator)
@@ -145,7 +146,7 @@ func TestEveryWriteReadsThroughTheScopeFirst(t *testing.T) {
 func TestCreateStampsWhatTheCallerDoesNotChoose(t *testing.T) {
 	ctx := context.Background()
 	account, operator := id.New(), id.New()
-	service := NewService(newStubStore(), nil)
+	service := NewService(newStubStore(), newStubCatalogue(), nil)
 
 	created, err := service.Create(ctx, scopeOf(account, operator, enums.OperatorRoleAdmin), New{
 		PhoneWhatsapp: "+54 9 351 123 4567", Name: "Elsa", Lastname: "Mora",
@@ -166,7 +167,7 @@ func TestCreateStampsWhatTheCallerDoesNotChoose(t *testing.T) {
 func TestCreateRefusesAPhoneThatIsNoDigits(t *testing.T) {
 	ctx := context.Background()
 	account := id.New()
-	service := NewService(newStubStore(), nil)
+	service := NewService(newStubStore(), newStubCatalogue(), nil)
 
 	for _, phone := range []string{"", "   ", "+-()", "sin numero"} {
 		_, err := service.Create(ctx, scopeOf(account, id.New(), enums.OperatorRoleAdmin), New{
@@ -176,5 +177,91 @@ func TestCreateRefusesAPhoneThatIsNoDigits(t *testing.T) {
 		if !errors.Is(err, ErrEmptyPhone) {
 			t.Fatalf("Create(%q): got %v, want ErrEmptyPhone", phone, err)
 		}
+	}
+}
+
+// TestALabelOfAnotherAccountIsRefused is the check the foreign key cannot do: contact_labels.label_id proves the label exists,
+// never that it belongs to the account of the contact being tagged (ADR-0032, regla 13).
+func TestALabelOfAnotherAccountIsRefused(t *testing.T) {
+	ctx := context.Background()
+	account, stranger := id.New(), id.New()
+
+	row := newRow(account, "Gaston", "Ruiz")
+	store := newStubStore(row)
+	theirs := labels.Label{ID: id.New(), AccountID: stranger, Name: "Ventas", Color: "#ff8800"}
+	service := NewService(store, newStubCatalogue(theirs), nil)
+
+	err := service.AssignLabel(ctx, scopeOf(account, id.New(), enums.OperatorRoleAdmin), row.ID, theirs.ID)
+	if !errors.Is(err, ErrLabelNotInAccount) {
+		t.Fatalf("AssignLabel with a label of another account: got %v, want ErrLabelNotInAccount", err)
+	}
+	if len(store.tags[row.ID]) != 0 {
+		t.Fatalf("the contact was tagged anyway: %v", store.tags[row.ID])
+	}
+}
+
+// TestTaggingTwiceLeavesOneTag is what the unique constraint buys: the request says what the contact should carry, so asking
+// for it again is not a conflict.
+func TestTaggingTwiceLeavesOneTag(t *testing.T) {
+	ctx := context.Background()
+	account := id.New()
+
+	row := newRow(account, "Hugo", "Sosa")
+	store := newStubStore(row)
+	tag := labels.Label{ID: id.New(), AccountID: account, Name: "Ventas", Color: "#ff8800"}
+	service := NewService(store, newStubCatalogue(tag), nil)
+	scope := scopeOf(account, id.New(), enums.OperatorRoleAdmin)
+
+	for range 2 {
+		if err := service.AssignLabel(ctx, scope, row.ID, tag.ID); err != nil {
+			t.Fatalf("AssignLabel: %v", err)
+		}
+	}
+
+	found, err := service.LabelsOf(ctx, scope, row.ID)
+	if err != nil {
+		t.Fatalf("LabelsOf: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("the contact carries %d tags, want exactly one", len(found))
+	}
+
+	// And removing one that was never there is not an error either, for the same reason: the end state is what was asked for.
+	if err := service.UnassignLabel(ctx, scope, row.ID, id.New()); err != nil {
+		t.Fatalf("UnassignLabel of a tag that was never there: %v", err)
+	}
+	if err := service.UnassignLabel(ctx, scope, row.ID, tag.ID); err != nil {
+		t.Fatalf("UnassignLabel: %v", err)
+	}
+	if found, _ := service.LabelsOf(ctx, scope, row.ID); len(found) != 0 {
+		t.Fatalf("the tag survived the removal: %v", found)
+	}
+}
+
+// TestTaggingReadsThroughTheScopeToo keeps the three label methods inside the rule the rest of the writes obey: a contact an
+// operator does not reach cannot be tagged, untagged, or have its tags read.
+func TestTaggingReadsThroughTheScopeToo(t *testing.T) {
+	ctx := context.Background()
+	account, mine, theirs := id.New(), id.New(), id.New()
+
+	row := newRow(account, "Irene", "Paz")
+	store := newStubStore(row)
+	store.assign(theirs, row.ID)
+	tag := labels.Label{ID: id.New(), AccountID: account, Name: "Ventas", Color: "#ff8800"}
+	service := NewService(store, newStubCatalogue(tag), nil)
+
+	scope := scopeOf(account, mine, enums.OperatorRoleOperator)
+
+	if err := service.AssignLabel(ctx, scope, row.ID, tag.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("AssignLabel out of reach: got %v, want ErrNotFound", err)
+	}
+	if err := service.UnassignLabel(ctx, scope, row.ID, tag.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UnassignLabel out of reach: got %v, want ErrNotFound", err)
+	}
+	if _, err := service.LabelsOf(ctx, scope, row.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LabelsOf out of reach: got %v, want ErrNotFound", err)
+	}
+	if len(store.tags[row.ID]) != 0 {
+		t.Fatalf("the contact was tagged from out of reach: %v", store.tags[row.ID])
 	}
 }

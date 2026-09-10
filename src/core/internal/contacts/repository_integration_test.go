@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
@@ -710,5 +711,179 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 	})
 	if !errors.Is(err, rollback) {
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// seededLabel puts one entry in the catalogue, because contact_labels.label_id is a foreign key and no link can be written
+// against a label that is not there (C05).
+func seededLabel(t *testing.T, ctx context.Context, exec db.Executor, account, byOperator uuid.UUID, name string) uuid.UUID {
+	t.Helper()
+
+	labelID := id.New()
+	_, err := exec.Exec(ctx, `
+		INSERT INTO labels (id, account_id, name, color, created_by_operator_id)
+		VALUES ($1, $2, $3, '#ff8800', $4)`, labelID, account, name, byOperator)
+	if err != nil {
+		t.Fatalf("seed a label: %v", err)
+	}
+	return labelID
+}
+
+// TestTaggingTwiceWritesOneLink is the case the stub cannot prove: whether ON CONFLICT (contact_id, label_id) actually infers
+// contact_labels_unique. If the inference were wrong the statement would fail, not silently write a second row.
+func TestTaggingTwiceWritesOneLink(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+		mine, _ := seededOperators(t, ctx, exec, account)
+
+		contact := newContact(account, uniquePhone(), "Julia", "Ledesma")
+		if err := repo.Create(ctx, contact); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		labelID := seededLabel(t, ctx, exec, account, mine, "Ventas "+id.New().String())
+
+		for i := range 2 {
+			if err := repo.AssignLabel(ctx, ContactLabel{
+				ID: id.New(), ContactID: contact.ID, LabelID: labelID, AssignedByOperatorID: mine,
+			}); err != nil {
+				t.Fatalf("AssignLabel number %d: %v", i+1, err)
+			}
+		}
+
+		var links int
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM contact_labels WHERE contact_id = $1`, contact.ID).Scan(&links); err != nil {
+			t.Fatalf("count the links: %v", err)
+		}
+		if links != 1 {
+			t.Fatalf("the contact carries %d links, want exactly one", links)
+		}
+
+		// And the removal is physical, because the table has no deleted_at to move.
+		if err := repo.UnassignLabel(ctx, contact.ID, labelID); err != nil {
+			t.Fatalf("UnassignLabel: %v", err)
+		}
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM contact_labels WHERE contact_id = $1`, contact.ID).Scan(&links); err != nil {
+			t.Fatalf("count the links again: %v", err)
+		}
+		if links != 0 {
+			t.Fatalf("%d links survived the removal", links)
+		}
+
+		// Removing one that is not there is not an error, so untagging twice does not need the caller to remember.
+		if err := repo.UnassignLabel(ctx, contact.ID, labelID); err != nil {
+			t.Fatalf("UnassignLabel of a link already gone: %v", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}
+
+// TestATagAppliedByNobodyIsAllowed pins the nullable column against the zero uuid: writing that instead of NULL would be a
+// foreign key pointing at an operator that cannot exist, which is what Fase 8 will hit when the brain tags on its own (F31).
+func TestATagAppliedByNobodyIsAllowed(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+		mine, _ := seededOperators(t, ctx, exec, account)
+
+		contact := newContact(account, uniquePhone(), "Karina", "Ferro")
+		if err := repo.Create(ctx, contact); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		labelID := seededLabel(t, ctx, exec, account, mine, "Automatica "+id.New().String())
+
+		if err := repo.AssignLabel(ctx, ContactLabel{ID: id.New(), ContactID: contact.ID, LabelID: labelID}); err != nil {
+			t.Fatalf("AssignLabel with no operator behind it: %v", err)
+		}
+
+		var by *uuid.UUID
+		row := exec.QueryRow(ctx, `SELECT assigned_by_operator_id FROM contact_labels WHERE contact_id = $1`, contact.ID)
+		if err := row.Scan(&by); err != nil {
+			t.Fatalf("read the assigning operator: %v", err)
+		}
+		if by != nil {
+			t.Fatalf("the link names operator %v, want NULL", *by)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}
+
+// TestTheTagsOfAContactAreItsOwn checks the two halves the card rests on: the ids come from this package's table, and the
+// catalogue answers only the entries of the asking account.
+func TestTheTagsOfAContactAreItsOwn(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+		mine, _ := seededOperators(t, ctx, exec, account)
+
+		tagged := newContact(account, uniquePhone(), "Lucia", "Bravo")
+		untouched := newContact(account, uniquePhone(), "Mario", "Cano")
+		for _, c := range []Contact{tagged, untouched} {
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+
+		ventas := seededLabel(t, ctx, exec, account, mine, "Ventas "+id.New().String())
+		moroso := seededLabel(t, ctx, exec, account, mine, "Moroso "+id.New().String())
+		for _, labelID := range []uuid.UUID{ventas, moroso} {
+			if err := repo.AssignLabel(ctx, ContactLabel{
+				ID: id.New(), ContactID: tagged.ID, LabelID: labelID, AssignedByOperatorID: mine,
+			}); err != nil {
+				t.Fatalf("AssignLabel: %v", err)
+			}
+		}
+
+		ids, err := repo.LabelIDsOf(ctx, tagged.ID)
+		if err != nil {
+			t.Fatalf("LabelIDsOf: %v", err)
+		}
+		if len(ids) != 2 {
+			t.Fatalf("the contact carries %d tags, want two", len(ids))
+		}
+
+		// The one nobody tagged answers an empty slice and not nil, so the card renders [] and not null.
+		none, err := repo.LabelIDsOf(ctx, untouched.ID)
+		if err != nil {
+			t.Fatalf("LabelIDsOf of an untagged contact: %v", err)
+		}
+		if none == nil || len(none) != 0 {
+			t.Fatalf("an untagged contact answered %v, want an empty slice", none)
+		}
+
+		// ByIDs is where the ids become names, and it is also where the account is checked a second time (struct.md, regla 1).
+		found, err := labels.NewRepository(exec).ByIDs(ctx, account, ids)
+		if err != nil {
+			t.Fatalf("ByIDs: %v", err)
+		}
+		if len(found) != 2 {
+			t.Fatalf("the catalogue answered %d entries for two ids", len(found))
+		}
+		strangers, err := labels.NewRepository(exec).ByIDs(ctx, id.New(), ids)
+		if err != nil {
+			t.Fatalf("ByIDs for another account: %v", err)
+		}
+		if len(strangers) != 0 {
+			t.Fatalf("another account read %d entries of this catalogue", len(strangers))
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
 	}
 }

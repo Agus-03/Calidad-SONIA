@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 )
 
 // stubStore answers from memory, so the service and the handlers are tested against their own rules and not against the SQL that enforces them.
@@ -13,11 +15,12 @@ import (
 type stubStore struct {
 	rows     []Contact
 	assigned map[uuid.UUID][]uuid.UUID
+	tags     map[uuid.UUID][]uuid.UUID
 	err      error
 }
 
 func newStubStore(rows ...Contact) *stubStore {
-	return &stubStore{rows: rows, assigned: map[uuid.UUID][]uuid.UUID{}}
+	return &stubStore{rows: rows, assigned: map[uuid.UUID][]uuid.UUID{}, tags: map[uuid.UUID][]uuid.UUID{}}
 }
 
 // assign is the seeding the integration test does with real conversations, done here as a map.
@@ -131,4 +134,72 @@ func (s *stubStore) SoftDelete(_ context.Context, accountID, contactID uuid.UUID
 		}
 	}
 	return ErrNotFound
+}
+
+// The link table as a map, keeping the one property the SQL has that a slice would not: the unique constraint, which is what
+// makes tagging twice a no-op instead of a second row.
+func (s *stubStore) AssignLabel(_ context.Context, link ContactLabel) error {
+	if s.err != nil {
+		return s.err
+	}
+	for _, existing := range s.tags[link.ContactID] {
+		if existing == link.LabelID {
+			return nil
+		}
+	}
+	s.tags[link.ContactID] = append(s.tags[link.ContactID], link.LabelID)
+	return nil
+}
+
+// Removing a tag that is not there is not an error here either, matching the DELETE that removes no row.
+func (s *stubStore) UnassignLabel(_ context.Context, contactID, labelID uuid.UUID) error {
+	if s.err != nil {
+		return s.err
+	}
+	kept := []uuid.UUID{}
+	for _, existing := range s.tags[contactID] {
+		if existing != labelID {
+			kept = append(kept, existing)
+		}
+	}
+	s.tags[contactID] = kept
+	return nil
+}
+
+func (s *stubStore) LabelIDsOf(_ context.Context, contactID uuid.UUID) ([]uuid.UUID, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return append([]uuid.UUID{}, s.tags[contactID]...), nil
+}
+
+// stubCatalogue is labels/ seen through the only two questions this package asks it. It is scoped by account on purpose: the
+// case worth testing is a label id that exists and belongs to somebody else, which the foreign key would happily accept.
+type stubCatalogue struct{ rows []labels.Label }
+
+func newStubCatalogue(rows ...labels.Label) *stubCatalogue { return &stubCatalogue{rows: rows} }
+
+func (c *stubCatalogue) ByID(_ context.Context, accountID, labelID uuid.UUID) (labels.Label, error) {
+	for _, l := range c.rows {
+		if l.ID == labelID && l.AccountID == accountID {
+			return l, nil
+		}
+	}
+	return labels.Label{}, labels.ErrNotFound
+}
+
+func (c *stubCatalogue) ByIDs(_ context.Context, accountID uuid.UUID, ids []uuid.UUID) ([]labels.Label, error) {
+	found := []labels.Label{}
+	for _, l := range c.rows {
+		if l.AccountID != accountID {
+			continue
+		}
+		for _, wanted := range ids {
+			if l.ID == wanted {
+				found = append(found, l)
+				break
+			}
+		}
+	}
+	return found, nil
 }

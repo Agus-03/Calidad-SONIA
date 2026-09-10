@@ -56,6 +56,18 @@ type Sensitive struct {
 	CBU  string
 }
 
+// Scope is who is asking and with what role, so a read says in its own signature that it narrows and does not merely take an account (ADR-0032, regla 2).
+type Scope struct {
+	AccountID  uuid.UUID
+	OperatorID uuid.UUID
+	Role       enums.OperatorRole
+}
+
+// Only the two roles that supervise the whole team are exempt, so an empty or unknown role falls to the narrow side and sees nothing.
+func (s Scope) reachesEveryContact() bool {
+	return s.Role == enums.OperatorRoleSupervisor || s.Role == enums.OperatorRoleAdmin
+}
+
 // Page carries Total because the pagination decided is by page number, and a page cannot be numbered without knowing how many there are.
 type Page struct {
 	Items []Contact

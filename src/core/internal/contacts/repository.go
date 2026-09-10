@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
@@ -36,21 +37,27 @@ SELECT id, account_id, phone_whatsapp, name, lastname, coalesce(email, ''), type
 FROM   contacts
 WHERE  deleted_at IS NULL`
 
-// The listing does not select the four columns, so a page of two hundred contacts never decrypts anything: what is not read cannot be leaked (ADR-0031, ADR-0032 regla 4).
+// The reach is built and not written as a constant because the narrowing adds an argument, and an argument added in the middle
+// shifts every placeholder after it. Returning the args with the SQL is what keeps the two from drifting apart.
+func (r *Repository) reach(s Scope) (where string, args []any) {
+	args = []any{s.AccountID}
+	where = " AND contacts.account_id = $1"
+	if s.reachesEveryContact() {
+		return where, args
+	}
+	args = append(args, s.OperatorID)
+	return where + " AND " + conversations.ScopedToOperator("contacts.id", len(args)), args
+}
+
+// The listing does not select the four sensitive columns, so a page of two hundred contacts never decrypts anything (ADR-0031, ADR-0032 regla 4).
 // Ordered by lastname then name because a contact book is read as a book, and created_at would scatter the same family.
-const contactList = contactSelect + `
-  AND    account_id = $1
-ORDER BY lower(lastname), lower(name), id
-LIMIT    $2 OFFSET $3`
+// Total counts the same reach as Items: a page that said "3 of 40" while showing the operator its own 3 would be worse than no total at all.
+func (r *Repository) List(ctx context.Context, scope Scope, limit, offset int) (Page, error) {
+	where, args := r.reach(scope)
+	listing := contactSelect + where +
+		fmt.Sprintf(" ORDER BY lower(lastname), lower(name), contacts.id LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 
-const contactCount = `
-SELECT count(*)
-FROM   contacts
-WHERE  deleted_at IS NULL AND account_id = $1`
-
-// List reaches every contact of the account: the narrowing to what a role may see is a separate step, and until it exists nothing mounts this.
-func (r *Repository) List(ctx context.Context, accountID uuid.UUID, limit, offset int) (Page, error) {
-	rows, err := r.exec.Query(ctx, contactList, accountID, limit, offset)
+	rows, err := r.exec.Query(ctx, listing, append(append([]any{}, args...), limit, offset)...)
 	if err != nil {
 		return Page{}, fmt.Errorf("contacts: list contacts: %w", err)
 	}
@@ -68,24 +75,31 @@ func (r *Repository) List(ctx context.Context, accountID uuid.UUID, limit, offse
 		return Page{}, fmt.Errorf("contacts: read contacts: %w", err)
 	}
 
-	if err := r.exec.QueryRow(ctx, contactCount, accountID).Scan(&page.Total); err != nil {
+	counting := "SELECT count(*) FROM contacts WHERE contacts.deleted_at IS NULL" + where
+	if err := r.exec.QueryRow(ctx, counting, args...).Scan(&page.Total); err != nil {
 		return Page{}, fmt.Errorf("contacts: count contacts: %w", err)
 	}
 	return page, nil
 }
 
 // One row is the only read that decrypts, which is what keeps the cost and the exposure on the card and off the listing.
-const contactByID = `
-SELECT id, account_id, phone_whatsapp, name, lastname, coalesce(email, ''), type, coalesce(notes, ''),
-       source_channel, consent_given_at, consent_revoked_at, opt_out, blocked,
-       dni_encrypted, cuit_encrypted, cuil_encrypted, cbu_encrypted
+const contactByIDSelect = `
+SELECT contacts.id, contacts.account_id, contacts.phone_whatsapp, contacts.name, contacts.lastname,
+       coalesce(contacts.email, ''), contacts.type, coalesce(contacts.notes, ''),
+       contacts.source_channel, contacts.consent_given_at, contacts.consent_revoked_at, contacts.opt_out, contacts.blocked,
+       contacts.dni_encrypted, contacts.cuit_encrypted, contacts.cuil_encrypted, contacts.cbu_encrypted
 FROM   contacts
-WHERE  deleted_at IS NULL AND account_id = $1 AND id = $2`
+WHERE  contacts.deleted_at IS NULL`
 
-// ByID is scoped by account and not only by id, so an identifier guessed from another account reads as missing rather than as forbidden.
-// It answers the four in the clear: which roles may see them is decided above, and the DTO is what keeps them off the wire (ADR-0032, regla 4).
-func (r *Repository) ByID(ctx context.Context, accountID, contactID uuid.UUID) (Contact, error) {
-	row := r.exec.QueryRow(ctx, contactByID, accountID, contactID)
+// ByID carries the same reach as the listing, and that is the point: without it, guessing an id would walk straight past the filter
+// the listing applies, and the card is the read that decrypts (ADR-0032, regla 2).
+// A contact out of reach answers ErrNotFound and never a refusal, because saying "forbidden" confirms that the contact exists.
+// It answers the four in the clear: which roles may see them is decided above, and the DTO is what keeps them off the wire (regla 4).
+func (r *Repository) ByID(ctx context.Context, scope Scope, contactID uuid.UUID) (Contact, error) {
+	where, args := r.reach(scope)
+	query := contactByIDSelect + where + fmt.Sprintf(" AND contacts.id = $%d", len(args)+1)
+
+	row := r.exec.QueryRow(ctx, query, append(append([]any{}, args...), contactID)...)
 
 	var c Contact
 	var dni, cuit, cuil, cbu []byte

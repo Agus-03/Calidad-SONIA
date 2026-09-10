@@ -375,8 +375,8 @@ CREATE TABLE labels (
     deleted_at             timestamptz
 );
 
--- Scoped by account because the catalogue belongs to one, which is the same thing while accounts has a single row.
-CREATE UNIQUE INDEX labels_name_unique ON labels (account_id, name) WHERE deleted_at IS NULL;
+-- Folds case because "Ventas" and "ventas" are one label to whoever tags, and is scoped by account because the catalogue belongs to one (F19).
+CREATE UNIQUE INDEX labels_name_unique ON labels (account_id, lower(name)) WHERE deleted_at IS NULL;
 
 -- Physical delete, a declared exception to C09: unlabelling is routine and no metric counts historical labellings.
 CREATE TABLE contact_labels (

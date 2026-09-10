@@ -145,7 +145,13 @@ sonia/
 │   │   │   │   ├── repository.go
 │   │   │   │   └── model.go
 │   │   │   │
-│   │   │   ├── labels/                 catálogo de etiquetas · F19
+│   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
+│   │   │   │   ├── controller.go       DTO, paginación por número de página y el tope de per_page
+│   │   │   │   ├── routes.go           leer: los tres roles · escribir: sólo admin (F19, ADR-0032)
+│   │   │   │   ├── service.go          genera el id (C04) y rechaza el nombre en blanco
+│   │   │   │   ├── repository.go       el índice único es sobre lower(name): Ventas y ventas son una
+│   │   │   │   └── model.go            Label y Page · las dos tablas de unión no son de acá
+│   │   │   │
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
 │   │   │   │
 │   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators

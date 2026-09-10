@@ -9,6 +9,7 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
@@ -65,9 +66,13 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) wiring {
 
 	tokens := auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL)
 	people := operators.NewService(operators.NewRepository(pool), tokens, log)
+	catalogue := labels.NewService(labels.NewRepository(pool), log)
 
 	return wiring{
-		controllers:       []soniahttp.Controller{operators.NewController(people, log)},
+		controllers: []soniahttp.Controller{
+			operators.NewController(people, log),
+			labels.NewController(catalogue, log),
+		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),
 		publicControllers: []soniahttp.Controller{channel, operators.NewLoginController(people, log)},

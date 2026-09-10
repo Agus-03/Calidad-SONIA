@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,9 @@ import (
 // Actor is who is making the request, with the role typed: the three words are generated from Anexo B and not retyped here (C01).
 type Actor struct {
 	OperatorID uuid.UUID
-	Role       enums.OperatorRole
+	// AccountID scopes every query a handler writes, so it comes from the row and never from the request (ADR-0012).
+	AccountID uuid.UUID
+	Role      enums.OperatorRole
 }
 
 // TokenVerifier answers who the bearer is and returns the error the caller should see, so this package never learns the token is a JWT (ADR-0030).
@@ -23,6 +26,9 @@ type TokenVerifier func(token string) (uuid.UUID, error)
 type ActorLookup func(ctx context.Context, operatorID uuid.UUID) (Actor, error)
 
 const actorKey = "sonia.actor"
+
+// A wiring mistake and not a bad request, so it answers 500 and the detail stays in the log: the session is fine, the lookup is not.
+var errAccountlessActor = errors.New("http: the actor lookup returned no account")
 
 // Authenticate takes the identity from the signed token and the permissions from the database, in that order.
 func Authenticate(verify TokenVerifier, lookup ActorLookup) gin.HandlerFunc {
@@ -40,6 +46,11 @@ func Authenticate(verify TokenVerifier, lookup ActorLookup) gin.HandlerFunc {
 		actor, err := lookup(c.Request.Context(), operatorID)
 		if err != nil {
 			Fail(c, nil, err)
+			return
+		}
+		// A zero account scopes every later query to nothing instead of failing, so a lookup that forgot the column is stopped here and not discovered as an empty list.
+		if actor.AccountID == uuid.Nil {
+			Fail(c, nil, Internal(errAccountlessActor))
 			return
 		}
 		c.Set(actorKey, actor)

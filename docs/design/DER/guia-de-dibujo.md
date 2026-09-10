@@ -604,7 +604,7 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 - La suma de `documents.size_bytes` de una base **no supera 100 MB** (F06).
 - `messages` **no admite borrado** de ninguna clase (F29 · C09).
 - Sólo un `admin` crea respuestas rápidas y etiquetas (F09, F19).
-- Un `operator` sólo alcanza las conversaciones que tiene asignadas (ADR-0011).
+- Un `operator` sólo alcanza las conversaciones que tiene asignadas, y con ellas sus contactos (ADR-0032).
 
 ---
 

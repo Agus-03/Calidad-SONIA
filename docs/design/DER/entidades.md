@@ -802,7 +802,7 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 
 | Entidad | Condición | Atributos previstos |
 |---|---|---|
-| `sensitive_data_access_logs` | Depende del pendiente *"registro de desencriptado"* (ADR-0007, ADR-0011) | `id`, `operator_id`, `contact_id`, `field`, `purpose`, `created_at` |
+| `sensitive_data_access_logs` | Depende del pendiente *"registro de desencriptado"* (ADR-0007, ADR-0032 · H-39) | `id`, `operator_id`, `contact_id`, `field`, `purpose`, `created_at` |
 | `reporting_events` | Diferida: agregación pre-calculada para F34–F38. **Se incorpora cuando el volumen lo pida**, no antes | `id`, `event_name`, `value`, `conversation_id`, `operator_id`, `ai_agent_id`, `created_at` |
 
 ---

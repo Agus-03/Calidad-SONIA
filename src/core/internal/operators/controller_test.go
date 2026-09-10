@@ -37,7 +37,7 @@ func mount(t *testing.T, operators ...Operator) http.Handler {
 			if err != nil {
 				return soniahttp.Actor{}, soniahttp.Unauthorized("session_no_longer_valid", "no such operator")
 			}
-			return soniahttp.Actor{OperatorID: operator.ID, Role: operator.Role}, nil
+			return soniahttp.Actor{OperatorID: operator.ID, AccountID: operator.AccountID, Role: operator.Role}, nil
 		},
 	})
 }
@@ -171,7 +171,7 @@ func TestMeRefusesARowThatVanishedAfterTheMiddlewareReadIt(t *testing.T) {
 		Controllers:   []soniahttp.Controller{NewController(service, nil)},
 		TokenVerifier: func(string) (uuid.UUID, error) { return operator.ID, nil },
 		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
-			return soniahttp.Actor{OperatorID: operator.ID, Role: operator.Role}, nil
+			return soniahttp.Actor{OperatorID: operator.ID, AccountID: operator.AccountID, Role: operator.Role}, nil
 		},
 	})
 

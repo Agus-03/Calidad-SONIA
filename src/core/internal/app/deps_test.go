@@ -69,8 +69,8 @@ func TestAnExpiredSessionIsNotTheSameAnswerAsABrokenToken(t *testing.T) {
 // TestTheLookupRefusesWhoeverTheRowNoLongerBacks protects regla 2: the token stays valid and the row is what takes the access away.
 func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 	ctx := context.Background()
-	active := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleAdmin, Active: true}
-	disabled := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleOperator, Active: false}
+	active := operators.Operator{ID: uuid.New(), AccountID: uuid.New(), Role: enums.OperatorRoleAdmin, Active: true}
+	disabled := operators.Operator{ID: uuid.New(), AccountID: uuid.New(), Role: enums.OperatorRoleOperator, Active: false}
 
 	lookup := resolveActor(operators.NewService(
 		&fakeStore{rows: map[uuid.UUID]operators.Operator{active.ID: active, disabled.ID: disabled}}, nil, nil))
@@ -79,7 +79,7 @@ func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an active operator: got %v, want no error", err)
 	}
-	if actor.OperatorID != active.ID || actor.Role != enums.OperatorRoleAdmin {
+	if actor.OperatorID != active.ID || actor.AccountID != active.AccountID || actor.Role != enums.OperatorRoleAdmin {
 		t.Fatalf("the actor is %+v, want the admin row", actor)
 	}
 

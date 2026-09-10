@@ -95,7 +95,7 @@ func TestPublicRoutesSkipAuthentication(t *testing.T) {
 
 // TestRouterAuthorizesBeforeTheHandler protects Anexo B: a role checked inside the service has already let the request in.
 func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
-	admin, operator := uuid.New(), uuid.New()
+	admin, operator, account := uuid.New(), uuid.New(), uuid.New()
 
 	var reached bool
 	engine := NewRouter(RouterOptions{
@@ -109,9 +109,9 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 		},
 		ActorLookup: func(_ context.Context, operatorID uuid.UUID) (Actor, error) {
 			if operatorID == admin {
-				return Actor{OperatorID: admin, Role: enums.OperatorRoleAdmin}, nil
+				return Actor{OperatorID: admin, AccountID: account, Role: enums.OperatorRoleAdmin}, nil
 			}
-			return Actor{OperatorID: operatorID, Role: enums.OperatorRoleOperator}, nil
+			return Actor{OperatorID: operatorID, AccountID: account, Role: enums.OperatorRoleOperator}, nil
 		},
 		Controllers: []Controller{stubController{routes: []Route{{
 			Method:  http.MethodGet,
@@ -178,5 +178,36 @@ func TestRouterAuthorizesBeforeTheHandler(t *testing.T) {
 				t.Fatalf("handler reached = %v, want %v", reached, tc.wantReach)
 			}
 		})
+	}
+}
+
+// TestAnActorWithoutAnAccountNeverReachesTheHandler is why the seam checks: a zero account scopes a query to nothing instead of failing, so the empty list would read as a permission.
+func TestAnActorWithoutAnAccountNeverReachesTheHandler(t *testing.T) {
+	var reached bool
+	engine := NewRouter(RouterOptions{
+		TokenVerifier: func(string) (uuid.UUID, error) { return uuid.New(), nil },
+		// The shape of a lookup that forgot the column: the operator is real and its account is not there.
+		ActorLookup: func(_ context.Context, operatorID uuid.UUID) (Actor, error) {
+			return Actor{OperatorID: operatorID, Role: enums.OperatorRoleAdmin}, nil
+		},
+		Controllers: []Controller{stubController{routes: []Route{{
+			Method:  http.MethodGet,
+			Path:    "/agents",
+			Roles:   []enums.OperatorRole{enums.OperatorRoleAdmin},
+			Handler: func(c *gin.Context) { reached = true; OK(c, gin.H{}) },
+		}}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	// A wiring mistake and not a refusal of the caller, so it is a 500 and the role check never got its turn.
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500 - body %s", rec.Code, rec.Body)
+	}
+	if reached {
+		t.Fatalf("the handler ran with an accountless actor, want it stopped at the middleware")
 	}
 }

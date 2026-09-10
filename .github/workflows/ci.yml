@@ -1,27 +1,87 @@
-name: CI Facilito
+name: CI
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  core:
+    name: Core Unit Tests (Go)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/core
 
     steps:
-    - name: Checkout del codigo
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # comandos
-    - name: Instalar dependencias y Probar
-      run: |
-        echo "Instalando dependencias..."
-        #
-        # ESTO ES UNA COMPUTADORA, ASI QUE PODEMOS INSTALAR COSAS, PROBAR COSAS, ETC
-        #
-        # CUANDO TENGAMOS EL CODIGO, METEMOS COMANDOS PARA INSTALAR DEPENDENCIAS
-        # Y CUANDO TENGAMOS LOS TESTS, METEMOS LOS COMANDOS PARA PROBAR EL CODIGO
-        #
-        echo "Todo bien"
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/core/go.mod
+          cache-dependency-path: src/core/go.sum
+
+      - name: Verify module dependencies
+        run: go mod verify
+
+      - name: Run static analysis (go vet)
+        run: go vet ./...
+
+      - name: Run Core unit tests
+        # Tests requiring live database or smoke services skip automatically when environment variables are unset.
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out || true
+          go tool cover -func=coverage.filtered.out
+
+  brain:
+    name: Brain Unit Tests & Contracts (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/brain
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install Poetry
+        run: pipx install poetry==2.4.3
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: src/brain/.venv
+          key: brain-venv-${{ runner.os }}-py314-${{ hashFiles('src/brain/poetry.lock') }}
+          restore-keys: |
+            brain-venv-${{ runner.os }}-py314-
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --no-interaction
+
+      - name: Verify contract synchronization (enums and OpenAPI)
+        run: poetry run python ../../contracts/generate.py --check
+
+      - name: Run Brain unit tests with coverage
+        # Enforces the >=80% coverage threshold per ADR-0028 declared in pyproject.toml.
+        # Integration tests requiring a live PostgreSQL skip automatically when SONIA_TEST_DATABASE_URL is unset.
+        run: poetry run pytest

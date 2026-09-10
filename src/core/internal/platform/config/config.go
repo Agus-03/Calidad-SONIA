@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 )
 
 // An allowlist and not a ban on production: with a ban, an ENVIRONMENT typed "prod" would quietly let a fake send through.
@@ -72,6 +74,15 @@ func Load() (Config, error) {
 	// Guarded on the empty case so a missing secret is reported once, as missing, and not twice.
 	if n := len(strings.TrimSpace(cfg.JWTSecret)); n > 0 && n < minJWTSecretBytes {
 		problems = append(problems, fmt.Sprintf("JWT_SECRET is %d bytes and needs at least %d", n, minJWTSecretBytes))
+	}
+
+	// Validated at boot even though nothing has encrypted anything yet: a missing key must stop the process, not surface on the first contact with a DNI (ADR-0031, regla 7).
+	if raw := strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")); raw == "" {
+		problems = append(problems, "ENCRYPTION_KEY is required")
+	} else if key, err := encryption.DecodeKey(raw); err != nil {
+		problems = append(problems, "ENCRYPTION_KEY "+err.Error())
+	} else {
+		cfg.EncryptionKey = key
 	}
 
 	var err error

@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"time"
 )
 
@@ -14,6 +17,7 @@ func validEnv(t *testing.T) {
 	t.Setenv("BRAIN_BASE_URL", "http://brain:8000")
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "internal-token")
 	t.Setenv("JWT_SECRET", strings.Repeat("k", minJWTSecretBytes))
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(make([]byte, encryption.KeyBytes)))
 
 	t.Setenv("CORE_HTTP_ADDR", ":8080")
 	t.Setenv("ENVIRONMENT", "test")
@@ -97,6 +101,21 @@ func TestLoadRejectsAnEnvironmentThatCannotServe(t *testing.T) {
 			name:  "a session lifetime that is not a number would silently become zero",
 			key:   "JWT_TTL_MS",
 			value: "doce horas",
+		},
+		{
+			name:  "no encryption key means the four sensitive columns would be stored in the clear (ADR-0031)",
+			key:   "ENCRYPTION_KEY",
+			value: "",
+		},
+		{
+			name:  "a key that is not base64 would decode to bytes nobody chose",
+			key:   "ENCRYPTION_KEY",
+			value: "esto no es base64!!",
+		},
+		{
+			name:  "a key shorter than 32 bytes is not AES-256 (ADR-0031)",
+			key:   "ENCRYPTION_KEY",
+			value: "c2hvcnQ=",
 		},
 	}
 

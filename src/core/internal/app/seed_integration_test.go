@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"os"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 )
 
 // Named so cleanup can tell the account this test installed from one that was already there and must survive it.
@@ -30,6 +32,8 @@ func seedEnv(t *testing.T) string {
 	t.Setenv("BRAIN_BASE_URL", "http://127.0.0.1:8000")
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "test-token")
 	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
+	// The four sensitive columns need a key before the process will boot at all, and any 32 bytes are a key here (ADR-0031, regla 7).
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(make([]byte, encryption.KeyBytes)))
 	t.Setenv("SEED_ADMIN_EMAIL", email)
 	t.Setenv("SEED_ADMIN_PASSWORD", "la-del-primer-login")
 	t.Setenv("SEED_ADMIN_ACCOUNT_NAME", seedTestAccountName)

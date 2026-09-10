@@ -16,6 +16,9 @@ type Config struct {
 	JWTSecret string
 	JWTTTL    time.Duration
 
+	// The raw 32 bytes, already decoded: whoever holds the Config must not have to learn that the environment carries them in base64 (ADR-0031).
+	EncryptionKey []byte
+
 	// Read but never required: only `make seed-admin` needs these, so a missing one must not stop the process from serving (regla 3).
 	SeedAdminEmail       string
 	SeedAdminPassword    string

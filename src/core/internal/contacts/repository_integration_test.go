@@ -85,7 +85,7 @@ func TestTheSensitiveFieldsAreUnreadableInTheDatabase(t *testing.T) {
 			}
 		}
 
-		got, err := repo.ByID(ctx, account, created.ID)
+		got, err := repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -119,7 +119,7 @@ func TestTheListingNeverCarriesTheSensitiveFields(t *testing.T) {
 			t.Fatalf("Create: %v", err)
 		}
 
-		page, err := repo.List(ctx, account, 20, 0)
+		page, err := repo.List(ctx, adminScope(account), 20, 0)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -157,7 +157,7 @@ func TestAnOrdinaryEditCannotWipeACbu(t *testing.T) {
 			t.Fatalf("Update: %v", err)
 		}
 
-		got, err := repo.ByID(ctx, account, created.ID)
+		got, err := repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -172,7 +172,7 @@ func TestAnOrdinaryEditCannotWipeACbu(t *testing.T) {
 		if err := repo.UpdateSensitive(ctx, account, created.ID, Sensitive{DNI: "36415782"}); err != nil {
 			t.Fatalf("UpdateSensitive: %v", err)
 		}
-		got, err = repo.ByID(ctx, account, created.ID)
+		got, err = repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -199,6 +199,213 @@ func testCipher(t *testing.T) *encryption.Cipher {
 		t.Fatalf("encryption.New: %v", err)
 	}
 	return cipher
+}
+
+// assignTo seeds by hand what nothing in the system assigns yet: auto assignment to the first who answers is Fase 5 and manual
+// reassignment (F26) is Fase 11. Without this the operator's book would come back empty for the right reason and the wrong one at once,
+// and the case would pass while proving nothing. Written down in ADR-0032 as a problem of calendar; this is where it is paid.
+func assignTo(t *testing.T, ctx context.Context, exec db.Executor, contactID uuid.UUID, operatorID *uuid.UUID) {
+	t.Helper()
+
+	var inbox uuid.UUID
+	if err := exec.QueryRow(ctx, `SELECT id FROM inboxes LIMIT 1`).Scan(&inbox); err != nil {
+		t.Skip("no inbox in the demo rows: load src/core/seeds/0001_demo.sql first")
+	}
+
+	_, err := exec.Exec(ctx, `
+		INSERT INTO conversations (id, contact_id, inbox_id, operator_id, status, mode, last_inbound_at, window_expires_at)
+		VALUES ($1, $2, $3, $4, 'active', 'autonomous', now(), now() + interval '24 hours')`,
+		id.New(), contactID, inbox, operatorID)
+	if err != nil {
+		t.Fatalf("seed a conversation: %v", err)
+	}
+}
+
+// seededOperators returns two real operator ids, because conversations.operator_id is a foreign key and a random uuid would be refused.
+func seededOperators(t *testing.T, ctx context.Context, exec db.Executor, account uuid.UUID) (mine, theirs uuid.UUID) {
+	t.Helper()
+
+	mine, theirs = id.New(), id.New()
+	for _, o := range []uuid.UUID{mine, theirs} {
+		_, err := exec.Exec(ctx, `
+			INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+			VALUES ($1, $2, 'Prueba', 'Alcance', $3, 'not-a-real-hash', 'operator', true)`,
+			o, account, o.String()+"@sonia.test")
+		if err != nil {
+			t.Fatalf("seed an operator: %v", err)
+		}
+	}
+	return mine, theirs
+}
+
+// TestTheOperatorReachesOnlyTheContactsOfItsOwnConversations is the rule of ADR-0032 regla 2, and the case the whole task exists for.
+//
+// It asserts both directions on purpose. A filter that is too loose answers 200 with the whole book, and a filter that is too tight
+// answers 200 with nothing: the two mistakes are opposite, both silent, and only one of them would be caught by asking "does it hide?".
+func TestTheOperatorReachesOnlyTheContactsOfItsOwnConversations(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		if _, err := exec.Exec(ctx, `UPDATE contacts SET deleted_at = now() WHERE deleted_at IS NULL`); err != nil {
+			t.Fatalf("clear the book: %v", err)
+		}
+
+		mine, theirs := seededOperators(t, ctx, exec, account)
+
+		assigned := newContact(account, uniquePhone(), "Ana", "Asignada")
+		other := newContact(account, uniquePhone(), "Beto", "Ajeno")
+		pooled := newContact(account, uniquePhone(), "Cora", "EnElPool")
+		for _, c := range []Contact{assigned, other, pooled} {
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create %s: %v", c.Lastname, err)
+			}
+		}
+
+		assignTo(t, ctx, exec, assigned.ID, &mine)
+		assignTo(t, ctx, exec, other.ID, &theirs)
+		// Unassigned, which is how every incoming conversation arrives until somebody answers (ADR-0004).
+		assignTo(t, ctx, exec, pooled.ID, nil)
+
+		for _, tc := range []struct {
+			role      enums.OperatorRole
+			wantNames []string
+		}{
+			{enums.OperatorRoleOperator, []string{"Asignada"}},
+			{enums.OperatorRoleSupervisor, []string{"Ajeno", "Asignada", "EnElPool"}},
+			{enums.OperatorRoleAdmin, []string{"Ajeno", "Asignada", "EnElPool"}},
+		} {
+			t.Run(string(tc.role), func(t *testing.T) {
+				scope := Scope{AccountID: account, OperatorID: mine, Role: tc.role}
+
+				page, err := repo.List(ctx, scope, 20, 0)
+				if err != nil {
+					t.Fatalf("List: %v", err)
+				}
+				if got := lastnames(page); !equal(got, tc.wantNames) {
+					t.Fatalf("the book holds %v, want %v", got, tc.wantNames)
+				}
+				// The total counts the same reach: a page saying "1 of 3" would leak how many the role cannot see.
+				if page.Total != len(tc.wantNames) {
+					t.Fatalf("Total = %d, want %d", page.Total, len(tc.wantNames))
+				}
+
+				// The card must narrow exactly like the listing, or guessing an id walks straight past it.
+				if _, err := repo.ByID(ctx, scope, assigned.ID); err != nil {
+					t.Fatalf("ByID of a contact in reach: %v", err)
+				}
+				_, err = repo.ByID(ctx, scope, other.ID)
+				if tc.role == enums.OperatorRoleOperator {
+					if !errors.Is(err, ErrNotFound) {
+						t.Fatalf("ByID of another operator's contact: got %v, want ErrNotFound", err)
+					}
+				} else if err != nil {
+					t.Fatalf("ByID as %s: %v", tc.role, err)
+				}
+			})
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestAReassignedContactLeavesTheBookAtOnce is the negative consequence of regla 3 written as a test, so nobody reads it as a bug later.
+func TestAReassignedContactLeavesTheBookAtOnce(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		mine, theirs := seededOperators(t, ctx, exec, account)
+
+		contact := newContact(account, uniquePhone(), "Dora", "Reasignada")
+		if err := repo.Create(ctx, contact); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		assignTo(t, ctx, exec, contact.ID, &mine)
+
+		scope := Scope{AccountID: account, OperatorID: mine, Role: enums.OperatorRoleOperator}
+		if _, err := repo.ByID(ctx, scope, contact.ID); err != nil {
+			t.Fatalf("ByID while it is assigned to me: %v", err)
+		}
+
+		// What F26 does: the supervisor hands the conversation to somebody else. The reach is the current assignment, not the history.
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET operator_id = $2 WHERE contact_id = $1`, contact.ID, theirs); err != nil {
+			t.Fatalf("reassign: %v", err)
+		}
+
+		if _, err := repo.ByID(ctx, scope, contact.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("ByID after the reassignment: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestARoleNobodyDeclaredSeesNothing is the safe side of the default: an empty role must narrow, never open.
+func TestARoleNobodyDeclaredSeesNothing(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		mine, _ := seededOperators(t, ctx, exec, account)
+
+		contact := newContact(account, uniquePhone(), "Elsa", "SinRol")
+		if err := repo.Create(ctx, contact); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		assignTo(t, ctx, exec, contact.ID, &mine)
+
+		// No role at all, and an operator who is not the one holding the conversation: nothing must come back.
+		page, err := repo.List(ctx, Scope{AccountID: account, OperatorID: id.New()}, 20, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page.Items) != 0 || page.Total != 0 {
+			t.Fatalf("an undeclared role reached %d contacts, want none", page.Total)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+func lastnames(p Page) []string {
+	out := make([]string, 0, len(p.Items))
+	for _, c := range p.Items {
+		out = append(out, c.Lastname)
+	}
+	return out
+}
+
+func equal(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// The cases that are not about the rule read as an admin, which is the reach that does not narrow: what they assert is unaffected by it.
+func adminScope(account uuid.UUID) Scope {
+	return Scope{AccountID: account, OperatorID: id.New(), Role: enums.OperatorRoleAdmin}
 }
 
 func newContact(account uuid.UUID, phone, name, lastname string) Contact {
@@ -230,7 +437,7 @@ func TestTheSameNumberTypedTwoWaysIsOneContact(t *testing.T) {
 			}
 		}
 
-		got, err := repo.ByID(ctx, account, first.ID)
+		got, err := repo.ByID(ctx, adminScope(account), first.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -258,7 +465,7 @@ func TestANewContactHasNoConsentYet(t *testing.T) {
 			t.Fatalf("Create: %v", err)
 		}
 
-		got, err := repo.ByID(ctx, account, created.ID)
+		got, err := repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -298,7 +505,7 @@ func TestUpdateCorrectsWhatItMayAndCannotReachTheRest(t *testing.T) {
 			t.Fatalf("Update: %v", err)
 		}
 
-		got, err := repo.ByID(ctx, account, created.ID)
+		got, err := repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -342,7 +549,7 @@ func TestAnEmptyEmailIsNullAndComesBackEmpty(t *testing.T) {
 			t.Fatalf("the columns hold %v / %v, want NULL and not an empty string", email, notes)
 		}
 
-		got, err := repo.ByID(ctx, account, created.ID)
+		got, err := repo.ByID(ctx, adminScope(account), created.ID)
 		if err != nil {
 			t.Fatalf("ByID: %v", err)
 		}
@@ -373,7 +580,7 @@ func TestDeletingAContactFreesItsNumber(t *testing.T) {
 		if err := repo.SoftDelete(ctx, account, first.ID); err != nil {
 			t.Fatalf("SoftDelete: %v", err)
 		}
-		if _, err := repo.ByID(ctx, account, first.ID); !errors.Is(err, ErrNotFound) {
+		if _, err := repo.ByID(ctx, adminScope(account), first.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("ByID of a deleted contact: got %v, want ErrNotFound", err)
 		}
 		if err := repo.Create(ctx, newContact(account, phone, "Elsa", "Mora")); err != nil {
@@ -433,7 +640,7 @@ func TestAnUnknownIdIsMissingAndSoIsAnotherAccounts(t *testing.T) {
 		}
 
 		stranger := id.New()
-		if _, err := repo.ByID(ctx, stranger, created.ID); !errors.Is(err, ErrNotFound) {
+		if _, err := repo.ByID(ctx, adminScope(stranger), created.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("ByID from another account: got %v, want ErrNotFound", err)
 		}
 		if err := repo.Update(ctx, stranger, created.ID, Changes{Name: "Robada", Lastname: "Ajena", Type: enums.ContactTypeClient}); !errors.Is(err, ErrNotFound) {
@@ -442,7 +649,7 @@ func TestAnUnknownIdIsMissingAndSoIsAnotherAccounts(t *testing.T) {
 		if err := repo.SoftDelete(ctx, stranger, created.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("SoftDelete from another account: got %v, want ErrNotFound", err)
 		}
-		if _, err := repo.ByID(ctx, account, id.New()); !errors.Is(err, ErrNotFound) {
+		if _, err := repo.ByID(ctx, adminScope(account), id.New()); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("ByID of an unknown id: got %v, want ErrNotFound", err)
 		}
 		return rollback
@@ -472,7 +679,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			}
 		}
 
-		first, err := repo.List(ctx, account, 2, 0)
+		first, err := repo.List(ctx, adminScope(account), 2, 0)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -484,7 +691,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			t.Fatalf("first page = %+v, want alvarez then Bustos", first.Items)
 		}
 
-		second, err := repo.List(ctx, account, 2, 2)
+		second, err := repo.List(ctx, adminScope(account), 2, 2)
 		if err != nil {
 			t.Fatalf("List second page: %v", err)
 		}
@@ -492,7 +699,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			t.Fatalf("second page = %+v total %d, want Zapata alone out of 3", second.Items, second.Total)
 		}
 
-		past, err := repo.List(ctx, account, 2, 40)
+		past, err := repo.List(ctx, adminScope(account), 2, 40)
 		if err != nil {
 			t.Fatalf("List past the end: %v", err)
 		}

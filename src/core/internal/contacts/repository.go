@@ -10,17 +10,25 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
-type Repository struct{ exec db.Executor }
+// The cipher is held, not reached: the four sensitive columns are bytes to this package and never leave it as bytes (ADR-0031, regla 11).
+type Repository struct {
+	exec   db.Executor
+	cipher *encryption.Cipher
+}
 
-func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }
+func NewRepository(exec db.Executor, cipher *encryption.Cipher) *Repository {
+	return &Repository{exec: exec, cipher: cipher}
+}
 
 // WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).
-func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
+func (r *Repository) WithExecutor(exec db.Executor) *Repository {
+	return &Repository{exec: exec, cipher: r.cipher}
+}
 
-// The four encrypted columns are absent on purpose: nothing here can leak what it never selects (ADR-0032, regla 4).
 // Deleted rows are excluded here and nowhere else, matching the partial unique index that frees a phone on delete (C09).
 const contactSelect = `
 SELECT id, account_id, phone_whatsapp, name, lastname, coalesce(email, ''), type, coalesce(notes, ''),
@@ -28,6 +36,7 @@ SELECT id, account_id, phone_whatsapp, name, lastname, coalesce(email, ''), type
 FROM   contacts
 WHERE  deleted_at IS NULL`
 
+// The listing does not select the four columns, so a page of two hundred contacts never decrypts anything: what is not read cannot be leaked (ADR-0031, ADR-0032 regla 4).
 // Ordered by lastname then name because a contact book is read as a book, and created_at would scatter the same family.
 const contactList = contactSelect + `
   AND    account_id = $1
@@ -65,23 +74,56 @@ func (r *Repository) List(ctx context.Context, accountID uuid.UUID, limit, offse
 	return page, nil
 }
 
+// One row is the only read that decrypts, which is what keeps the cost and the exposure on the card and off the listing.
+const contactByID = `
+SELECT id, account_id, phone_whatsapp, name, lastname, coalesce(email, ''), type, coalesce(notes, ''),
+       source_channel, consent_given_at, consent_revoked_at, opt_out, blocked,
+       dni_encrypted, cuit_encrypted, cuil_encrypted, cbu_encrypted
+FROM   contacts
+WHERE  deleted_at IS NULL AND account_id = $1 AND id = $2`
+
 // ByID is scoped by account and not only by id, so an identifier guessed from another account reads as missing rather than as forbidden.
+// It answers the four in the clear: which roles may see them is decided above, and the DTO is what keeps them off the wire (ADR-0032, regla 4).
 func (r *Repository) ByID(ctx context.Context, accountID, contactID uuid.UUID) (Contact, error) {
-	return scanOne(r.exec.QueryRow(ctx, contactSelect+" AND account_id = $1 AND id = $2", accountID, contactID))
+	row := r.exec.QueryRow(ctx, contactByID, accountID, contactID)
+
+	var c Contact
+	var dni, cuit, cuil, cbu []byte
+	err := row.Scan(&c.ID, &c.AccountID, &c.PhoneWhatsapp, &c.Name, &c.Lastname, &c.Email, &c.Type, &c.Notes,
+		&c.SourceChannel, &c.ConsentGivenAt, &c.ConsentRevokedAt, &c.OptOut, &c.Blocked,
+		&dni, &cuit, &cuil, &cbu)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Contact{}, ErrNotFound
+	}
+	if err != nil {
+		return Contact{}, fmt.Errorf("contacts: scan contact: %w", err)
+	}
+
+	if c.Sensitive, err = r.decryptAll(dni, cuit, cuil, cbu); err != nil {
+		return Contact{}, err
+	}
+	return c, nil
 }
 
 // ON CONFLICT and not a rescued error: a failed statement aborts the surrounding transaction, and the Fase 4 webhook will create inside one (SQLSTATE 25P02).
 const contactInsert = `
 INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, email, type, notes,
-                      source_channel, consent_given_at, consent_revoked_at, opt_out, blocked)
-VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7, nullif($8, ''), $9, $10, $11, $12, $13)
+                      source_channel, consent_given_at, consent_revoked_at, opt_out, blocked,
+                      dni_encrypted, cuit_encrypted, cuil_encrypted, cbu_encrypted)
+VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7, nullif($8, ''), $9, $10, $11, $12, $13, $14, $15, $16, $17)
 ON CONFLICT (phone_whatsapp) WHERE deleted_at IS NULL DO NOTHING`
 
 func (r *Repository) Create(ctx context.Context, c Contact) error {
+	dni, cuit, cuil, cbu, err := r.encryptAll(c.Sensitive)
+	if err != nil {
+		return err
+	}
+
 	tag, err := r.exec.Exec(ctx, contactInsert,
 		c.ID, c.AccountID, normalizePhone(c.PhoneWhatsapp), strings.TrimSpace(c.Name), strings.TrimSpace(c.Lastname),
 		strings.TrimSpace(c.Email), c.Type, strings.TrimSpace(c.Notes),
-		c.SourceChannel, c.ConsentGivenAt, c.ConsentRevokedAt, c.OptOut, c.Blocked)
+		c.SourceChannel, c.ConsentGivenAt, c.ConsentRevokedAt, c.OptOut, c.Blocked,
+		dni, cuit, cuil, cbu)
 	if err != nil {
 		return fmt.Errorf("contacts: insert contact: %w", err)
 	}
@@ -140,15 +182,59 @@ func (r *Repository) SoftDelete(ctx context.Context, accountID, contactID uuid.U
 	return nil
 }
 
-func scanOne(row pgx.Row) (Contact, error) {
-	c, err := scanContact(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Contact{}, ErrNotFound
+// UpdateSensitive is a method of its own and not a field of Changes, because the two together are what wipes a CBU:
+// an ordinary edit sends a struct with empty strings in it, and a column that has nowhere to travel cannot be cleared by one (H-33, ADR-0032 regla 8).
+const contactUpdateSensitive = `
+UPDATE contacts
+SET    dni_encrypted = $3, cuit_encrypted = $4, cuil_encrypted = $5, cbu_encrypted = $6, updated_at = now()
+WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL`
+
+func (r *Repository) UpdateSensitive(ctx context.Context, accountID, contactID uuid.UUID, s Sensitive) error {
+	dni, cuit, cuil, cbu, err := r.encryptAll(s)
+	if err != nil {
+		return err
 	}
-	return c, err
+
+	tag, err := r.exec.Exec(ctx, contactUpdateSensitive, accountID, contactID, dni, cuit, cuil, cbu)
+	if err != nil {
+		return fmt.Errorf("contacts: update sensitive fields: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
-// The scanner takes a pgx.Row so the single read and the loop of the listing share one column order and cannot drift apart.
+// The four travel together because they are written by one statement: encrypting three and failing on the fourth must leave the row untouched.
+func (r *Repository) encryptAll(s Sensitive) (dni, cuit, cuil, cbu []byte, err error) {
+	for _, f := range []struct {
+		into  *[]byte
+		value string
+	}{{&dni, s.DNI}, {&cuit, s.CUIT}, {&cuil, s.CUIL}, {&cbu, s.CBU}} {
+		if *f.into, err = r.cipher.Encrypt(strings.TrimSpace(f.value)); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("contacts: encrypt a sensitive field: %w", err)
+		}
+	}
+	return dni, cuit, cuil, cbu, nil
+}
+
+// A row that fails to decrypt is refused whole: answering a card with three of the four fields would hide that one is unreadable (ADR-0031, regla 2).
+func (r *Repository) decryptAll(dni, cuit, cuil, cbu []byte) (Sensitive, error) {
+	var s Sensitive
+	for _, f := range []struct {
+		into   *string
+		stored []byte
+	}{{&s.DNI, dni}, {&s.CUIT, cuit}, {&s.CUIL, cuil}, {&s.CBU, cbu}} {
+		value, err := r.cipher.Decrypt(f.stored)
+		if err != nil {
+			return Sensitive{}, fmt.Errorf("contacts: decrypt a sensitive field: %w", err)
+		}
+		*f.into = value
+	}
+	return s, nil
+}
+
+// Only the listing scans through here now: the card has its own scan because it reads four columns more and has to decrypt them.
 func scanContact(row pgx.Row) (Contact, error) {
 	var c Contact
 	err := row.Scan(&c.ID, &c.AccountID, &c.PhoneWhatsapp, &c.Name, &c.Lastname, &c.Email, &c.Type, &c.Notes,

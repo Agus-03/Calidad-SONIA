@@ -1,7 +1,9 @@
 package contacts
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"os"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -48,6 +51,156 @@ func uniquePhone() string {
 	return normalizePhone("549351" + id.New().String())
 }
 
+// TestTheSensitiveFieldsAreUnreadableInTheDatabase is the claim the column names have been making since the first migration:
+// a dump of the table must not carry the DNI, and only the repository turns the bytes back into a number (ADR-0031).
+func TestTheSensitiveFieldsAreUnreadableInTheDatabase(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		created := newContact(account, uniquePhone(), "Hugo", "Sosa")
+		created.Sensitive = Sensitive{DNI: "36415782", CUIT: "20364157821", CUIL: "27364157823", CBU: "0170099220000067797151"}
+
+		if err := repo.Create(ctx, created); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		var dni, cuit, cuil, cbu []byte
+		row := exec.QueryRow(ctx, `SELECT dni_encrypted, cuit_encrypted, cuil_encrypted, cbu_encrypted FROM contacts WHERE id = $1`, created.ID)
+		if err := row.Scan(&dni, &cuit, &cuil, &cbu); err != nil {
+			t.Fatalf("read the raw columns: %v", err)
+		}
+		for name, pair := range map[string]struct {
+			stored []byte
+			clear  string
+		}{"dni": {dni, "36415782"}, "cuit": {cuit, "20364157821"}, "cuil": {cuil, "27364157823"}, "cbu": {cbu, "0170099220000067797151"}} {
+			if len(pair.stored) == 0 {
+				t.Fatalf("%s was stored empty, want ciphertext", name)
+			}
+			if bytes.Contains(pair.stored, []byte(pair.clear)) {
+				t.Fatalf("%s is in the database in the clear", name)
+			}
+		}
+
+		got, err := repo.ByID(ctx, account, created.ID)
+		if err != nil {
+			t.Fatalf("ByID: %v", err)
+		}
+		if got.Sensitive != created.Sensitive {
+			t.Fatalf("the card reads %+v, want %+v", got.Sensitive, created.Sensitive)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheListingNeverCarriesTheSensitiveFields is the other half of ADR-0032 regla 4: the page does not select those columns,
+// so a mistake above cannot turn a listing into two hundred decryptions or into two hundred leaks.
+func TestTheListingNeverCarriesTheSensitiveFields(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		if _, err := exec.Exec(ctx, `UPDATE contacts SET deleted_at = now() WHERE deleted_at IS NULL`); err != nil {
+			t.Fatalf("clear the book: %v", err)
+		}
+
+		created := newContact(account, uniquePhone(), "Ines", "Tapia")
+		created.Sensitive = Sensitive{DNI: "36415782", CBU: "0170099220000067797151"}
+		if err := repo.Create(ctx, created); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		page, err := repo.List(ctx, account, 20, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page.Items) != 1 {
+			t.Fatalf("the page holds %d contacts, want 1", len(page.Items))
+		}
+		if page.Items[0].Sensitive != (Sensitive{}) {
+			t.Fatalf("the listing carried %+v, want the four fields empty", page.Items[0].Sensitive)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestAnOrdinaryEditCannotWipeACbu is H-33 turned into a test: the update that corrects a name has nowhere to carry the four fields,
+// so a form that never showed the CBU cannot send it back empty.
+func TestAnOrdinaryEditCannotWipeACbu(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		created := newContact(account, uniquePhone(), "Jose", "Vera")
+		created.Sensitive = Sensitive{CBU: "0170099220000067797151"}
+		if err := repo.Create(ctx, created); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		// The whole Changes struct, zero values and all: this is exactly the shape a full object PUT would send.
+		if err := repo.Update(ctx, account, created.ID, Changes{Name: "Jose Luis", Lastname: "Vera", Type: enums.ContactTypeClient}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+
+		got, err := repo.ByID(ctx, account, created.ID)
+		if err != nil {
+			t.Fatalf("ByID: %v", err)
+		}
+		if got.Sensitive.CBU != created.Sensitive.CBU {
+			t.Fatalf("the CBU now reads %q, want it untouched by an ordinary edit", got.Sensitive.CBU)
+		}
+		if got.Name != "Jose Luis" {
+			t.Fatalf("the name was not corrected: %q", got.Name)
+		}
+
+		// And the deliberate write does reach them, because taking the CBU away has to be possible when it is what was asked.
+		if err := repo.UpdateSensitive(ctx, account, created.ID, Sensitive{DNI: "36415782"}); err != nil {
+			t.Fatalf("UpdateSensitive: %v", err)
+		}
+		got, err = repo.ByID(ctx, account, created.ID)
+		if err != nil {
+			t.Fatalf("ByID: %v", err)
+		}
+		if got.Sensitive != (Sensitive{DNI: "36415782"}) {
+			t.Fatalf("after the deliberate write the card reads %+v, want only the DNI", got.Sensitive)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A key drawn per run, so the cases never depend on what the environment happens to hold.
+func testCipher(t *testing.T) *encryption.Cipher {
+	t.Helper()
+
+	key := make([]byte, encryption.KeyBytes)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+	cipher, err := encryption.New(key)
+	if err != nil {
+		t.Fatalf("encryption.New: %v", err)
+	}
+	return cipher
+}
+
 func newContact(account uuid.UUID, phone, name, lastname string) Contact {
 	return Contact{
 		ID: id.New(), AccountID: account, PhoneWhatsapp: phone,
@@ -63,7 +216,7 @@ func TestTheSameNumberTypedTwoWaysIsOneContact(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		digits := uniquePhone()
 
 		first := newContact(account, digits, "Ana", "Perez")
@@ -98,7 +251,7 @@ func TestANewContactHasNoConsentYet(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		created := newContact(account, uniquePhone(), "Bruno", "Diaz")
 
 		if err := repo.Create(ctx, created); err != nil {
@@ -129,7 +282,7 @@ func TestUpdateCorrectsWhatItMayAndCannotReachTheRest(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		phone := uniquePhone()
 		created := newContact(account, phone, "Carla", "Gomes")
 
@@ -173,7 +326,7 @@ func TestAnEmptyEmailIsNullAndComesBackEmpty(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		created := newContact(account, uniquePhone(), "Diego", "Luna")
 
 		if err := repo.Create(ctx, created); err != nil {
@@ -210,7 +363,7 @@ func TestDeletingAContactFreesItsNumber(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		phone := uniquePhone()
 		first := newContact(account, phone, "Elsa", "Mora")
 
@@ -240,7 +393,7 @@ func TestTheSecondDeleteReportsAMissingContact(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		created := newContact(account, uniquePhone(), "Fabio", "Nieva")
 
 		if err := repo.Create(ctx, created); err != nil {
@@ -254,6 +407,9 @@ func TestTheSecondDeleteReportsAMissingContact(t *testing.T) {
 		}
 		if err := repo.Update(ctx, account, created.ID, Changes{Name: "Fabio", Lastname: "Nieva", Type: enums.ContactTypeClient}); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("Update of a deleted contact: got %v, want ErrNotFound", err)
+		}
+		if err := repo.UpdateSensitive(ctx, account, created.ID, Sensitive{DNI: "36415782"}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("UpdateSensitive of a deleted contact: got %v, want ErrNotFound", err)
 		}
 		return rollback
 	})
@@ -269,7 +425,7 @@ func TestAnUnknownIdIsMissingAndSoIsAnotherAccounts(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 		created := newContact(account, uniquePhone(), "Gaby", "Rios")
 
 		if err := repo.Create(ctx, created); err != nil {
@@ -303,7 +459,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
-		repo := NewRepository(exec)
+		repo := NewRepository(exec, testCipher(t))
 
 		// Emptied inside the transaction that rolls back, so the totals below are exact whatever the book already held.
 		if _, err := exec.Exec(ctx, `UPDATE contacts SET deleted_at = now() WHERE deleted_at IS NULL`); err != nil {

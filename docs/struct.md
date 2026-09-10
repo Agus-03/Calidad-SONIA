@@ -164,6 +164,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── auth/               emite y verifica el token de sesión · sin gin y sin base (ADR-0030)
+│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles · la llave se inyecta (ADR-0031)
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
 │   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml

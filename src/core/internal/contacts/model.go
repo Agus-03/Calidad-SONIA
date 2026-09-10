@@ -36,6 +36,9 @@ type Contact struct {
 	// Immutable too, and authoritative for F15: where the contact came from is a fact of its origin, not an attribute to correct (ADR-0001).
 	SourceChannel enums.SourceChannel
 
+	// The four of ADR-0006, in the clear only inside the process: they are read and written through the cipher and never selected for an operator (ADR-0031, ADR-0032 regla 4).
+	Sensitive Sensitive
+
 	// Nil while nobody has asked the client: an act that did not happen has no instant, and a zero time would read as one that did.
 	ConsentGivenAt   *time.Time
 	ConsentRevokedAt *time.Time
@@ -43,6 +46,14 @@ type Contact struct {
 	// Two different refusals: revoking reaches the treatment of the data, the opt-out reaches the sending (DER, entidades).
 	OptOut  bool
 	Blocked bool
+}
+
+// Sensitive is a struct of its own so a caller has to name it to reach it, and a listing that never fills it cannot leak it by accident.
+type Sensitive struct {
+	DNI  string
+	CUIT string
+	CUIL string
+	CBU  string
 }
 
 // Page carries Total because the pagination decided is by page number, and a page cannot be numbered without knowing how many there are.

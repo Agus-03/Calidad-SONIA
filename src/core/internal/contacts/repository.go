@@ -219,6 +219,69 @@ func (r *Repository) UpdateSensitive(ctx context.Context, accountID, contactID u
 	return nil
 }
 
+// ON CONFLICT DO NOTHING and not a rejection: tagging twice is the same request twice, and the state the caller asked for is
+// already the state of the row. The unique constraint is what makes the second one a no-op instead of a second link.
+const contactLabelInsert = `
+INSERT INTO contact_labels (id, contact_id, label_id, assigned_by_operator_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (contact_id, label_id) DO NOTHING`
+
+// AssignLabel does not check that the label belongs to the account, because the catalogue is not this package's table: the
+// caller asks labels/ first and this one only writes the link (struct.md, regla 1).
+func (r *Repository) AssignLabel(ctx context.Context, link ContactLabel) error {
+	// The zero uuid is no operator, and writing it would be a foreign key pointing at an operator that cannot exist.
+	var by any
+	if link.AssignedByOperatorID != uuid.Nil {
+		by = link.AssignedByOperatorID
+	}
+
+	if _, err := r.exec.Exec(ctx, contactLabelInsert, link.ID, link.ContactID, link.LabelID, by); err != nil {
+		return fmt.Errorf("contacts: assign label: %w", err)
+	}
+	return nil
+}
+
+// A DELETE and not a soft delete: see ContactLabel. Removing a tag that was never there is not an error either, for the same
+// reason assigning twice is not: what the caller asked for is the end state, and the end state is what they get.
+const contactLabelDelete = `
+DELETE FROM contact_labels
+WHERE  contact_id = $1 AND label_id = $2`
+
+func (r *Repository) UnassignLabel(ctx context.Context, contactID, labelID uuid.UUID) error {
+	if _, err := r.exec.Exec(ctx, contactLabelDelete, contactID, labelID); err != nil {
+		return fmt.Errorf("contacts: unassign label: %w", err)
+	}
+	return nil
+}
+
+// LabelIDsOf answers ids and not names, because the names live in a table this package does not own: whoever needs them asks
+// the catalogue with these (struct.md, regla 1).
+const contactLabelIDs = `
+SELECT label_id
+FROM   contact_labels
+WHERE  contact_id = $1`
+
+func (r *Repository) LabelIDsOf(ctx context.Context, contactID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, contactLabelIDs, contactID)
+	if err != nil {
+		return nil, fmt.Errorf("contacts: list the labels of a contact: %w", err)
+	}
+	defer rows.Close()
+
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var labelID uuid.UUID
+		if err := rows.Scan(&labelID); err != nil {
+			return nil, fmt.Errorf("contacts: scan a label id: %w", err)
+		}
+		ids = append(ids, labelID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("contacts: read the labels of a contact: %w", err)
+	}
+	return ids, nil
+}
+
 // The four travel together because they are written by one statement: encrypting three and failing on the fourth must leave the row untouched.
 func (r *Repository) encryptAll(s Sensitive) (dni, cuit, cuil, cbu []byte, err error) {
 	for _, f := range []struct {

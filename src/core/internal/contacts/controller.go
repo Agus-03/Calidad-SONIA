@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
@@ -49,10 +50,25 @@ type contactResponse struct {
 	Blocked          bool    `json:"blocked"`
 }
 
+// labelResponse is the catalogue entry as the card carries it: what it takes to draw a chip and nothing more. Who tagged and
+// when live in contact_labels and are not part of the card (ADR-0003).
+type labelResponse struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+// cardResponse is one contact with its labels. The listing does not use it, and that is deliberate: a page of two hundred rows
+// would be two hundred catalogue reads, so the row type has no labels field rather than an empty one that reads as untagged.
+type cardResponse struct {
+	contactResponse
+	Labels []labelResponse `json:"labels"`
+}
+
 // sensitiveResponse embeds the card and adds the four. It is a second type and not a flag on the first, because a role that must
 // not see them is served by a struct that has nowhere to put them: nothing is omitted at render time, so nothing can be forgotten.
 type sensitiveResponse struct {
-	contactResponse
+	cardResponse
 	DNI  string `json:"dni"`
 	CUIT string `json:"cuit"`
 	CUIL string `json:"cuil"`
@@ -77,13 +93,19 @@ func present(c Contact) contactResponse {
 }
 
 // presentFor is the single place the rule is applied, so adding a handler cannot forget it: the role decides which struct is built.
-func presentFor(role enums.OperatorRole, c Contact) any {
+func presentFor(role enums.OperatorRole, c Contact, tags []labels.Label) any {
+	chips := make([]labelResponse, 0, len(tags))
+	for _, t := range tags {
+		chips = append(chips, labelResponse{ID: t.ID.String(), Name: t.Name, Color: t.Color})
+	}
+	card := cardResponse{contactResponse: present(c), Labels: chips}
+
 	if !seesSensitive(role) {
-		return present(c)
+		return card
 	}
 	return sensitiveResponse{
-		contactResponse: present(c),
-		DNI:             c.Sensitive.DNI, CUIT: c.Sensitive.CUIT, CUIL: c.Sensitive.CUIL, CBU: c.Sensitive.CBU,
+		cardResponse: card,
+		DNI:          c.Sensitive.DNI, CUIT: c.Sensitive.CUIT, CUIL: c.Sensitive.CUIL, CBU: c.Sensitive.CBU,
 	}
 }
 
@@ -142,7 +164,12 @@ func (c *Controller) show(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
-	soniahttp.OK(gc, presentFor(scope.Role, contact))
+
+	body, ok := c.card(gc, scope, contact)
+	if !ok {
+		return
+	}
+	soniahttp.OK(gc, body)
 }
 
 type createRequest struct {
@@ -194,7 +221,8 @@ func (c *Controller) create(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
-	soniahttp.Created(gc, presentFor(scope.Role, contact))
+	// Nil and not a read: a contact created a line ago has been tagged by nobody, so the empty list is the true answer.
+	soniahttp.Created(gc, presentFor(scope.Role, contact, nil))
 }
 
 // update reads the body as raw keys first, because which fields arrived is the question: a struct cannot tell a field left out
@@ -241,7 +269,12 @@ func (c *Controller) update(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
-	soniahttp.OK(gc, presentFor(scope.Role, contact))
+
+	body, ok := c.card(gc, scope, contact)
+	if !ok {
+		return
+	}
+	soniahttp.OK(gc, body)
 }
 
 // applier decodes only the keys that arrived, so what nobody sent keeps the value the row already had.
@@ -330,7 +363,97 @@ func (c *Controller) writeSensitive(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
-	soniahttp.OK(gc, presentFor(scope.Role, contact))
+
+	body, ok := c.card(gc, scope, contact)
+	if !ok {
+		return
+	}
+	soniahttp.OK(gc, body)
+}
+
+type assignLabelRequest struct {
+	LabelID string `json:"label_id" binding:"required"`
+}
+
+// assignLabel answers the whole card and not just the tag, because the caller drew a card and what changed is on it.
+// Tagging twice is not refused: the request says what the contact should carry, and after the second one it carries it.
+func (c *Controller) assignLabel(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	contactID, err := contactIDFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+
+	var req assignLabelRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "a label_id is required").WithCause(err))
+		return
+	}
+	labelID, err := uuid.Parse(req.LabelID)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_id", "the label id is not a uuid").WithCause(err))
+		return
+	}
+
+	if err := c.service.AssignLabel(gc.Request.Context(), scope, contactID, labelID); err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	c.respondWithCard(gc, scope, contactID)
+}
+
+// unassignLabel takes the label from the path and not from a body, because a DELETE identifies what it removes by its address.
+func (c *Controller) unassignLabel(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	contactID, err := contactIDFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	labelID, err := uuid.Parse(gc.Param("label_id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_id", "the label id is not a uuid").WithCause(err))
+		return
+	}
+
+	if err := c.service.UnassignLabel(gc.Request.Context(), scope, contactID, labelID); err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	c.respondWithCard(gc, scope, contactID)
+}
+
+// respondWithCard re-reads the contact so the two label handlers answer the state that is now stored, and not the one they
+// assumed they left behind.
+func (c *Controller) respondWithCard(gc *gin.Context, scope Scope, contactID uuid.UUID) {
+	contact, err := c.service.ByID(gc.Request.Context(), scope, contactID)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+
+	body, ok := c.card(gc, scope, contact)
+	if !ok {
+		return
+	}
+	soniahttp.OK(gc, body)
+}
+
+// card is the one place a single contact becomes a response, so a handler cannot ship a card whose labels were never read.
+func (c *Controller) card(gc *gin.Context, scope Scope, contact Contact) (any, bool) {
+	tags, err := c.service.LabelsOf(gc.Request.Context(), scope, contact.ID)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return nil, false
+	}
+	return presentFor(scope.Role, contact, tags), true
 }
 
 func (c *Controller) remove(gc *gin.Context) {
@@ -374,6 +497,8 @@ func translate(err error) error {
 			WithDetails(map[string]string{"field": notWritable.Field}).WithCause(err)
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("contact_not_found", "no such contact").WithCause(err)
+	case errors.Is(err, ErrLabelNotInAccount):
+		return soniahttp.NotFound("label_not_found", "no such label in the catalogue").WithCause(err)
 	case errors.Is(err, ErrDuplicatePhone):
 		return soniahttp.Conflict("phone_taken", "a contact with that phone already exists").WithCause(err)
 	case errors.Is(err, ErrEmptyName):

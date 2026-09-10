@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -86,18 +87,31 @@ type store interface {
 	Update(ctx context.Context, accountID, contactID uuid.UUID, ch Changes) error
 	UpdateSensitive(ctx context.Context, accountID, contactID uuid.UUID, s Sensitive) error
 	SoftDelete(ctx context.Context, accountID, contactID uuid.UUID) error
+
+	AssignLabel(ctx context.Context, link ContactLabel) error
+	UnassignLabel(ctx context.Context, contactID, labelID uuid.UUID) error
+	LabelIDsOf(ctx context.Context, contactID uuid.UUID) ([]uuid.UUID, error)
+}
+
+// catalogue is the slice of labels/ this package asks. The label is verified through its owner and never with a join of our own:
+// contact_labels is ours and labels is not, and a package that reads another's table by hand is a package that will one day
+// forget its predicates — the deleted ones, the account (struct.md, regla 1).
+type catalogue interface {
+	ByID(ctx context.Context, accountID, labelID uuid.UUID) (labels.Label, error)
+	ByIDs(ctx context.Context, accountID uuid.UUID, ids []uuid.UUID) ([]labels.Label, error)
 }
 
 type Service struct {
-	repo store
-	log  *slog.Logger
+	repo      store
+	catalogue catalogue
+	log       *slog.Logger
 }
 
-func NewService(repo store, log *slog.Logger) *Service {
+func NewService(repo store, tags catalogue, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{repo: repo, log: log}
+	return &Service{repo: repo, catalogue: tags, log: log}
 }
 
 func (s *Service) List(ctx context.Context, scope Scope, limit, offset int) (Page, error) {
@@ -205,6 +219,51 @@ func (s *Service) Delete(ctx context.Context, scope Scope, contactID uuid.UUID) 
 		return err
 	}
 	return s.repo.SoftDelete(ctx, scope.AccountID, contactID)
+}
+
+// AssignLabel reads the contact through the scope first, like every other write here: a contact out of reach cannot be tagged
+// either, and the tag is what the segmentation of F33 will select by.
+//
+// The label is checked and then written, which leaves a window: a label retired between the two calls yields a link to a
+// catalogue entry that is gone. That link never shows, because LabelsOf reads through the catalogue and the catalogue excludes
+// the deleted. It is the admitted cost of asking labels/ instead of joining its table here.
+func (s *Service) AssignLabel(ctx context.Context, scope Scope, contactID, labelID uuid.UUID) error {
+	if _, err := s.repo.ByID(ctx, scope, contactID); err != nil {
+		return err
+	}
+	if _, err := s.catalogue.ByID(ctx, scope.AccountID, labelID); err != nil {
+		if errors.Is(err, labels.ErrNotFound) {
+			return ErrLabelNotInAccount
+		}
+		return err
+	}
+
+	return s.repo.AssignLabel(ctx, ContactLabel{
+		ID: id.New(), ContactID: contactID, LabelID: labelID, AssignedByOperatorID: scope.OperatorID,
+	})
+}
+
+// UnassignLabel does not ask the catalogue: a label that is not in this account was never linked to a contact of this account,
+// so the DELETE removes nothing and the end state is the one that was asked for.
+func (s *Service) UnassignLabel(ctx context.Context, scope Scope, contactID, labelID uuid.UUID) error {
+	if _, err := s.repo.ByID(ctx, scope, contactID); err != nil {
+		return err
+	}
+	return s.repo.UnassignLabel(ctx, contactID, labelID)
+}
+
+// LabelsOf reads the contact through the scope first for the same reason the writes do, and pays a second read for it: which
+// contacts an operator reaches is decided in one place, and a method that took the reach on trust would be the exception.
+func (s *Service) LabelsOf(ctx context.Context, scope Scope, contactID uuid.UUID) ([]labels.Label, error) {
+	if _, err := s.repo.ByID(ctx, scope, contactID); err != nil {
+		return nil, err
+	}
+
+	ids, err := s.repo.LabelIDsOf(ctx, contactID)
+	if err != nil {
+		return nil, err
+	}
+	return s.catalogue.ByIDs(ctx, scope.AccountID, ids)
 }
 
 // Whitespace only passes the NOT NULL of the two columns and produces a contact nobody can find in a book ordered by lastname.

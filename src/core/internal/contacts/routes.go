@@ -20,6 +20,10 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPost, Path: "/contacts", Roles: aboveOperator, Handler: c.create},
 		{Method: http.MethodPatch, Path: "/contacts/:id", Roles: enums.OperatorRoleValues, Handler: c.update},
 		{Method: http.MethodPut, Path: "/contacts/:id/sensitive", Roles: aboveOperator, Handler: c.writeSensitive},
+		// The three roles, because a vendor who cannot tag the contact in front of them has no use for a catalogue they can read.
+		// Defining the catalogue stays with the admin, and that rule lives in labels/ (ADR-0032, regla 13; F19).
+		{Method: http.MethodPost, Path: "/contacts/:id/labels", Roles: enums.OperatorRoleValues, Handler: c.assignLabel},
+		{Method: http.MethodDelete, Path: "/contacts/:id/labels/:label_id", Roles: enums.OperatorRoleValues, Handler: c.unassignLabel},
 		// Only the admin, because a contact taken down disappears from the book of the whole team and not just from the caller's (regla 12).
 		{Method: http.MethodDelete, Path: "/contacts/:id", Roles: []enums.OperatorRole{enums.OperatorRoleAdmin}, Handler: c.remove},
 	}

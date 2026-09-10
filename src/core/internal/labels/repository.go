@@ -80,6 +80,35 @@ func (r *Repository) ByID(ctx context.Context, accountID, labelID uuid.UUID) (La
 	return l, nil
 }
 
+// ByIDs answers the catalogue entries a union table points at, in one query and not one per id: the card of a contact with six
+// labels is a single read.
+// A label logically deleted is simply not among them, so a tag whose catalogue entry was retired stops showing instead of
+// showing a blank (C09).
+func (r *Repository) ByIDs(ctx context.Context, accountID uuid.UUID, ids []uuid.UUID) ([]Label, error) {
+	if len(ids) == 0 {
+		return []Label{}, nil
+	}
+
+	rows, err := r.exec.Query(ctx, labelSelect+" AND account_id = $1 AND id = ANY($2) ORDER BY lower(name)", accountID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("labels: list labels by id: %w", err)
+	}
+	defer rows.Close()
+
+	found := []Label{}
+	for rows.Next() {
+		var l Label
+		if err := rows.Scan(&l.ID, &l.AccountID, &l.Name, &l.Color, &l.CreatedByOperatorID); err != nil {
+			return nil, fmt.Errorf("labels: scan label: %w", err)
+		}
+		found = append(found, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("labels: read labels: %w", err)
+	}
+	return found, nil
+}
+
 // ON CONFLICT and not a rescued error: a failed statement aborts the surrounding transaction, and this insert has to survive being called inside one (SQLSTATE 25P02).
 const labelInsert = `
 INSERT INTO labels (id, account_id, name, color, created_by_operator_id)

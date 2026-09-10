@@ -17,7 +17,21 @@ var (
 
 	// ErrDuplicatePhone names what the unique index rejects, so the caller can say the number is taken instead of failing blind.
 	ErrDuplicatePhone = errors.New("contacts: a contact with that phone already exists")
+
+	// ErrLabelNotInAccount is what the foreign key cannot say: it proves the label exists, never that it belongs to this account.
+	ErrLabelNotInAccount = errors.New("contacts: that label is not in this account's catalogue")
 )
+
+// ContactLabel is the link row and not an entity: it has no deleted_at, so untagging is a DELETE. A link kept with a timestamp
+// would leave the contact inside the segmentation of F33 while the tag no longer shows on its card (C09, ADR-0003).
+type ContactLabel struct {
+	ID        uuid.UUID
+	ContactID uuid.UUID
+	LabelID   uuid.UUID
+
+	// Nullable in the schema because a tag the system applies has no operator behind it, which F31 will need (ADR-0003).
+	AssignedByOperatorID uuid.UUID
+}
 
 // Contact deliberately carries none of the four encrypted columns: they are built in their own step, behind their own DTO (ADR-0031, ADR-0032).
 type Contact struct {

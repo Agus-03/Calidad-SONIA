@@ -389,6 +389,9 @@ CREATE TABLE contact_labels (
     CONSTRAINT contact_labels_unique UNIQUE (contact_id, label_id)
 );
 
+-- The unique index above answers "which labels has this contact"; F33 asks the inverse, which ADR-0003 named as a reason to keep this table at all.
+CREATE INDEX contact_labels_label_id ON contact_labels (label_id);
+
 CREATE TABLE conversation_labels (
     id                      uuid        PRIMARY KEY,
     conversation_id         uuid        NOT NULL REFERENCES conversations (id),

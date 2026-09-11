@@ -19,6 +19,10 @@ const (
 	// A page nobody asked to size, and a ceiling so per_page=100000 is not a query the caller can ask for.
 	defaultPerPage = 20
 	maxPerPage     = 100
+
+	// The same ceiling reasoning applied to the filter: a segment is a handful of labels, and fifty of them is not a question
+	// anybody is asking but is a subquery anybody can send.
+	maxLabelFilters = 20
 )
 
 type Controller struct {
@@ -133,8 +137,13 @@ func (c *Controller) list(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, err)
 		return
 	}
+	filter, err := filterFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
 
-	found, err := c.service.List(gc.Request.Context(), scope, perPage, (page-1)*perPage)
+	found, err := c.service.List(gc.Request.Context(), scope, filter, perPage, (page-1)*perPage)
 	if err != nil {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
@@ -497,6 +506,8 @@ func translate(err error) error {
 			WithDetails(map[string]string{"field": notWritable.Field}).WithCause(err)
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("contact_not_found", "no such contact").WithCause(err)
+	case errors.Is(err, ErrUnknownMatch):
+		return soniahttp.BadRequest("invalid_match", "match must be all or any").WithCause(err)
 	case errors.Is(err, ErrLabelNotInAccount):
 		return soniahttp.NotFound("label_not_found", "no such label in the catalogue").WithCause(err)
 	case errors.Is(err, ErrDuplicatePhone):
@@ -516,6 +527,31 @@ func contactIDFrom(gc *gin.Context) (uuid.UUID, error) {
 		return uuid.Nil, soniahttp.BadRequest("invalid_id", "the contact id is not a uuid").WithCause(err)
 	}
 	return contactID, nil
+}
+
+// filterFrom reads the segment off the query string. label_id repeats instead of carrying a comma separated list, because a
+// repeated parameter is what a form with an "add criterion" button produces and what every http library already parses (F33).
+//
+// match is the operator between them, and it is the seam the search of the application will grow from: today one group of labels
+// under one operator, later a group of groups. What it will never be is implicit — a filter that guessed would answer a book
+// nobody asked for.
+func filterFrom(gc *gin.Context) (Filter, error) {
+	raw := gc.QueryArray("label_id")
+	if len(raw) > maxLabelFilters {
+		return Filter{}, soniahttp.BadRequest("too_many_labels", "a segment takes at most 20 labels")
+	}
+
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, one := range raw {
+		labelID, err := uuid.Parse(one)
+		if err != nil {
+			return Filter{}, soniahttp.BadRequest("invalid_id", "the label id "+one+" is not a uuid").WithCause(err)
+		}
+		ids = append(ids, labelID)
+	}
+
+	// The operator travels as typed and is validated in one place, the service, so the handler cannot disagree with it.
+	return Filter{LabelIDs: ids, Match: Match(gc.Query("match")), Search: gc.Query("search")}, nil
 }
 
 // A page past the end answers an empty list with the real total, because "there is nothing here" is not the same as "this does not exist".

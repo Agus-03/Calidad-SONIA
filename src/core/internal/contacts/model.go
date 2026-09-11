@@ -82,6 +82,36 @@ func (s Scope) reachesEveryContact() bool {
 	return s.Role == enums.OperatorRoleSupervisor || s.Role == enums.OperatorRoleAdmin
 }
 
+// Match is how several labels combine. It is a word and not a boolean because the caller has to say which it meant: a flag
+// named "and" reads backwards half the time, and the two answers to "Ventas and Moroso" are different books.
+type Match string
+
+const (
+	// MatchAll narrows as criteria are added, which is what a filter is expected to do: every label asked for must be on the contact.
+	MatchAll Match = "all"
+
+	// MatchAny widens: any one of them is enough.
+	MatchAny Match = "any"
+)
+
+func (m Match) IsValid() bool { return m == MatchAll || m == MatchAny }
+
+// Filter is a struct and not a growing parameter list, so the listing does not change signature again when the search UI learns
+// to combine criteria. What it holds today is one group of labels joined by one operator (F33).
+//
+// What it deliberately does not hold is a tree: criteria nested with parentheses, or a label group mixed with a text group under
+// an operator of their own. That is the shape the search of the application will eventually need, and this is the type it would
+// grow into — a node with an operator and children, with this struct as the leaf. Nothing asks for it yet, and a tree nobody
+// builds is a parser with no caller.
+type Filter struct {
+	// Deduplicated before it gets here, because MatchAll counts what it found against how many were asked for.
+	LabelIDs []uuid.UUID
+	Match    Match
+
+	// Search reaches the name, the lastname and the phone, and nothing else: those are the criteria that were asked for (F30).
+	Search string
+}
+
 // Page carries Total because the pagination decided is by page number, and a page cannot be numbered without knowing how many there are.
 type Page struct {
 	Items []Contact

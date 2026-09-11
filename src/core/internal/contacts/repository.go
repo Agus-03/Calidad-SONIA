@@ -49,11 +49,61 @@ func (r *Repository) reach(s Scope) (where string, args []any) {
 	return where + " AND " + conversations.ScopedToOperator("contacts.id", len(args)), args
 }
 
+// narrow is the reach and then what the caller asked to filter by, in that order and never the other way round: the scope decides
+// which contacts exist for this role, and a filter can only take more away. A filter able to widen would be a side door into the
+// book that the listing closes (ADR-0032, regla 2).
+func (r *Repository) narrow(scope Scope, filter Filter) (where string, args []any) {
+	where, args = r.reach(scope)
+
+	if len(filter.LabelIDs) > 0 {
+		args = append(args, filter.LabelIDs)
+		labelled := ""
+
+		if filter.Match == MatchAny {
+			// EXISTS and not a JOIN: a contact carrying three of the labels asked for comes back three times from a join, and the
+			// Total counts it three times along with it.
+			labelled = fmt.Sprintf(
+				`EXISTS (SELECT 1 FROM contact_labels tag WHERE tag.contact_id = contacts.id AND tag.label_id = ANY($%d))`,
+				len(args))
+		} else {
+			// Counting how many of the asked-for labels the contact carries, against how many were asked. count(*) needs no DISTINCT
+			// because contact_labels_unique forbids the same label twice on one contact, and the ids were deduplicated upstream.
+			args = append(args, len(filter.LabelIDs))
+			labelled = fmt.Sprintf(
+				`(SELECT count(*) FROM contact_labels tag WHERE tag.contact_id = contacts.id AND tag.label_id = ANY($%d)) = $%d`,
+				len(args)-1, len(args))
+		}
+		where += " AND " + labelled
+	}
+
+	if term := strings.TrimSpace(filter.Search); term != "" {
+		// Folded for case and not for accents, the same invariant the label catalogue holds: "perez" finds Perez and does not find Pérez.
+		args = append(args, "%"+escapeLike(term)+"%")
+		matching := fmt.Sprintf(`lower(contacts.name || ' ' || contacts.lastname) LIKE lower($%d) ESCAPE '\'`, len(args))
+
+		// The phone joins the search only when the term carries digits: normalizing "Ana" gives nothing, and LIKE '%%' is every contact.
+		if digits := normalizePhone(term); digits != "" {
+			args = append(args, "%"+digits+"%")
+			matching += fmt.Sprintf(" OR contacts.phone_whatsapp LIKE $%d", len(args))
+		}
+		where += " AND (" + matching + ")"
+	}
+
+	return where, args
+}
+
+// escapeLike neutralizes the wildcards of LIKE, because a search for "%" is a search for a per cent sign and not for everyone.
+func escapeLike(term string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	return replacer.Replace(term)
+}
+
 // The listing does not select the four sensitive columns, so a page of two hundred contacts never decrypts anything (ADR-0031, ADR-0032 regla 4).
 // Ordered by lastname then name because a contact book is read as a book, and created_at would scatter the same family.
-// Total counts the same reach as Items: a page that said "3 of 40" while showing the operator its own 3 would be worse than no total at all.
-func (r *Repository) List(ctx context.Context, scope Scope, limit, offset int) (Page, error) {
-	where, args := r.reach(scope)
+// Total counts the same reach and the same filter as Items: a page that said "3 of 40" while showing the operator its own 3 would
+// be worse than no total at all, and one that ignored the filter in the count would page through a book the caller cannot see.
+func (r *Repository) List(ctx context.Context, scope Scope, filter Filter, limit, offset int) (Page, error) {
+	where, args := r.narrow(scope, filter)
 	listing := contactSelect + where +
 		fmt.Sprintf(" ORDER BY lower(lastname), lower(name), contacts.id LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 

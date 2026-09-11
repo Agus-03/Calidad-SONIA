@@ -21,6 +21,9 @@ var (
 
 	// ErrEmptyPhone is its own refusal because the phone is normalized to digits: a number typed as "-" arrives here as nothing.
 	ErrEmptyPhone = errors.New("contacts: the phone cannot be empty")
+
+	// ErrUnknownMatch is refused and not defaulted: guessing which operator the caller meant would answer a different book than the one asked for.
+	ErrUnknownMatch = errors.New("contacts: the match must be all or any")
 )
 
 // ErrFieldNotWritable names the field the role may not touch, so the answer can say which one instead of refusing the whole edit (ADR-0032, regla 14).
@@ -81,7 +84,7 @@ func CheckKnown(fields []string) error {
 
 // store is the slice of the repository the service uses, declared here so the caller side owns the interface.
 type store interface {
-	List(ctx context.Context, scope Scope, limit, offset int) (Page, error)
+	List(ctx context.Context, scope Scope, filter Filter, limit, offset int) (Page, error)
 	ByID(ctx context.Context, scope Scope, contactID uuid.UUID) (Contact, error)
 	Create(ctx context.Context, c Contact) error
 	Update(ctx context.Context, accountID, contactID uuid.UUID, ch Changes) error
@@ -114,8 +117,45 @@ func NewService(repo store, tags catalogue, log *slog.Logger) *Service {
 	return &Service{repo: repo, catalogue: tags, log: log}
 }
 
-func (s *Service) List(ctx context.Context, scope Scope, limit, offset int) (Page, error) {
-	return s.repo.List(ctx, scope, limit, offset)
+// List is the only entry with a filter, and it validates the labels before querying: a segment that comes back empty because
+// the id was mistyped reads exactly like a segment nobody has tagged, and the caller cannot tell the two apart (F33).
+func (s *Service) List(ctx context.Context, scope Scope, filter Filter, limit, offset int) (Page, error) {
+	// Empty means nobody chose, and the choice that narrows as criteria are added is the one a filter is expected to make.
+	if filter.Match == "" {
+		filter.Match = MatchAll
+	}
+	if !filter.Match.IsValid() {
+		return Page{}, ErrUnknownMatch
+	}
+
+	// Deduplicated here and not in the handler, because MatchAll counts what it found against how many were asked for, and the
+	// same label named twice would ask for a count no contact can reach.
+	filter.LabelIDs = withoutRepeats(filter.LabelIDs)
+
+	if len(filter.LabelIDs) > 0 {
+		found, err := s.catalogue.ByIDs(ctx, scope.AccountID, filter.LabelIDs)
+		if err != nil {
+			return Page{}, err
+		}
+		if len(found) != len(filter.LabelIDs) {
+			return Page{}, ErrLabelNotInAccount
+		}
+	}
+
+	return s.repo.List(ctx, scope, filter, limit, offset)
+}
+
+func withoutRepeats(ids []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	kept := make([]uuid.UUID, 0, len(ids))
+	for _, one := range ids {
+		if _, already := seen[one]; already {
+			continue
+		}
+		seen[one] = struct{}{}
+		kept = append(kept, one)
+	}
+	return kept
 }
 
 func (s *Service) ByID(ctx context.Context, scope Scope, contactID uuid.UUID) (Contact, error) {

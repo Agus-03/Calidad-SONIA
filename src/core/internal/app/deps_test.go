@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -10,6 +13,8 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
@@ -69,8 +74,8 @@ func TestAnExpiredSessionIsNotTheSameAnswerAsABrokenToken(t *testing.T) {
 // TestTheLookupRefusesWhoeverTheRowNoLongerBacks protects regla 2: the token stays valid and the row is what takes the access away.
 func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 	ctx := context.Background()
-	active := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleAdmin, Active: true}
-	disabled := operators.Operator{ID: uuid.New(), Role: enums.OperatorRoleOperator, Active: false}
+	active := operators.Operator{ID: uuid.New(), AccountID: uuid.New(), Role: enums.OperatorRoleAdmin, Active: true}
+	disabled := operators.Operator{ID: uuid.New(), AccountID: uuid.New(), Role: enums.OperatorRoleOperator, Active: false}
 
 	lookup := resolveActor(operators.NewService(
 		&fakeStore{rows: map[uuid.UUID]operators.Operator{active.ID: active, disabled.ID: disabled}}, nil, nil))
@@ -79,7 +84,7 @@ func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an active operator: got %v, want no error", err)
 	}
-	if actor.OperatorID != active.ID || actor.Role != enums.OperatorRoleAdmin {
+	if actor.OperatorID != active.ID || actor.AccountID != active.AccountID || actor.Role != enums.OperatorRoleAdmin {
 		t.Fatalf("the actor is %+v, want the admin row", actor)
 	}
 
@@ -96,6 +101,90 @@ func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 				t.Fatalf("got %q, want session_no_longer_valid", code)
 			}
 		})
+	}
+}
+
+// TestTheWiredRouterActuallyServesTheLabelRoutes is the half the labels tests cannot reach: they mount a router of their own, so they
+// prove the routes are declared and never that anybody mounts them. A 404 here would mean the package builds, tests green, and nothing serves it.
+func TestTheWiredRouterActuallyServesEveryRouteItsContextsDeclare(t *testing.T) {
+	engine := wiredRouter(t)
+
+	someLabel := "/api/v1/labels/" + uuid.New().String()
+	someContact := "/api/v1/contacts/" + uuid.New().String()
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/labels"},
+		{http.MethodPost, "/api/v1/labels"},
+		{http.MethodPatch, someLabel},
+		{http.MethodDelete, someLabel},
+
+		// The eight of contacts. They were served by a router the package builds for its own tests long before this one served
+		// them, which is exactly why they are listed here: a context can be complete and still be plugged into nothing.
+		{http.MethodGet, "/api/v1/contacts"},
+		{http.MethodPost, "/api/v1/contacts"},
+		{http.MethodGet, someContact},
+		{http.MethodPatch, someContact},
+		{http.MethodDelete, someContact},
+		{http.MethodPut, someContact + "/sensitive"},
+		{http.MethodPost, someContact + "/labels"},
+		{http.MethodDelete, someContact + "/labels/" + uuid.New().String()},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+
+			// 401 and not 404: the route is mounted and asked for a token. A 200 would mean it landed in the public zone by mistake.
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("got %d, want 401 - a 404 means nothing mounts it and a 200 means it is public", rec.Code)
+			}
+		})
+	}
+
+	// The guard that keeps the assertions above from being vacuous: an unmounted path under the same prefix must answer 404,
+	// or every 401 here would prove nothing more than that the prefix exists.
+	t.Run("una ruta que nadie monta", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/todavia-no-existe", nil))
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404 - if this is 401 the cases above cannot tell mounted from unmounted", rec.Code)
+		}
+	})
+}
+
+// wiredRouter builds the real graph. A nil pool is enough because wire only stores it: nothing here opens a connection, and the
+// refusals happen before any handler runs. The key is the one thing that cannot be zero — the cipher is built at wiring time now.
+func wiredRouter(t *testing.T) http.Handler {
+	t.Helper()
+
+	deps, err := wire(config.Config{
+		JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: make([]byte, encryption.KeyBytes),
+	}, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("wire: %v", err)
+	}
+
+	return soniahttp.NewRouter(soniahttp.RouterOptions{
+		TokenVerifier:     deps.tokenVerifier,
+		ActorLookup:       deps.actorLookup,
+		Controllers:       deps.controllers,
+		PublicControllers: deps.publicControllers,
+	})
+}
+
+// TestTheBootRefusesAKeyTheCipherCannotUse is the branch config is supposed to make unreachable, kept because the day someone
+// relaxes that validation, the failure this catches is a process that starts and writes contacts nobody can read back.
+func TestTheBootRefusesAKeyTheCipherCannotUse(t *testing.T) {
+	for _, key := range [][]byte{nil, make([]byte, 16), make([]byte, 31)} {
+		_, err := wire(config.Config{
+			JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: key,
+		}, nil, slog.New(slog.DiscardHandler))
+		if err == nil {
+			t.Fatalf("wire accepted a %d byte key, want a refusal", len(key))
+		}
 	}
 }
 

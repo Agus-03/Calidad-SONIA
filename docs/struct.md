@@ -145,7 +145,13 @@ sonia/
 │   │   │   │   ├── repository.go
 │   │   │   │   └── model.go
 │   │   │   │
-│   │   │   ├── labels/                 catálogo de etiquetas · F19
+│   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
+│   │   │   │   ├── controller.go       DTO, paginación por número de página y el tope de per_page
+│   │   │   │   ├── routes.go           leer: los tres roles · escribir: sólo admin (F19, ADR-0032)
+│   │   │   │   ├── service.go          genera el id (C04) y rechaza el nombre en blanco
+│   │   │   │   ├── repository.go       el índice único es sobre lower(name): Ventas y ventas son una
+│   │   │   │   └── model.go            Label y Page · las dos tablas de unión no son de acá
+│   │   │   │
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
 │   │   │   │
 │   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators
@@ -158,6 +164,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── auth/               emite y verifica el token de sesión · sin gin y sin base (ADR-0030)
+│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles · la llave se inyecta (ADR-0031)
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
 │   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml

@@ -43,7 +43,10 @@ func Run(ctx context.Context) error {
 		log.Info("migrations applied", slog.Int("count", len(applied)), slog.String("last", applied[len(applied)-1]))
 	}
 
-	deps := wire(cfg, pool, log)
+	deps, err := wire(cfg, pool, log)
+	if err != nil {
+		return err
+	}
 
 	router := soniahttp.NewRouter(soniahttp.RouterOptions{
 		Logger:        log,

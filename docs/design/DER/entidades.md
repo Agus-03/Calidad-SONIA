@@ -83,7 +83,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `cuit_encrypted` | bytea | ADR-0006 |
 | `cuil_encrypted` | bytea | ADR-0006 |
 | `cbu_encrypted` | bytea | ADR-0006 |
-| `consent_given_at` | timestamptz | Anexo C; sección 7.3 |
+| `consent_given_at` | timestamptz | Anexo C; sección 7.3. **Nullable**: un consentimiento que todavía no ocurrió no tiene instante, y `NULL` dice *"no lo dio"* sin fingir que lo dio cuando se cargó el contacto. Hoy se escribe siempre `NULL`, porque **nada en el sistema le pregunta al cliente todavía**; el día que exista ese acto, se sella con su instante |
 | `consent_revoked_at` | timestamptz | Nullable. Derecho de supresión de la Ley 25.326 (C09) |
 | `opt_out` | boolean | ⚙ El contacto pidió no recibir más mensajes. **Distinto de `consent_revoked_at`**: revocar el consentimiento alcanza al tratamiento de sus datos; el opt-out alcanza al envío. Se pueden dar por separado |
 | `blocked` | boolean | ⚙ Bloqueado por el equipo (spam, abuso). Decisión nuestra, no del contacto |
@@ -802,7 +802,7 @@ No forman parte del modelo hasta que se cierren los pendientes registrados en [0
 
 | Entidad | Condición | Atributos previstos |
 |---|---|---|
-| `sensitive_data_access_logs` | Depende del pendiente *"registro de desencriptado"* (ADR-0007, ADR-0011) | `id`, `operator_id`, `contact_id`, `field`, `purpose`, `created_at` |
+| `sensitive_data_access_logs` | Depende del pendiente *"registro de desencriptado"* (ADR-0007, ADR-0032 · H-39) | `id`, `operator_id`, `contact_id`, `field`, `purpose`, `created_at` |
 | `reporting_events` | Diferida: agregación pre-calculada para F34–F38. **Se incorpora cuando el volumen lo pida**, no antes | `id`, `event_name`, `value`, `conversation_id`, `operator_id`, `ai_agent_id`, `created_at` |
 
 ---

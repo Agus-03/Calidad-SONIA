@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"net/http"
 	"os"
 	"testing"
@@ -22,6 +24,8 @@ func TestRunServesHealthAndStopsWhenTheContextIsCancelled(t *testing.T) {
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "test-token")
 	// Required since ADR-0030, and the process refuses to boot without it: long enough to clear the 32-byte floor.
 	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
+	// The four sensitive columns need a key before the process will boot at all, and any 32 bytes are a key here (ADR-0031, regla 7).
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(make([]byte, encryption.KeyBytes)))
 	t.Setenv("CORE_HTTP_ADDR", testAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -79,7 +79,8 @@ CREATE TABLE contacts (
     cuit_encrypted     bytea,
     cuil_encrypted     bytea,
     cbu_encrypted      bytea,
-    consent_given_at   timestamptz NOT NULL,
+    -- Nullable porque un consentimiento que todavia no ocurrio no tiene instante: NULL es "no lo dio", no "lo dio cuando lo cargamos".
+    consent_given_at   timestamptz,
     consent_revoked_at timestamptz,
     opt_out            boolean     NOT NULL DEFAULT false,
     blocked            boolean     NOT NULL DEFAULT false,
@@ -375,8 +376,8 @@ CREATE TABLE labels (
     deleted_at             timestamptz
 );
 
--- Scoped by account because the catalogue belongs to one, which is the same thing while accounts has a single row.
-CREATE UNIQUE INDEX labels_name_unique ON labels (account_id, name) WHERE deleted_at IS NULL;
+-- Folds case because "Ventas" and "ventas" are one label to whoever tags, and is scoped by account because the catalogue belongs to one (F19).
+CREATE UNIQUE INDEX labels_name_unique ON labels (account_id, lower(name)) WHERE deleted_at IS NULL;
 
 -- Physical delete, a declared exception to C09: unlabelling is routine and no metric counts historical labellings.
 CREATE TABLE contact_labels (
@@ -387,6 +388,9 @@ CREATE TABLE contact_labels (
     created_at              timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT contact_labels_unique UNIQUE (contact_id, label_id)
 );
+
+-- The unique index above answers "which labels has this contact"; F33 asks the inverse, which ADR-0003 named as a reason to keep this table at all.
+CREATE INDEX contact_labels_label_id ON contact_labels (label_id);
 
 CREATE TABLE conversation_labels (
     id                      uuid        PRIMARY KEY,

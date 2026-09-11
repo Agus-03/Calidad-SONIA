@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/01-trazabilidad.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) |
+| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) · ampliada 2026-09-09 con los de la Fase 3 (§5.5) |
 | **Etapa** | Diseño — Paso 2 (Fundaciones) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01–F39), Anexo B (roles), Anexo C (modelo de datos), sección 7.2 (OE1–OE7) |
 | **Depende de** | [00-convenciones.md](00-convenciones.md) |
@@ -218,6 +218,57 @@ falta un dato ni una definición — falta usar bien un dato que ya está.
 > cruzarla con una rama que se había pensado por separado. La lección práctica es
 > que **una consulta validada contra el modelo no está validada contra el
 > comportamiento**, y que las dos revisiones no se sustituyen.
+
+---
+
+### 5.5. Hallazgos de la Fase 3 → contra el control de acceso
+
+El Paso 6 recorrió las **métricas** y el Paso 8 la **secuencia del turno**. Esta
+pasada recorrió otra cosa: **quién puede ver qué**. Salió de releer
+[ADR-0011](02-decisiones/0011-acceso-a-datos-sensibles.md) contra el Anexo A y el
+Anexo B antes de montar la primera ruta de contactos, y el hallazgo que la
+disparó fue el más incómodo de todos —**el control central de esa decisión no lo
+pedía ninguna fuente**—, que es lo que produjo
+[ADR-0032](02-decisiones/0032-acceso-a-contactos-y-datos-sensibles.md).
+
+Aparecen **dos tipos nuevos**, que los recorridos anteriores no habían producido:
+
+- `contrato` — el dato está y la regla está; **la forma de la petición HTTP las
+  contradice**. Son los que no se ven mirando el modelo ni la secuencia, porque
+  aparecen recién al escribir el `PUT`.
+- `fuente` — **el anteproyecto se contradice consigo mismo**. No hay nada que
+  modelar: hay que elegir qué anexo gana y decirlo en el informe.
+
+| # | Hallazgo | Tipo | Toca | Estado |
+|---|---|---|---|---|
+| **H-32** | **El historial unificado del contacto es una puerta trasera a la única prohibición explícita del Anexo B.** F32 promete *"todas las interacciones del contacto: conversaciones, operadores, calificaciones, ventas y recordatorios"*. Sin filtro por rol, un `operator` que abre la ficha de un contacto lee **las conversaciones que otros operadores tuvieron con él** — que es literalmente lo que el Anexo B le prohíbe (*"No puede ver conversaciones de otros operadores"*). La prohibición viviría en la bandeja y se evadiría desde la agenda | definición | F32, F26, Anexo B | ✅ **Resuelto** — ADR-0032 reglas 6 y 7: F32 filtra por rol; el `operator` ve las conversaciones de ese contacto **asignadas a él**. Una conversación transferida llega con su historial completo, porque desde la transferencia **es suya** (F26). **La pantalla se construye en la Fase 14** |
+| **H-33** | **"Campo enmascarado" más "el operador edita" es la combinación que le borra el CBU a un cliente.** Si la ficha muestra el CBU tapado y el formulario hace `PUT` del objeto entero, el navegador manda de vuelta lo que tiene —vacío, o los asteriscos— y **el valor real se pierde**. Nadie lo nota: el que guarda nunca vio el campo, y el que lo necesita lo descubre cuando va a cobrar una seña | **contrato** | F30, F31, ADR-0031 | ✅ **Resuelto** — ADR-0032 reglas 8 y 14: el `operator` escribe **sólo `name` y `lastname`**, y un campo que el rol no puede escribir se **rechaza con error explícito**, nunca se ignora en silencio |
+| **H-34** | **`phone_whatsapp` sería editable, y es la clave natural del canal.** Tiene índice único parcial y es por donde el webhook de la Fase 4 encuentra al contacto de un mensaje entrante. Editarlo no es corregir un dato: **es reapuntar toda la historia de una persona a otro número**, y deja las conversaciones viejas colgando de un contacto que ya no corresponde | **contrato** | F30, Fase 4 | ✅ **Resuelto** — ADR-0032 regla 10: inmutable después de crear, **para los tres roles** |
+| **H-35** | **Un contacto cuya conversación está en el pool es invisible para el operador que la atiende.** [ADR-0004](02-decisiones/0004-asignacion-de-conversaciones.md) hace que una conversación entrante llegue **sin asignar**; si la agenda se acota por asignación, el vendedor abre el chat y no encuentra la ficha del contacto con el que está hablando. Es el hueco entre dos reglas correctas, y sólo aparece al escribirlas juntas | definición | F30, ADR-0004 | ✅ **Resuelto** — ADR-0032 reglas 1 y 2: la visibilidad se enuncia como *"los contactos de las conversaciones que mi rol me deja ver"*, **derivada de la regla de la bandeja** en vez de duplicada. La autoasignación al primero que responde (Fase 5) cierra el caso del pool en el instante en que el vendedor contesta |
+| **H-36** | **"Cifrado" no es lo mismo que "sensible", y el esquema los confunde.** `contact_attributes.value_encrypted` es `NOT NULL`, así que **todo** lo que extraiga el clasificador de F31 se cifra: el DNI y también *"prefiere que lo llamen a la tarde"*. Se cifra de más —que es el lado seguro del error— pero significa que **la columna no puede usarse para decidir qué tapar por rol**, porque no distingue una cosa de la otra | definición | F31, ADR-0031 | ⏸️ **Diferido a las Fases 8 y 9.** ADR-0032 escribe la regla de acceso sobre **los cuatro campos nombrados** de `contacts` y no sobre los atributos extraídos. El criterio de qué es sensible se define cuando exista el clasificador de extracción |
+| **H-37** | **Dos operadores editan el mismo contacto, gana la última escritura y nadie se entera.** No hay columna de versión ni control de concurrencia optimista: dos fichas abiertas al mismo tiempo y el segundo `PUT` pisa al primero, en silencio. Con la agenda abierta a los tres roles el escenario deja de ser teórico | dato | F30, C09 | ⏸️ **Diferido, sin fase asignada.** Documentado como **costo asumido** en ADR-0032 §4. Es transversal a todo el sistema —no un problema de `contacts`— y merece su propio momento, no un parche en un paquete |
+| **H-38** | **El Anexo B cita los requisitos con los identificadores corridos.** Habla de *"agentes IA (F18), usuarios (F19), etiquetas (F20) y webhooks (F21)"*, mientras que el Anexo A numera esos mismos cuatro como **F17, F18, F19 y F20**. Un desfase de uno, en el único anexo que define los roles: cualquier permiso citado por número apunta al requisito equivocado | **fuente** | Anexo A, Anexo B, F17–F21 | ✅ **Resuelto en el acto** — **gana el Anexo A**, que es la numeración canónica de los requisitos y la que usa todo el diseño. El Anexo B se lee por el nombre del módulo, no por el número. **Va como nota al pie en el informe**: es una contradicción del anteproyecto, y detectarla suma |
+| **H-39** | **La población que lee datos personales se multiplica por tres y sigue sin haber rastro de lectura.** Con [ADR-0011](02-decisiones/0011-acceso-a-datos-sensibles.md) sólo el `admin` entraba al módulo; ahora entran los tres roles y dos de ellos ven los cuatro campos. Nada registra quién descifró qué, así que ante un incidente sobre un contacto la respuesta sigue siendo *"algún `supervisor` o `admin`, en algún momento"* | dato | F31, 7.3, ADR-0007 | 📄 **Declarado, no construido.** **Ningún requisito de F01–F39 pide el registro de lectura**, y agregarlo sería inventar requisito. Se declara la deuda en ADR-0032 §4 y se nombra la salida natural, que ya estaba en ADR-0011 §5: **enmascarar por defecto con revelado explícito, y registrar el revelado** |
+| **H-40** | **`sales.operator_id` es un campo "dueño del deal" disfrazado.** Es `NOT NULL` y el nombre parece decir "el operador de esta venta". Pero [ADR-0025](02-decisiones/0025-atribucion-por-operador.md) decidió que la atribución de F35 y F16 **no sale de ahí**: sale de `messages.sender_operator_id`. En una conversación transferida son personas distintas, y el riesgo es silencioso — una consulta de métricas escrita contra `sales.operator_id` devuelve un número que **no coincide con F35 y no falla ni avisa** | **consulta** | F14, F35, F16, ADR-0025 | ⏸️ **Diferido a la Fase 11**, que es donde se construye `sales/`. **Tratamiento acordado:** conservar el campo —quitarlo cuesta migración— y **documentarlo como lo que es**: quién registró la venta, dato de **auditoría, nunca de atribución**. Un comentario en el DDL y una fila en el catálogo del DER |
+
+> **Los dos tipos nuevos dicen dónde estaba el punto ciego.** Los cuatro
+> recorridos anteriores miraron el modelo, las métricas y la secuencia — las tres
+> cosas que se pueden revisar **sin decidir quién es el que mira**. H-33 y H-34 no
+> podían aparecer en ninguno de ellos: el dato está, la regla está, y lo que se
+> contradice es **la forma de la petición**. Sólo se caen al escribir el `PUT`,
+> que es exactamente lo que la Fase 3 estaba por hacer.
+>
+> **H-32 es el más caro de los nueve y el que justifica la pasada entera.** No es
+> un dato que falta: es una funcionalidad del anteproyecto (F32) que, construida
+> literalmente, **evade la única prohibición explícita del Anexo B**. Dos
+> requisitos correctos por separado que se anulan al implementarse juntos — y
+> ninguna matriz que recorra un requisito por fila puede encontrarlo, porque el
+> problema no vive en ninguna de las dos filas sino entre ellas.
+>
+> **H-38 no encaja en el patrón y conviene no disimularlo:** no es un hallazgo de
+> ingeniería sino un error de edición del anteproyecto. Se registra igual, porque
+> el criterio de esta matriz es que **ninguna contradicción de la fuente se
+> resuelve en silencio**.
 
 ---
 

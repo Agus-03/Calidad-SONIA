@@ -14,6 +14,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
@@ -105,16 +106,11 @@ func TestTheLookupRefusesWhoeverTheRowNoLongerBacks(t *testing.T) {
 
 // TestTheWiredRouterActuallyServesTheLabelRoutes is the half the labels tests cannot reach: they mount a router of their own, so they
 // prove the routes are declared and never that anybody mounts them. A 404 here would mean the package builds, tests green, and nothing serves it.
-func TestTheWiredRouterActuallyServesTheLabelRoutes(t *testing.T) {
-	// A nil pool is enough because wire only stores it: nothing here opens a connection, and the refusals happen before any handler runs.
-	deps := wire(config.Config{JWTSecret: testSecret, JWTTTL: 12 * time.Hour}, nil, slog.New(slog.DiscardHandler))
+func TestTheWiredRouterActuallyServesEveryRouteItsContextsDeclare(t *testing.T) {
+	engine := wiredRouter(t)
 
-	engine := soniahttp.NewRouter(soniahttp.RouterOptions{
-		TokenVerifier:     deps.tokenVerifier,
-		ActorLookup:       deps.actorLookup,
-		Controllers:       deps.controllers,
-		PublicControllers: deps.publicControllers,
-	})
+	someLabel := "/api/v1/labels/" + uuid.New().String()
+	someContact := "/api/v1/contacts/" + uuid.New().String()
 
 	for _, tc := range []struct {
 		method string
@@ -122,8 +118,19 @@ func TestTheWiredRouterActuallyServesTheLabelRoutes(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/labels"},
 		{http.MethodPost, "/api/v1/labels"},
-		{http.MethodPatch, "/api/v1/labels/" + uuid.New().String()},
-		{http.MethodDelete, "/api/v1/labels/" + uuid.New().String()},
+		{http.MethodPatch, someLabel},
+		{http.MethodDelete, someLabel},
+
+		// The eight of contacts. They were served by a router the package builds for its own tests long before this one served
+		// them, which is exactly why they are listed here: a context can be complete and still be plugged into nothing.
+		{http.MethodGet, "/api/v1/contacts"},
+		{http.MethodPost, "/api/v1/contacts"},
+		{http.MethodGet, someContact},
+		{http.MethodPatch, someContact},
+		{http.MethodDelete, someContact},
+		{http.MethodPut, someContact + "/sensitive"},
+		{http.MethodPost, someContact + "/labels"},
+		{http.MethodDelete, someContact + "/labels/" + uuid.New().String()},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -146,6 +153,39 @@ func TestTheWiredRouterActuallyServesTheLabelRoutes(t *testing.T) {
 			t.Fatalf("got %d, want 404 - if this is 401 the cases above cannot tell mounted from unmounted", rec.Code)
 		}
 	})
+}
+
+// wiredRouter builds the real graph. A nil pool is enough because wire only stores it: nothing here opens a connection, and the
+// refusals happen before any handler runs. The key is the one thing that cannot be zero — the cipher is built at wiring time now.
+func wiredRouter(t *testing.T) http.Handler {
+	t.Helper()
+
+	deps, err := wire(config.Config{
+		JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: make([]byte, encryption.KeyBytes),
+	}, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("wire: %v", err)
+	}
+
+	return soniahttp.NewRouter(soniahttp.RouterOptions{
+		TokenVerifier:     deps.tokenVerifier,
+		ActorLookup:       deps.actorLookup,
+		Controllers:       deps.controllers,
+		PublicControllers: deps.publicControllers,
+	})
+}
+
+// TestTheBootRefusesAKeyTheCipherCannotUse is the branch config is supposed to make unreachable, kept because the day someone
+// relaxes that validation, the failure this catches is a process that starts and writes contacts nobody can read back.
+func TestTheBootRefusesAKeyTheCipherCannotUse(t *testing.T) {
+	for _, key := range [][]byte{nil, make([]byte, 16), make([]byte, 31)} {
+		_, err := wire(config.Config{
+			JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: key,
+		}, nil, slog.New(slog.DiscardHandler))
+		if err == nil {
+			t.Fatalf("wire accepted a %d byte key, want a refusal", len(key))
+		}
+	}
 }
 
 func mustFail(t *testing.T, verify soniahttp.TokenVerifier, raw string) error {

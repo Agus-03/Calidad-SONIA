@@ -33,17 +33,35 @@ func integrationPool(t *testing.T) db.Pool {
 }
 
 // A label hangs from an account and from the operator who created it, so both foreign keys need a row that already exists.
-func seededOwners(t *testing.T, pool db.Pool) (account, operator uuid.UUID) {
+// A label hangs from an account, and accounts holds a single row for the whole project (ADR-0012).
+func seededAccount(t *testing.T, pool db.Pool) uuid.UUID {
 	t.Helper()
 
-	ctx := context.Background()
-	if err := pool.QueryRow(ctx, `SELECT id FROM accounts LIMIT 1`).Scan(&account); err != nil {
+	var account uuid.UUID
+	if err := pool.QueryRow(context.Background(), `SELECT id FROM accounts LIMIT 1`).Scan(&account); err != nil {
 		t.Skip("the demo rows are missing: load src/core/seeds/0001_demo.sql first")
 	}
-	if err := pool.QueryRow(ctx, `SELECT id FROM operators LIMIT 1`).Scan(&operator); err != nil {
-		t.Skip("no operator to own a label: run core --seed-admin first")
+	return account
+}
+
+// seededOperator inserts its own inside the case's transaction instead of taking whichever one the table happens to hold.
+//
+// Taking an ambient one is what made this suite flaky: go test runs packages at the same time, and the app seed test creates an
+// admin and deletes it when it is done. Under a database that already has an account, that admin is created inside the very same
+// account, so no filter tells it apart from a real one — and a label pointing at it fails on the foreign key the moment the other
+// test cleans up. A row written here is rolled back with the case and is never visible to anybody else.
+func seededOperator(t *testing.T, ctx context.Context, exec db.Executor, account uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	operator := id.New()
+	_, err := exec.Exec(ctx, `
+		INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+		VALUES ($1, $2, 'Prueba', 'Catalogo', $3, 'not-a-real-hash', 'admin', true)`,
+		operator, account, operator.String()+"@sonia.test")
+	if err != nil {
+		t.Fatalf("seed an operator: %v", err)
 	}
-	return account, operator
+	return operator
 }
 
 // unique keeps the cases independent of each other and of whatever the catalogue already holds.
@@ -59,10 +77,11 @@ func newLabel(account, operator uuid.UUID, name string) Label {
 func TestTheCasingTypedDoesNotMakeASecondLabel(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		typed := unique("Ventas")
 
 		first := newLabel(account, operator, typed)
@@ -93,10 +112,11 @@ func TestTheCasingTypedDoesNotMakeASecondLabel(t *testing.T) {
 func TestCreateTrimsTheNameBeforeTheIndexSeesIt(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		typed := unique("Urgente")
 
 		created := newLabel(account, operator, "  "+typed+"  ")
@@ -126,10 +146,11 @@ func TestCreateTrimsTheNameBeforeTheIndexSeesIt(t *testing.T) {
 func TestRenamingIntoATakenNameIsRefused(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		taken, other := unique("Seguimiento"), newLabel(account, operator, unique("Perdido"))
 
 		if err := repo.Create(ctx, newLabel(account, operator, taken)); err != nil {
@@ -153,10 +174,11 @@ func TestRenamingIntoATakenNameIsRefused(t *testing.T) {
 func TestRenamingItsOwnCasingIsAllowed(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		label := newLabel(account, operator, strings.ToLower(unique("Reclamo")))
 
 		if err := repo.Create(ctx, label); err != nil {
@@ -186,10 +208,11 @@ func TestRenamingItsOwnCasingIsAllowed(t *testing.T) {
 func TestDeletingALabelFreesItsName(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		name := unique("Cerrado")
 		first := newLabel(account, operator, name)
 
@@ -218,10 +241,11 @@ func TestDeletingALabelFreesItsName(t *testing.T) {
 func TestTheSecondDeleteReportsAMissingLabel(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		label := newLabel(account, operator, unique("Duplicado"))
 
 		if err := repo.Create(ctx, label); err != nil {
@@ -247,10 +271,11 @@ func TestTheSecondDeleteReportsAMissingLabel(t *testing.T) {
 func TestAnUnknownIdIsMissingAndSoIsAnotherAccounts(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 		label := newLabel(account, operator, unique("Ajena"))
 
 		if err := repo.Create(ctx, label); err != nil {
@@ -282,10 +307,11 @@ func TestAnUnknownIdIsMissingAndSoIsAnotherAccounts(t *testing.T) {
 func TestListPagesAndOrdersByTheFoldedName(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 
 		// Emptied inside the transaction that rolls back, so the totals below are exact whatever the catalogue already held.
 		if _, err := exec.Exec(ctx, `UPDATE labels SET deleted_at = now() WHERE deleted_at IS NULL`); err != nil {
@@ -332,8 +358,8 @@ func TestListOfAnEmptyCatalogueIsEmptyAndNotNil(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
 
-	// Called for its skip and not for its ids: this case asks about an account that deliberately owns nothing.
-	seededOwners(t, pool)
+	// Called for its skip and not for its id: this case asks about an account that deliberately owns nothing.
+	seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		page, err := NewRepository(exec).List(ctx, id.New(), 20, 0)
@@ -363,10 +389,11 @@ func names(p Page) []string {
 func TestByIDsAnswersOnlyTheOwnCatalogueEntries(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
-	account, operator := seededOwners(t, pool)
+	account := seededAccount(t, pool)
 
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec)
+		operator := seededOperator(t, ctx, exec, account)
 
 		ventas := newLabel(account, operator, "Ventas "+id.New().String())
 		moroso := newLabel(account, operator, "Moroso "+id.New().String())

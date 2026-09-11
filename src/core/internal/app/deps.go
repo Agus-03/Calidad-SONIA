@@ -3,17 +3,20 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
@@ -33,7 +36,16 @@ type wiring struct {
 }
 
 // wire builds the object graph, repository then service then controller: it is the only part that grows with each context.
-func wire(cfg config.Config, pool db.Pool, log *slog.Logger) wiring {
+//
+// It returns an error because contacts is the first context that needs more than the pool: the cipher of the four sensitive
+// columns. config already refused to boot without a valid key, so this can only fail on something impossible — and a panic and
+// an error both stop the boot, but only one prints a line whoever is deploying can act on (ADR-0031, regla 7).
+func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
+	cipher, err := encryption.New(cfg.EncryptionKey)
+	if err != nil {
+		return wiring{}, fmt.Errorf("app: the encryption key config accepted is not one the cipher can use: %w", err)
+	}
+
 	aggregate := conversations.NewService(conversations.NewRepository(pool), log)
 	channelRepo := whatsapp.NewRepository(pool)
 
@@ -68,16 +80,21 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) wiring {
 	people := operators.NewService(operators.NewRepository(pool), tokens, log)
 	catalogue := labels.NewService(labels.NewRepository(pool), log)
 
+	// A second repository over the same pool, and not the one the catalogue service holds: a repository keeps no state past its
+	// executor, and sharing the instance would tie two contexts together for a reason that is not a reason of the domain.
+	book := contacts.NewService(contacts.NewRepository(pool, cipher), labels.NewRepository(pool), log)
+
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
+			contacts.NewController(book, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),
 		publicControllers: []soniahttp.Controller{channel, operators.NewLoginController(people, log)},
 		turns:             turns,
-	}
+	}, nil
 }
 
 // The two errors are told apart here and not in platform/http, so the router never learns that the session token is a JWT (ADR-0030).

@@ -120,7 +120,7 @@ func TestTheListingNeverCarriesTheSensitiveFields(t *testing.T) {
 			t.Fatalf("Create: %v", err)
 		}
 
-		page, err := repo.List(ctx, adminScope(account), 20, 0)
+		page, err := repo.List(ctx, adminScope(account), Filter{}, 20, 0)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -282,7 +282,7 @@ func TestTheOperatorReachesOnlyTheContactsOfItsOwnConversations(t *testing.T) {
 			t.Run(string(tc.role), func(t *testing.T) {
 				scope := Scope{AccountID: account, OperatorID: mine, Role: tc.role}
 
-				page, err := repo.List(ctx, scope, 20, 0)
+				page, err := repo.List(ctx, scope, Filter{}, 20, 0)
 				if err != nil {
 					t.Fatalf("List: %v", err)
 				}
@@ -370,7 +370,7 @@ func TestARoleNobodyDeclaredSeesNothing(t *testing.T) {
 		assignTo(t, ctx, exec, contact.ID, &mine)
 
 		// No role at all, and an operator who is not the one holding the conversation: nothing must come back.
-		page, err := repo.List(ctx, Scope{AccountID: account, OperatorID: id.New()}, 20, 0)
+		page, err := repo.List(ctx, Scope{AccountID: account, OperatorID: id.New()}, Filter{}, 20, 0)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -680,7 +680,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			}
 		}
 
-		first, err := repo.List(ctx, adminScope(account), 2, 0)
+		first, err := repo.List(ctx, adminScope(account), Filter{}, 2, 0)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -692,7 +692,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			t.Fatalf("first page = %+v, want alvarez then Bustos", first.Items)
 		}
 
-		second, err := repo.List(ctx, adminScope(account), 2, 2)
+		second, err := repo.List(ctx, adminScope(account), Filter{}, 2, 2)
 		if err != nil {
 			t.Fatalf("List second page: %v", err)
 		}
@@ -700,7 +700,7 @@ func TestListPagesAndOrdersAsABook(t *testing.T) {
 			t.Fatalf("second page = %+v total %d, want Zapata alone out of 3", second.Items, second.Total)
 		}
 
-		past, err := repo.List(ctx, adminScope(account), 2, 40)
+		past, err := repo.List(ctx, adminScope(account), Filter{}, 2, 40)
 		if err != nil {
 			t.Fatalf("List past the end: %v", err)
 		}
@@ -880,6 +880,209 @@ func TestTheTagsOfAContactAreItsOwn(t *testing.T) {
 		}
 		if len(strangers) != 0 {
 			t.Fatalf("another account read %d entries of this catalogue", len(strangers))
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}
+
+// TestAContactWithSeveralOfTheLabelsAppearsOnce is the bug this query is written around: a JOIN against contact_labels returns
+// the contact once per matching label, and the Total counts it that many times with it (F33).
+func TestAContactWithSeveralOfTheLabelsAppearsOnce(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+		mine, _ := seededOperators(t, ctx, exec, account)
+
+		both := newContact(account, uniquePhone(), "Nadia", "Quiroga")
+		one := newContact(account, uniquePhone(), "Omar", "Rivas")
+		none := newContact(account, uniquePhone(), "Pia", "Sanz")
+		for _, c := range []Contact{both, one, none} {
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+
+		ventas := seededLabel(t, ctx, exec, account, mine, "Ventas "+id.New().String())
+		moroso := seededLabel(t, ctx, exec, account, mine, "Moroso "+id.New().String())
+		tag := func(c Contact, labelID uuid.UUID) {
+			if err := repo.AssignLabel(ctx, ContactLabel{
+				ID: id.New(), ContactID: c.ID, LabelID: labelID, AssignedByOperatorID: mine,
+			}); err != nil {
+				t.Fatalf("AssignLabel: %v", err)
+			}
+		}
+		tag(both, ventas)
+		tag(both, moroso)
+		tag(one, ventas)
+
+		asked := []uuid.UUID{ventas, moroso}
+
+		// Any: the two that carry at least one, and each of them exactly once.
+		page, err := repo.List(ctx, adminScope(account), Filter{LabelIDs: asked, Match: MatchAny}, 20, 0)
+		if err != nil {
+			t.Fatalf("List with match any: %v", err)
+		}
+		if seen := timesListed(page, both.ID); seen != 1 {
+			t.Fatalf("the contact carrying both labels appears %d times, want once", seen)
+		}
+		if timesListed(page, one.ID) != 1 || timesListed(page, none.ID) != 0 {
+			t.Fatalf("match any listed the wrong contacts: %v", listedNames(page))
+		}
+		if page.Total != 2 {
+			t.Fatalf("match any totals %d, want 2 - the total must count what the page shows", page.Total)
+		}
+
+		// All: only the one that carries every label asked for.
+		page, err = repo.List(ctx, adminScope(account), Filter{LabelIDs: asked, Match: MatchAll}, 20, 0)
+		if err != nil {
+			t.Fatalf("List with match all: %v", err)
+		}
+		if timesListed(page, both.ID) != 1 || timesListed(page, one.ID) != 0 {
+			t.Fatalf("match all listed the wrong contacts: %v", listedNames(page))
+		}
+		if page.Total != 1 {
+			t.Fatalf("match all totals %d, want 1", page.Total)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}
+
+// TestTheFilterCannotWidenWhatTheScopeNarrowed is the property that keeps the segment from being a side door: an operator
+// filtering by a label still sees only the contacts of its own conversations (ADR-0032, regla 2).
+func TestTheFilterCannotWidenWhatTheScopeNarrowed(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+		mine, theirs := seededOperators(t, ctx, exec, account)
+
+		assigned := newContact(account, uniquePhone(), "Rosa", "Tello")
+		somebodyElses := newContact(account, uniquePhone(), "Sergio", "Ugarte")
+		for _, c := range []Contact{assigned, somebodyElses} {
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+
+		// Both carry the label, so what separates them in the answer can only be the reach.
+		ventas := seededLabel(t, ctx, exec, account, mine, "Ventas "+id.New().String())
+		for _, c := range []Contact{assigned, somebodyElses} {
+			if err := repo.AssignLabel(ctx, ContactLabel{
+				ID: id.New(), ContactID: c.ID, LabelID: ventas, AssignedByOperatorID: mine,
+			}); err != nil {
+				t.Fatalf("AssignLabel: %v", err)
+			}
+		}
+		assignTo(t, ctx, exec, assigned.ID, &mine)
+		assignTo(t, ctx, exec, somebodyElses.ID, &theirs)
+
+		scope := Scope{AccountID: account, OperatorID: mine, Role: enums.OperatorRoleOperator}
+		page, err := repo.List(ctx, scope, Filter{LabelIDs: []uuid.UUID{ventas}}, 20, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if timesListed(page, assigned.ID) != 1 {
+			t.Fatalf("the operator lost its own tagged contact: %v", listedNames(page))
+		}
+		if timesListed(page, somebodyElses.ID) != 0 {
+			t.Fatalf("the filter reached a contact of another operator: %v", listedNames(page))
+		}
+		if page.Total != 1 {
+			t.Fatalf("the total is %d, want 1: it must count the same reach and the same filter as the page", page.Total)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: %v", err)
+	}
+}
+
+func timesListed(page Page, contactID uuid.UUID) int {
+	seen := 0
+	for _, c := range page.Items {
+		if c.ID == contactID {
+			seen++
+		}
+	}
+	return seen
+}
+
+func listedNames(page Page) []string {
+	names := make([]string, 0, len(page.Items))
+	for _, c := range page.Items {
+		names = append(names, c.Lastname)
+	}
+	return names
+}
+
+// TestTheSearchReachesTheNameAndThePhoneAndNothingElse pins the two criteria that were asked for, and the traps a LIKE brings
+// with it: a term of punctuation must not become a wildcard, and a term with no digits must not be compared against the phone (F30).
+func TestTheSearchReachesTheNameAndThePhoneAndNothingElse(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, testCipher(t))
+
+		phone := uniquePhone()
+		ana := newContact(account, phone, "Ana", "Valdez")
+		ana.Email, ana.Notes = "ana@coop.test", "la clave es Valdez"
+		other := newContact(account, uniquePhone(), "Bruno", "Zarate")
+		for _, c := range []Contact{ana, other} {
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+		}
+
+		found := func(term string) Page {
+			page, err := repo.List(ctx, adminScope(account), Filter{Search: term}, 50, 0)
+			if err != nil {
+				t.Fatalf("List searching %q: %v", term, err)
+			}
+			return page
+		}
+
+		for _, term := range []string{"Valdez", "valdez", "Ana", "Ana Valdez", phone, phone[len(phone)-6:]} {
+			if timesListed(found(term), ana.ID) != 1 {
+				t.Fatalf("searching %q did not find her: %v", term, listedNames(found(term)))
+			}
+		}
+
+		// Folded for case and not for accents, the same invariant the catalogue holds.
+		if timesListed(found("Váldez"), ana.ID) != 0 {
+			t.Fatalf("the search folded an accent, which the catalogue does not")
+		}
+
+		// The email and the notes are not criteria: they were deliberately left out, and a LIKE over every column would drag them in.
+		for _, term := range []string{"coop.test", "la clave"} {
+			if timesListed(found(term), ana.ID) != 0 {
+				t.Fatalf("searching %q reached a column that is not a criterion", term)
+			}
+		}
+
+		// A wildcard typed by hand is a character and not a pattern, or every search box is a way to list the whole book.
+		if page := found("%"); page.Total != 0 {
+			t.Fatalf("a per cent sign matched %d contacts, want 0", page.Total)
+		}
+		if page := found("_"); page.Total != 0 {
+			t.Fatalf("an underscore matched %d contacts, want 0", page.Total)
+		}
+
+		// A term with no digits must not be compared against the phone: normalizing it gives nothing, and LIKE '%%' is everyone.
+		if timesListed(found("Ana"), other.ID) != 0 {
+			t.Fatalf("a search with no digits matched a contact by phone")
 		}
 		return rollback
 	})

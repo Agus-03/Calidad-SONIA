@@ -2,6 +2,7 @@ package contacts
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -43,14 +44,47 @@ func (s *stubStore) reaches(scope Scope, c Contact) bool {
 	return false
 }
 
-func (s *stubStore) List(_ context.Context, scope Scope, limit, offset int) (Page, error) {
+// matches is the filter as the SQL means it, kept here so a case can be written against the double and still be about the rule.
+func (s *stubStore) matches(filter Filter, c Contact) bool {
+	if len(filter.LabelIDs) > 0 {
+		carried := 0
+		for _, wanted := range filter.LabelIDs {
+			for _, has := range s.tags[c.ID] {
+				if has == wanted {
+					carried++
+					break
+				}
+			}
+		}
+		if filter.Match == MatchAny && carried == 0 {
+			return false
+		}
+		if filter.Match != MatchAny && carried != len(filter.LabelIDs) {
+			return false
+		}
+	}
+
+	if term := strings.TrimSpace(filter.Search); term != "" {
+		whole := strings.ToLower(c.Name + " " + c.Lastname)
+		hit := strings.Contains(whole, strings.ToLower(term))
+		if digits := normalizePhone(term); !hit && digits != "" {
+			hit = strings.Contains(normalizePhone(c.PhoneWhatsapp), digits)
+		}
+		if !hit {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *stubStore) List(_ context.Context, scope Scope, filter Filter, limit, offset int) (Page, error) {
 	if s.err != nil {
 		return Page{}, s.err
 	}
 
 	reached := []Contact{}
 	for _, c := range s.rows {
-		if s.reaches(scope, c) {
+		if s.reaches(scope, c) && s.matches(filter, c) {
 			// The listing never carries the four, exactly as the query that does not select them (ADR-0032, regla 4).
 			c.Sensitive = Sensitive{}
 			reached = append(reached, c)

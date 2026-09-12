@@ -18,6 +18,8 @@ type Inbox struct {
 	VerifyToken      string
 	// Configured once per number through the screen of F29, which is why it is a row and not an environment variable.
 	AccessToken string
+	// The key Meta signs every webhook with; empty means nobody connected the number, and then nothing it receives is authentic (F20).
+	AppSecret string
 }
 
 // WebhookEvent is the log F20 asks for, written before anything is interpreted so an unparseable payload still leaves a trace.

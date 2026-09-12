@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§4 enmendada por [ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md)** el 2026-09-12: las dos columnas de `inboxes` también admiten `NULL` |
 | **Fecha** | 2026-09-09 |
 | **Etapa** | Construcción — Fase 3 (contactos y etiquetas) |
 | **Resuelve** | Con qué se cifran las siete columnas `bytea` que el esquema declara cifradas y nunca dijo cómo |

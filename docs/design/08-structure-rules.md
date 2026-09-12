@@ -21,7 +21,7 @@ sonia/
     │   ├── main.go                        sólo `main()`: la señal y el código de salida
     │   ├── internal/
     │   │   ├── app/                       el arranque · app.go (`Run`) · deps.go (el grafo de objetos)
-    │   │   ├── whatsapp/                  F20, F29 · webhook.go (entrada) · client.go (envío a Meta)
+    │   │   ├── whatsapp/                  F20, F29 · controller.go (entrada del webhook) · client.go (envío a Meta)
     │   │   ├── meta_templates/            plantillas de Meta: sincroniza y sirve · F08, F37
     │   │   ├── turn/                      orquestador del turno
     │   │   │   ├── timer.go               agrupa mensajes fragmentados · F10

@@ -12,7 +12,7 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin pgadmin pgadmin-down dbhub dbhub-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin connect-inbox pgadmin pgadmin-down dbhub dbhub-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -28,6 +28,7 @@ help:
 	@echo "migrate-status    lista lo que la base dice que ya corrio"
 	@echo "seed       carga los datos de demo: agente, inbox y contacto fijos"
 	@echo "seed-admin crea la cuenta y su primer admin, con lo que dice SEED_ADMIN_* del .env"
+	@echo "connect-inbox     cifra los secretos de Meta de una bandeja que ya existe, con lo que dice CONNECT_INBOX_* del .env"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
 	@echo "dbhub      levanta el MCP de PostgreSQL de .mcp.json, de solo lectura, en localhost:8090"
@@ -80,6 +81,10 @@ seed:
 seed-admin:
 	$(COMPOSE) exec -T core core --seed-admin
 
+# run and not exec: a fresh container reads the .env as it is now, so the secrets can be written there, connected and erased (ADR-0031).
+connect-inbox:
+	$(COMPOSE) run --rm core --connect-inbox
+
 # Brings the database with it, because pgadmin against nothing is an empty tree.
 pgadmin:
 	$(COMPOSE_DEV) up -d db pgadmin
@@ -106,6 +111,8 @@ test-integration: test
 smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
 smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
+# The core's own key, so the smoke can encrypt the demo inbox's app secret and sign its webhooks with it (ADR-0031, F20).
+smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
 smoke:
 	$(COMPOSE_SMOKE) up -d --build --wait
 	$(MAKE) seed

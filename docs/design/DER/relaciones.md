@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/relaciones.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo · ADR-0012) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo · ADR-0012) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — una bandeja por número) |
 | **Complemento** | [entidades.md](entidades.md) — atributos de cada entidad |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 
@@ -185,6 +185,7 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 | `sender_operator_id` y `sender_ai_agent_id` son excluyentes y deben coincidir con `sender_type` | H-09 | `CHECK` sobre `messages` |
 | Un contacto tiene **como máximo una conversación no resuelta** a la vez | ADR-0002 — un mensaje entrante sobre una resuelta abre una nueva | Índice único parcial sobre `conversations (contact_id) WHERE status <> 'resolved' AND deleted_at IS NULL` |
 | `phone_whatsapp`, `email` de operador y `name` de etiqueta son únicos **entre los no borrados**. El de etiqueta, además, **ignora mayúsculas**: `Ventas` y `ventas` son la misma etiqueta | C09 · F19 | Índice único parcial `WHERE deleted_at IS NULL`, sobre `lower(name)` en el caso de `labels`. **No unifica acentos** —eso necesitaría la extensión `unaccent`—, así que `Ventás` sería una etiqueta distinta |
+| **Una bandeja por número**: `inboxes.phone_number_id` es único entre los no borrados. Es lo único con que Meta nombra al número en cada webhook, y el núcleo resuelve la bandeja por ese dato | ADR-0012 · F20 | Índice único parcial `WHERE deleted_at IS NULL`. Sin él, dos filas vivas del mismo número se reparten los mensajes al azar y validan la firma contra cualquiera de los dos secretos. Dar de baja una bandeja libera el número |
 | La suma de `documents.size_bytes` de una base no supera 100 MB | F06 | Regla de aplicación; `knowledge_bases.size_bytes_total` la materializa |
 | Un `prompt_component` tiene un solo tipo activo por agente | F01 — seis componentes, uno de cada tipo | Índice único parcial sobre `(ai_agent_id, type) WHERE active AND deleted_at IS NULL` |
 | **Se crea una `prompt_component_version` cuando cambia `content` o `active`** — no sólo `content`. Sin versionar el apagado, OE1 compara un conjunto contra sí mismo y sólo puede dar 100 % | OE1 · H-20 · ADR-0015 | Regla de aplicación (Regla 2 de `03-capa-prompts.md`, enmendada) |

@@ -24,6 +24,11 @@ type Config struct {
 	SeedAdminPassword    string
 	SeedAdminAccountName string
 
+	// Read but never required, like the seed: only `make connect-inbox` needs them, and the serving process never reads them (ADR-0031).
+	ConnectInboxPhoneNumberID string
+	ConnectInboxAccessToken   string
+	ConnectInboxAppSecret     string
+
 	BrainBaseURL       string
 	BrainInternalToken string
 	BrainTimeout       time.Duration

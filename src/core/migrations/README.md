@@ -27,12 +27,14 @@ NNNN_descripcion_en_ingles.sql
 
 El prefijo numérico **es el orden**. Cuatro dígitos, correlativo, sin saltos.
 
-## La regla que caduca: `0001` es reescribible hasta la Fase 4
+## La regla que caduca: `0001` es reescribible hasta que se conecte la primera WABA real
 
 Mientras no haya datos que le importen a nadie, corregir `0001_initial_schema.sql` y **recrear la base** es mejor que arrastrar una migración correctiva desde el primer commit.
 
-- **Hasta la Fase 4:** si el esquema estaba mal, se edita `0001`, se baja la base con su volumen (`docker compose down -v`) y se vuelve a levantar. El corredor va a frenar el arranque avisando que el archivo cambió — eso es la señal de que hay que recrear, no un error.
-- **Desde la Fase 4:** entran datos reales del cooperante. A partir de ahí `0001` es inmutable y **todo cambio va en un archivo nuevo**.
+- **Hasta la primera WABA real:** si el esquema estaba mal, se edita `0001`, se baja la base con su volumen (`docker compose down -v`) y se vuelve a levantar. El corredor va a frenar el arranque avisando que el archivo cambió — eso es la señal de que hay que recrear, no un error.
+- **Desde que se conecta la primera WABA real:** entran datos reales del cooperante. A partir de ahí `0001` es inmutable y **todo cambio va en un archivo nuevo**.
+
+**El vencimiento se corrió.** Esta regla decía "hasta la Fase 4", porque se suponía que los datos reales llegaban con el canal. En la Fase 4 el canal se construyó y todavía no hay número del cooperante, así que el equipo decidió (2026-09-12) atar la regla al hecho que protege y no al número de fase. Congelar antes no protege ningún dato y obliga a hacer migraciones correctivas sobre una base que se puede recrear.
 
 El motivo de escribirlo acá y no confiar en la memoria: es una regla con fecha de vencimiento, y las reglas con fecha de vencimiento que viven en la cabeza de alguien se aplican mal en las dos direcciones.
 

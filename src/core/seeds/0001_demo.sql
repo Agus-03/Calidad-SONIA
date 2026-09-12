@@ -22,7 +22,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Placeholder credentials: there is no WABA yet and the outbound adapter is doubled, so nothing reads the two bytea (ADR-0006).
+-- No credentials: SQL cannot encrypt, so the two secrets stay NULL until Go writes them through the cipher (ADR-0031).
 INSERT INTO inboxes (id, account_id, default_ai_agent_id, phone_number_id, waba_id, display_name,
                      access_token_encrypted, verify_token, app_secret_encrypted, status)
 VALUES (
@@ -32,9 +32,9 @@ VALUES (
     '000000000000000',
     '000000000000000',
     'Numero demo',
-    '\x00'::bytea,
+    NULL,
     'sonia-demo-verify-token',
-    '\x00'::bytea,
+    NULL,
     'active'
 )
 ON CONFLICT (id) DO NOTHING;

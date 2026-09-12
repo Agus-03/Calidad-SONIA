@@ -29,11 +29,20 @@ func (r *recordingStarter) Start(_ context.Context, conversationID, _ uuid.UUID,
 }
 
 func mount(starter TurnStarter) (*stubChannel, *stubAggregate, http.Handler) {
-	repo, agg := channel()
-	controller := NewController(NewService(repo, agg, slog.Default()), starter, slog.Default())
+	repo, agg, cs := channel()
+	controller := NewController(service(repo, agg, cs, slog.Default()), starter, slog.Default())
 	return repo, agg, soniahttp.NewRouter(soniahttp.RouterOptions{
 		PublicControllers: []soniahttp.Controller{controller},
 	})
+}
+
+// webhook builds the POST Meta sends; an empty signature leaves the header out, which is what a caller that is not Meta does.
+func webhook(body, signature string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, routeBase, strings.NewReader(body))
+	if signature != "" {
+		req.Header.Set(signatureHeader, signature)
+	}
+	return req
 }
 
 // TestVerifyAnswersMetaWithoutCredentials mounts the real router: the point of the public zone is that no operator header exists.
@@ -71,7 +80,7 @@ func TestReceiveAnswersMetaAndThenStartsTheTurn(t *testing.T) {
 	_, agg, engine := mount(starter)
 
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, routeBase, strings.NewReader(metaTextPayload)))
+	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, testAppSecret)))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d, want 200: Meta retries anything else", rec.Code)
@@ -94,10 +103,37 @@ func TestReceiveWithoutATurnStillStores(t *testing.T) {
 	_, agg, engine := mount(nil)
 
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, routeBase, strings.NewReader(metaTextPayload)))
+	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, testAppSecret)))
 
 	if rec.Code != http.StatusOK || len(agg.messages) != 1 {
 		t.Fatalf("status %d and %d messages, want 200 and 1", rec.Code, len(agg.messages))
+	}
+}
+
+// TestReceiveAnswersAForgeryWithA200AndStartsNoTurn protects the decision of F20 through the real router: the forgery gets the
+// same answer as a delivery, so whoever sent it learns nothing, and the turn never hears of it.
+func TestReceiveAnswersAForgeryWithA200AndStartsNoTurn(t *testing.T) {
+	starter := &recordingStarter{done: make(chan struct{})}
+	repo, agg, engine := mount(starter)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, "no-soy-meta")))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: anything else tells the sender the signature is what failed", rec.Code)
+	}
+	if len(agg.messages) != 0 {
+		t.Fatalf("a forged message reached conversations/")
+	}
+	if len(repo.events) != 1 || repo.events[0].SignatureValid {
+		t.Fatalf("the forgery left no discarded trace: %v", repo.events)
+	}
+
+	// Start is called inside the handler, so by the time ServeHTTP returns a turn would already have been handed off.
+	starter.mu.Lock()
+	defer starter.mu.Unlock()
+	if len(starter.started) != 0 {
+		t.Fatalf("a turn was started for a payload nobody signed")
 	}
 }
 

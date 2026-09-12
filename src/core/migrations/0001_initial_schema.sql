@@ -55,14 +55,18 @@ CREATE TABLE inboxes (
     phone_number_id        varchar     NOT NULL,
     waba_id                varchar     NOT NULL,
     display_name           varchar     NOT NULL,
-    access_token_encrypted bytea       NOT NULL,
+    -- Nullable so NULL means a number nobody connected yet, instead of placeholder bytes the cipher cannot open (ADR-0031).
+    access_token_encrypted bytea,
     verify_token           varchar     NOT NULL,
-    app_secret_encrypted   bytea       NOT NULL,
+    app_secret_encrypted   bytea,
     status                 varchar     NOT NULL CHECK (status IN ('active', 'inactive', 'error')),
     created_at             timestamptz NOT NULL DEFAULT now(),
     updated_at             timestamptz NOT NULL DEFAULT now(),
     deleted_at             timestamptz
 );
+
+-- One inbox per number: Meta names the number and nothing else in each webhook, so two live rows would split its messages (ADR-0012).
+CREATE UNIQUE INDEX inboxes_phone_number_id_unique ON inboxes (phone_number_id) WHERE deleted_at IS NULL;
 
 -- Bloque 1 - the four encrypted columns are bytea because ADR-0006 keeps the ciphertext and not the reading.
 CREATE TABLE contacts (

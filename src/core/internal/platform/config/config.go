@@ -40,6 +40,10 @@ func Load() (Config, error) {
 		// Only used when the database has no account yet, which is the first run of an installation and nothing else.
 		SeedAdminAccountName: env("SEED_ADMIN_ACCOUNT_NAME", "SONIA"),
 
+		ConnectInboxPhoneNumberID: os.Getenv("CONNECT_INBOX_PHONE_NUMBER_ID"),
+		ConnectInboxAccessToken:   os.Getenv("CONNECT_INBOX_ACCESS_TOKEN"),
+		ConnectInboxAppSecret:     os.Getenv("CONNECT_INBOX_APP_SECRET"),
+
 		BrainBaseURL:       os.Getenv("BRAIN_BASE_URL"),
 		BrainInternalToken: os.Getenv("BRAIN_INTERNAL_TOKEN"),
 		BrainTimeout:       10 * time.Second,

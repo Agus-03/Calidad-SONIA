@@ -16,14 +16,18 @@ import (
 func main() {
 	// One entrypoint with a flag, the same shape the brain has: seeding is something someone runs, never a side effect of serving (regla 3).
 	seedAdmin := flag.Bool("seed-admin", false, "create the account and its first admin, then exit")
+	connectInbox := flag.Bool("connect-inbox", false, "encrypt the Meta credentials of an existing inbox, then exit")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	run := app.Run
-	if *seedAdmin {
+	switch {
+	case *seedAdmin:
 		run = app.SeedAdmin
+	case *connectInbox:
+		run = app.ConnectInbox
 	}
 
 	if err := run(ctx); err != nil {

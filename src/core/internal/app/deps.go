@@ -47,7 +47,19 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	}
 
 	aggregate := conversations.NewService(conversations.NewRepository(pool), log)
-	channelRepo := whatsapp.NewRepository(pool)
+	channelRepo := whatsapp.NewRepository(pool, cipher)
+
+	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
+	// the instance would tie two contexts together for a reason that is not a reason of the domain.
+	channelContacts := contacts.NewRepository(pool, cipher)
+
+	// Binds the three collaborators to one transaction, the same pattern turn/ uses below: the webhook event, the contact it
+	// may create and the conversation it opens commit together or not at all (regla 5).
+	channelTx := func(ctx context.Context, fn func(whatsapp.Store, whatsapp.Aggregate, whatsapp.Contacts) error) error {
+		return db.InTx(ctx, pool, func(exec db.Executor) error {
+			return fn(channelRepo.WithExecutor(exec), aggregate.WithExecutor(exec), channelContacts.WithExecutor(exec))
+		})
+	}
 
 	turnRepo := turn.NewRepository(pool)
 
@@ -74,7 +86,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:       log,
 	})
 
-	channel := whatsapp.NewController(whatsapp.NewService(channelRepo, aggregate, log), turns, log)
+	channel := whatsapp.NewController(whatsapp.NewService(channelRepo, channelTx, log), turns, log)
 
 	tokens := auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL)
 	people := operators.NewService(operators.NewRepository(pool), tokens, log)

@@ -622,7 +622,7 @@ Una bandeja por número de WhatsApp. Meta permite varios números bajo una misma
 | `id` | uuid | PK |
 | `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
 | `default_ai_agent_id` | uuid | **Nullable.** El agente que atiende las conversaciones nuevas de esta bandeja (ADR-0012). Nulo si la bandeja opera sin IA |
-| `phone_number_id` | varchar | |
+| `phone_number_id` | varchar | Único **parcial** (`WHERE deleted_at IS NULL`): una bandeja por número. Es lo que Meta manda en cada webhook para nombrarlo |
 | `waba_id` | varchar | Agrupa las bandejas del mismo número comercial en Meta |
 | `display_name` | varchar | |
 | `access_token_encrypted` | bytea | **Nullable.** `NULL` es un número que nadie conectó todavía. Cifrado en la aplicación (ADR-0031): SQL no puede escribirlo |

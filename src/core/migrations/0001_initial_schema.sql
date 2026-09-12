@@ -65,6 +65,9 @@ CREATE TABLE inboxes (
     deleted_at             timestamptz
 );
 
+-- One inbox per number: Meta names the number and nothing else in each webhook, so two live rows would split its messages (ADR-0012).
+CREATE UNIQUE INDEX inboxes_phone_number_id_unique ON inboxes (phone_number_id) WHERE deleted_at IS NULL;
+
 -- Bloque 1 - the four encrypted columns are bytea because ADR-0006 keeps the ciphertext and not the reading.
 CREATE TABLE contacts (
     id                 uuid        PRIMARY KEY,

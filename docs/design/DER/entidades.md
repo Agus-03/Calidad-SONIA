@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 
@@ -625,9 +625,9 @@ Una bandeja por número de WhatsApp. Meta permite varios números bajo una misma
 | `phone_number_id` | varchar | |
 | `waba_id` | varchar | Agrupa las bandejas del mismo número comercial en Meta |
 | `display_name` | varchar | |
-| `access_token_encrypted` | bytea | |
+| `access_token_encrypted` | bytea | **Nullable.** `NULL` es un número que nadie conectó todavía. Cifrado en la aplicación (ADR-0031): SQL no puede escribirlo |
 | `verify_token` | varchar | |
-| `app_secret_encrypted` | bytea | Validación de firma (§8.5) |
+| `app_secret_encrypted` | bytea | **Nullable**, con el mismo sentido. Validación de firma (§8.5): sin él, todo webhook de la bandeja se guarda como `discarded` |
 | `status` | `InboxStatus` | C07 — era `varchar` sin declarar |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Distinto de `status = inactive`**: una bandeja inactiva sigue existiendo en la configuración; una dada de baja, no |
 

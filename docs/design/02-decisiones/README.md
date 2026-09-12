@@ -56,8 +56,9 @@ Dos reglas que conviene sostener:
 | [0028](0028-cobertura-de-pruebas-por-servicio.md) | La cobertura del ≥ 80 % se exige por servicio | Pendiente de ADR-0017 | Aceptada |
 | [0029](0029-el-acuse-del-webhook-no-espera-al-turno.md) | El acuse del webhook no espera al turno | Fase 1 | Aceptada |
 | [0030](0030-autenticacion-de-operadores.md) | Autenticación de operadores: JWT de vida corta y bcrypt | Fase 2 | Aceptada |
-| [0031](0031-cifrado-en-reposo-de-datos-sensibles.md) | Cifrado en reposo: AES-256-GCM en la aplicación, llave del entorno | Fase 3 | Aceptada |
+| [0031](0031-cifrado-en-reposo-de-datos-sensibles.md) | Cifrado en reposo: AES-256-GCM en la aplicación, llave del entorno | Fase 3 | Aceptada · §4 enmendada por [ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md) |
 | [0032](0032-acceso-a-contactos-y-datos-sensibles.md) | Acceso a contactos: la agenda la ven los tres roles, los datos sensibles no | H-32 a H-37, H-39 · reemplaza a ADR-0011 | Aceptada |
+| [0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md) | Los secretos de las bandejas admiten NULL, y `0001` se congela con la primera WABA real | Fase 4 · enmienda ADR-0031 §4 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
@@ -70,6 +71,8 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 **ADR-0017 es de otra clase y por eso estuvo en estado Propuesta hasta el 2026-09-05.** No resuelve un hallazgo del modelo de datos: decide la arquitectura de despliegue y el reparto de lenguajes, que la sección 8.4 dejó explícitamente sin definir. Toca el trabajo de los tres, así que se discutió entre todos antes de darla por firmada. Es además la segunda decisión que **matiza el texto del anteproyecto**, después de ADR-0012: parte el Módulo 2 entre dos procesos, y señala que la justificación de Go por "concurrencia masiva" no está respaldada por el alcance declarado en 7.3.
 
 **ADR-0017 se revisó el 2026-08-22, antes de firmarse, y el cambio está declarado en su §0.** Se corrige editando el documento y no escribiendo uno nuevo porque **la regla de más arriba protege el historial de las decisiones revertidas, y ésta nunca llegó a aceptarse**: hacer que los tres lean dos documentos para acordar una sola decisión la haría más difícil de acordar, no más trazable. Lo que la revisión agrega salió de recorrer los 39 requisitos uno por uno, que la versión original no había hecho: **un hueco** —la ingesta de F06 no tenía proceso donde ocurrir— y **tres decisiones que faltaban**: el ensamblador único que protege a OE1, las tres reglas de escritura sobre la base compartida, y el nombre de la arquitectura. La frontera Go/Python y la base única se sostuvieron sin cambios.
+
+**ADR-0033 es el primero que enmienda a otro ADR en lugar de reemplazarlo.** La decisión de ADR-0031 —AES-256-GCM en la aplicación, con la llave en el entorno— se sostiene entera. Lo que dejó de ser cierto es una consecuencia de su §4, que describía el esquema de ese momento. Reemplazar el ADR completo por una línea obligaría a leer dos documentos para entender una sola decisión que no cambió. Por eso se hizo como ADR-0015 con `03-capa-prompts.md`: el texto original queda como estaba y su estado apunta a la enmienda.
 
 ---
 

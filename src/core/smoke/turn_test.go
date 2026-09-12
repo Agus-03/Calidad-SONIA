@@ -4,6 +4,9 @@ package smoke
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 )
 
 // The fixed rows of src/core/seeds/0001_demo.sql: the inbox the webhook resolves against and the contact that writes.
@@ -50,7 +54,7 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	// Fresh per run: the core ignores a wamid it already stored, so a fixed one would assert the rows of the previous run.
 	wamid := "wamid.smoke." + uuid.New().String()
 
-	if status := postWebhook(t, core, wamid); status != http.StatusOK {
+	if status := postWebhook(t, core, wamid, signingSecret(ctx, t, pool)); status != http.StatusOK {
 		t.Fatalf("POST /webhooks/whatsapp: got %d, want 200", status)
 	}
 
@@ -81,6 +85,85 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	if !got.promptHasComponents || !got.promptHasEnvelope {
 		t.Error("prompt_rendered carries neither the components nor the envelope: the assembler of F03 did not run")
 	}
+}
+
+// TestAWebhookNobodySignedIsKeptAndNeverAnswered is F20 through the real process: the forgery gets its 200, leaves a discarded
+// row, and no message is written for it, so no turn can start.
+func TestAWebhookNobodySignedIsKeptAndNeverAnswered(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	// The inbox gets a real secret, so the case below is a wrong signature and not a number nobody connected.
+	signingSecret(ctx, t, pool)
+	wamid := "wamid.smoke.forged." + uuid.New().String()
+
+	if status := postWebhook(t, core, wamid, "no-soy-meta"); status != http.StatusOK {
+		t.Fatalf("POST /webhooks/whatsapp with a forged signature: got %d, want 200", status)
+	}
+
+	// Written before the 200 went out, so there is nothing to wait for.
+	var valid bool
+	var status string
+	err := pool.QueryRow(ctx, `SELECT signature_valid, status FROM webhook_events WHERE wamid = $1`, wamid).Scan(&valid, &status)
+	if err != nil {
+		t.Fatalf("the forgery left no row in webhook_events: %v", err)
+	}
+	if valid || status != "discarded" {
+		t.Fatalf("webhook_events: got signature_valid=%v status=%q, want false and discarded", valid, status)
+	}
+
+	var stored int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM messages WHERE wamid = $1`, wamid).Scan(&stored); err != nil {
+		t.Fatalf("counting the messages: %v", err)
+	}
+	if stored != 0 {
+		t.Fatalf("a forged message was stored %d times", stored)
+	}
+}
+
+// signingSecret writes a fresh app secret into the demo inbox through the cipher, with the key the core runs on: the SQL seed
+// cannot encrypt, so without this every webhook the smoke sends would be discarded as forged (ADR-0031, F20).
+func signingSecret(ctx context.Context, t *testing.T, pool db.Pool) string {
+	t.Helper()
+
+	// Fatal and not a skip: stack already skipped a plain go test, so a missing key here is make smoke forgetting it.
+	raw := os.Getenv("SONIA_SMOKE_ENCRYPTION_KEY")
+	if raw == "" {
+		t.Fatal("SONIA_SMOKE_ENCRYPTION_KEY is not set: the webhook discards whatever the smoke cannot sign")
+	}
+	key, err := encryption.DecodeKey(raw)
+	if err != nil {
+		t.Fatalf("SONIA_SMOKE_ENCRYPTION_KEY: %v", err)
+	}
+	cipher, err := encryption.New(key)
+	if err != nil {
+		t.Fatalf("encryption.New: %v", err)
+	}
+
+	var previous []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT app_secret_encrypted FROM inboxes WHERE phone_number_id = $1 AND deleted_at IS NULL`,
+		seededPhoneNumberID).Scan(&previous); err != nil {
+		t.Skip("no demo inbox: load src/core/seeds/0001_demo.sql first")
+	}
+
+	secret := "smoke-app-secret-" + uuid.New().String()
+	stored, err := cipher.Encrypt(secret)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	setSecret := `UPDATE inboxes SET app_secret_encrypted = $2, updated_at = now() WHERE phone_number_id = $1 AND deleted_at IS NULL`
+	if _, err := pool.Exec(ctx, setSecret, seededPhoneNumberID, stored); err != nil {
+		t.Fatalf("writing the app secret: %v", err)
+	}
+	// The demo inbox is left as the seed wrote it, so the next run and the other cases start from the same row.
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), setSecret, seededPhoneNumberID, previous); err != nil {
+			t.Errorf("restoring the app secret: %v", err)
+		}
+	})
+	return secret
 }
 
 // Skips instead of failing: this case needs the three services up, which make smoke decides and a plain go test cannot.
@@ -121,7 +204,8 @@ func waitForHealth(t *testing.T, base string) {
 	t.Fatalf("%s/health never answered 200: the stack is not up", base)
 }
 
-func postWebhook(t *testing.T, base, wamid string) int {
+// postWebhook signs with secret the way Meta does, over the exact bytes it sends.
+func postWebhook(t *testing.T, base, wamid, secret string) int {
 	t.Helper()
 
 	// Meta's shape and not ours: a fixture built from the core's own parser could not catch the parser drifting from Meta.
@@ -132,7 +216,17 @@ func postWebhook(t *testing.T, base, wamid string) int {
 		`"text":{"body":"Hola, el depto de 2 ambientes en Jesus Maria sigue disponible?"}}]}}]}]}`,
 		seededPhoneNumberID, seededContactPhone, wamid)
 
-	res, err := http.Post(base+"/webhooks/whatsapp", "application/json", bytes.NewReader([]byte(payload)))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+
+	req, err := http.NewRequest(http.MethodPost, base+"/webhooks/whatsapp", bytes.NewReader([]byte(payload)))
+	if err != nil {
+		t.Fatalf("building the webhook: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /webhooks/whatsapp: got %v, want no error", err)
 	}

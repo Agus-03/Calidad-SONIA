@@ -2,6 +2,9 @@ package whatsapp
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +35,16 @@ const metaTextPayload = `{
     }]
   }]
 }`
+
+// The key the stub inbox signs with; TestSignedByMatchesADigestComputedOutsideGo pins it against a digest Go did not compute.
+const testAppSecret = "sonia-test-app-secret"
+
+// sign builds the header Meta sends, so the cases below can speak about a valid signature without restating how one is made.
+func sign(body, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(body))
+	return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
+}
 
 type stubChannel struct {
 	verifyToken   string
@@ -103,7 +116,7 @@ func channel() (*stubChannel, *stubAggregate) {
 	return &stubChannel{
 		verifyToken:   "sonia-demo-verify-token",
 		phoneNumberID: "000000000000000",
-		inbox:         Inbox{ID: uuid.New(), AccountID: uuid.New(), DefaultAIAgentID: &agent, PhoneNumberID: "000000000000000"},
+		inbox:         Inbox{ID: uuid.New(), AccountID: uuid.New(), DefaultAIAgentID: &agent, PhoneNumberID: "000000000000000", AppSecret: testAppSecret},
 		knownPhone:    "5493510000000",
 		contactID:     uuid.New(),
 	}, &stubAggregate{conversationID: uuid.New()}

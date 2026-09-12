@@ -47,7 +47,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	}
 
 	aggregate := conversations.NewService(conversations.NewRepository(pool), log)
-	channelRepo := whatsapp.NewRepository(pool)
+	channelRepo := whatsapp.NewRepository(pool, cipher)
 
 	turnRepo := turn.NewRepository(pool)
 

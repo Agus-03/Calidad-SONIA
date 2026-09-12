@@ -2,9 +2,13 @@ package whatsapp
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +27,9 @@ var (
 
 // The literal Meta sends; it is not an enumeration of ours, so it does not belong in contracts/enums.yaml.
 const subscribeMode = "subscribe"
+
+// Meta names the algorithm in front of the hex digest, so a header without it is not a signature this code knows how to check.
+const signaturePrefix = "sha256="
 
 // inboxFinder is declared by the consumer and not by the repository, so the handshake can be tested without a database.
 type inboxFinder interface {
@@ -65,7 +72,8 @@ type Inbound struct {
 }
 
 // Receive persists in the order 07-secuencia fixes: the event first, then the message, and only then does the caller answer Meta.
-func (s *Service) Receive(ctx context.Context, body []byte, at time.Time) ([]Inbound, error) {
+// signature is the header as it arrived: it is checked per inbox, because the key belongs to the number the payload names.
+func (s *Service) Receive(ctx context.Context, body []byte, signature string, at time.Time) ([]Inbound, error) {
 	var payload Payload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, ErrMalformedPayload
@@ -78,7 +86,7 @@ func (s *Service) Receive(ctx context.Context, body []byte, at time.Time) ([]Inb
 			if change.Field != "messages" {
 				continue
 			}
-			inbound, err := s.receiveChange(ctx, change.Value, body, at)
+			inbound, err := s.receiveChange(ctx, change.Value, body, signature, at)
 			if err != nil {
 				return nil, err
 			}
@@ -88,25 +96,34 @@ func (s *Service) Receive(ctx context.Context, body []byte, at time.Time) ([]Inb
 	return started, nil
 }
 
-func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, at time.Time) ([]Inbound, error) {
+func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, signature string, at time.Time) ([]Inbound, error) {
 	inbox, err := s.repo.InboxByPhoneNumberID(ctx, value.Metadata.PhoneNumberID)
 	if err != nil {
 		return nil, err
 	}
 
+	signed := signedBy(body, signature, inbox.AppSecret)
 	event := WebhookEvent{
-		ID:        id.New(),
-		InboxID:   inbox.ID,
-		EventType: eventTypeOf(value),
-		WAMID:     firstWAMID(value),
-		// False and not true: Fase 1 does not check the signature, so no valid one was ever established (F20 completes this).
+		ID:             id.New(),
+		InboxID:        inbox.ID,
+		EventType:      eventTypeOf(value),
+		WAMID:          firstWAMID(value),
 		PayloadJSON:    body,
-		SignatureValid: false,
+		SignatureValid: signed,
 		Status:         enums.WebhookEventStatusReceived,
 		ReceivedAt:     at,
 	}
+	// Kept and not refused: the row is the trace of whoever tried, and a 403 would leave signature_valid with no false to hold (F20).
+	if !signed {
+		event.Status = enums.WebhookEventStatusDiscarded
+	}
 	if err := s.repo.SaveWebhookEvent(ctx, event); err != nil {
 		return nil, err
+	}
+
+	if !signed {
+		s.log.Warn("webhook discarded, the signature does not match", slog.String("inbox_id", inbox.ID.String()))
+		return nil, nil
 	}
 
 	var started []Inbound
@@ -152,6 +169,27 @@ func (s *Service) recordMessage(ctx context.Context, inbox Inbox, message MetaMe
 	}
 
 	return Inbound{ConversationID: conversation.ID, MessageID: stored.ID, AIAgentID: conversation.AIAgentID}, nil
+}
+
+// signedBy is computed over the raw bytes, never over a re-encoding of the parsed payload: Meta signed what it sent, byte for byte.
+// An empty secret signs nothing, because an HMAC keyed with nothing is one anybody can compute.
+func signedBy(body []byte, header, secret string) bool {
+	if secret == "" {
+		return false
+	}
+	digest, found := strings.CutPrefix(header, signaturePrefix)
+	if !found {
+		return false
+	}
+	claimed, err := hex.DecodeString(digest)
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	// hmac.Equal and not bytes.Equal: a comparison that stops at the first wrong byte tells a forger how many it got right.
+	return hmac.Equal(claimed, mac.Sum(nil))
 }
 
 // A payload with neither messages nor statuses is still logged: unknown is a value of the enumeration and not an error.

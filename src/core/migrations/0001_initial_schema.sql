@@ -55,9 +55,10 @@ CREATE TABLE inboxes (
     phone_number_id        varchar     NOT NULL,
     waba_id                varchar     NOT NULL,
     display_name           varchar     NOT NULL,
-    access_token_encrypted bytea       NOT NULL,
+    -- Nullable so NULL means a number nobody connected yet, instead of placeholder bytes the cipher cannot open (ADR-0031).
+    access_token_encrypted bytea,
     verify_token           varchar     NOT NULL,
-    app_secret_encrypted   bytea       NOT NULL,
+    app_secret_encrypted   bytea,
     status                 varchar     NOT NULL CHECK (status IN ('active', 'inactive', 'error')),
     created_at             timestamptz NOT NULL DEFAULT now(),
     updated_at             timestamptz NOT NULL DEFAULT now(),

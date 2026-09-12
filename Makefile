@@ -106,6 +106,8 @@ test-integration: test
 smoke: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
 smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
 smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
+# The core's own key, so the smoke can encrypt the demo inbox's app secret and sign its webhooks with it (ADR-0031, F20).
+smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
 smoke:
 	$(COMPOSE_SMOKE) up -d --build --wait
 	$(MAKE) seed

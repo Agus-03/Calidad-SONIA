@@ -16,6 +16,9 @@ import (
 // Meta's payloads are small; the bound is here so a service answering badly cannot fill the core's memory.
 const maxPayloadBytes = 1 << 20
 
+// Where Meta puts the HMAC of the body; the service checks it, because only the inbox the payload names holds the key.
+const signatureHeader = "X-Hub-Signature-256"
+
 // Declared by the channel and implemented by turn/, because the webhook is the side that must not wait for it.
 type TurnStarter interface {
 	Start(ctx context.Context, conversationID, messageID uuid.UUID, aiAgentID *uuid.UUID)
@@ -59,7 +62,8 @@ func (c *Controller) receive(gc *gin.Context) {
 		return
 	}
 
-	inbound, err := c.service.Receive(gc.Request.Context(), body, time.Now().UTC())
+	// A forged body still gets its 200: the service keeps it as discarded and returns nothing to start (F20).
+	inbound, err := c.service.Receive(gc.Request.Context(), body, gc.GetHeader(signatureHeader), time.Now().UTC())
 	switch {
 	case errors.Is(err, ErrMalformedPayload):
 		// A 4xx and not a 5xx: Meta retries what fails, and the same bytes will not parse the second time either.

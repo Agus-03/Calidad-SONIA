@@ -20,6 +20,21 @@ services:
       db:
         condition: service_healthy
 
+  # The PostgreSQL MCP server that .mcp.json points at: it lives here so it can only ever see the development database.
+  dbhub:
+    image: bytebase/dbhub:1.2.3
+    init: true
+    command: ["--transport", "http", "--port", "8080", "--config", "/etc/dbhub/dbhub.toml"]
+    ports:
+      # Loopback only, like db: the MCP answers raw SQL with no auth token, so nothing off this machine should reach it.
+      - "127.0.0.1:8090:8080"
+    configs:
+      - source: dbhub_config
+        target: /etc/dbhub/dbhub.toml
+    depends_on:
+      db:
+        condition: service_healthy
+
 # Inline and not a file, because this is the only way the real POSTGRES_* of the .env reach servers.json.
 configs:
   pgadmin_servers:
@@ -37,6 +52,26 @@ configs:
           }
         }
       }
+
+  # Read-only is a TOML-only setting in DBHub, and listing [[tools]] enables only what is listed, so both tools are named.
+  dbhub_config:
+    content: |
+      [[sources]]
+      id = "sonia"
+      dsn = "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
+      query_timeout = 30
+
+      # The role is the superuser of the dev database, so this guard is the only thing standing between a prompt and a DELETE.
+      [[tools]]
+      name = "execute_sql"
+      source = "sonia"
+      readonly = true
+      # Every row comes back into the model's context: a bounded answer keeps one careless SELECT from eating the window.
+      max_rows = 200
+
+      [[tools]]
+      name = "search_objects"
+      source = "sonia"
 
 volumes:
   pgadmin:

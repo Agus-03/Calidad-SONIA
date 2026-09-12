@@ -5,6 +5,13 @@
 
 set -u
 
+# Opt-in for the design reviewer: the anteproyecto is a PDF, Read cannot open it here, and it is the source every check anchors to.
+anteproyecto=false
+if [ "${1:-}" = --anteproyecto ]; then
+  anteproyecto=true
+  shift
+fi
+
 allowed="$*"
 input=$(tr -d '\r\n')
 
@@ -12,11 +19,18 @@ input=$(tr -d '\r\n')
 command=$(printf '%s' "$input" | sed -nE 's/.*"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)".*/\1/p')
 
 deny() {
-  echo "Blocked: this subagent may only run git ${allowed// /, } with plain arguments. $1" >&2
+  local extra=""
+  $anteproyecto && extra=", or exactly: pdftotext -layout -enc UTF-8 docs/SONIA_Anteproyecto.pdf -"
+  echo "Blocked: this subagent may only run git ${allowed// /, } with plain arguments${extra}. $1" >&2
   exit 2
 }
 
 [ -n "$command" ] || deny "The command could not be read."
+
+# One exact command and not a prefix, so the flag cannot become a way to read any other file.
+if $anteproyecto && [ "$command" = "pdftotext -layout -enc UTF-8 docs/SONIA_Anteproyecto.pdf -" ]; then
+  exit 0
+fi
 
 # Plain words only: no quoting, expansion, redirection or chaining, so what is checked is exactly what runs.
 case "$command" in

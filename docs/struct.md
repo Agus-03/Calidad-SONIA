@@ -43,7 +43,7 @@ sonia/
 │   ├── design/
 │   │   ├── 00-convenciones.md
 │   │   ├── 01-trazabilidad.md          F01–F39 y OE1–OE7 con sus hallazgos
-│   │   ├── 02-decisiones/              los ADR · README.md + 0001 a 0017
+│   │   ├── 02-decisiones/              los ADR, uno por archivo · README.md es el índice
 │   │   ├── 03-capa-prompts.md
 │   │   ├── 05-consultas-de-metricas.sql
 │   │   ├── 07-secuencia-del-turno.md

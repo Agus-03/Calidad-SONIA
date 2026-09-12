@@ -20,6 +20,7 @@ sonia/
 │   └── workflows/
 │       └── ci.yml
 ├── .gitignore                          go.mod, go.sum y contracts/ SÍ se commitean
+├── .mcp.json                           MCP de Claude Code: Atlassian (OAuth por persona) · PostgreSQL vía `make dbhub`
 ├── CLAUDE.md
 ├── LICENSE
 ├── Makefile                            up · migrate · seed · seed-admin · test · test-integration · smoke

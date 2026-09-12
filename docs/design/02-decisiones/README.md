@@ -59,6 +59,7 @@ Dos reglas que conviene sostener:
 | [0031](0031-cifrado-en-reposo-de-datos-sensibles.md) | Cifrado en reposo: AES-256-GCM en la aplicación, llave del entorno | Fase 3 | Aceptada · §4 enmendada por [ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md) |
 | [0032](0032-acceso-a-contactos-y-datos-sensibles.md) | Acceso a contactos: la agenda la ven los tres roles, los datos sensibles no | H-32 a H-37, H-39 · reemplaza a ADR-0011 | Aceptada |
 | [0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md) | Los secretos de las bandejas admiten NULL, y `0001` se congela con la primera WABA real | Fase 4 · enmienda ADR-0031 §4 | Aceptada |
+| [0034](0034-origen-y-tipo-de-un-contacto-creado-por-el-webhook.md) | Origen y tipo de un contacto que crea el webhook, sin leer `referral` | Fase 4 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

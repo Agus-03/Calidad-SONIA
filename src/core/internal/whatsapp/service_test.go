@@ -119,7 +119,7 @@ func TestReceiveCreatesAContactFromAnUnknownNumber(t *testing.T) {
 		t.Fatalf("created phone=%q name=%q, want the number and the profile name the message carried", created.PhoneWhatsapp, created.Name)
 	}
 	if created := cs.created[0]; created.Type != enums.ContactTypeProspect || created.SourceChannel != enums.SourceChannelDirect {
-		t.Fatalf("created type=%q source_channel=%q, want prospect and direct (ADR-0001)", created.Type, created.SourceChannel)
+		t.Fatalf("created type=%q source_channel=%q, want prospect and direct (ADR-0034)", created.Type, created.SourceChannel)
 	}
 	if len(repo.events) != 1 || len(repo.processed) != 1 {
 		t.Fatalf("the event was not logged and closed, so F20 lost the trace of a real delivery")

@@ -198,7 +198,8 @@ func (s *Service) contactFor(ctx context.Context, store Store, registrar Contact
 		AccountID:     inbox.AccountID,
 		PhoneWhatsapp: message.From,
 		// WhatsApp gives one display name and this package asks for no lastname: it stays blank until an operator splits it (F30).
-		Name:          contactNameOrPhone(profileNameFor(value, message.From), message.From),
+		Name: contactNameOrPhone(profileNameFor(value, message.From), message.From),
+		// Always these two, never read from Meta's referral object: it is the fixed default ADR-0034 chose, not an inference.
 		Type:          enums.ContactTypeProspect,
 		SourceChannel: enums.SourceChannelDirect,
 	}

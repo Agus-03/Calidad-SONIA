@@ -64,7 +64,7 @@ func TestReceiveCreatesTheContactTheConversationAndTheMessageInOneTransaction(t 
 			t.Fatalf("read the contact the webhook should have created: %v", err)
 		}
 		if name != "Integracion" || sourceChannel != string(enums.SourceChannelDirect) || contactType != string(enums.ContactTypeProspect) {
-			t.Fatalf("created name=%q source_channel=%q type=%q, want the profile name, direct and prospect (ADR-0001)",
+			t.Fatalf("created name=%q source_channel=%q type=%q, want the profile name, direct and prospect (ADR-0034)",
 				name, sourceChannel, contactType)
 		}
 

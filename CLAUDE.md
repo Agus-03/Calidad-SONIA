@@ -2,7 +2,7 @@
 
 Sistema de orquestación conversacional sobre WhatsApp Business API con agentes de IA configurables mediante composición modular de prompts. Tesina de Ingeniería de Sistemas — Universidad Católica de Córdoba, 2026–2027.
 
-El proyecto está en **etapa de diseño**: todavía no hay código de aplicación. El trabajo produce documentos y diagramas.
+El trabajo produce documentos de diseño, diagramas y el código de los dos servicios de `src/`. Qué está hecho y qué falta no se escribe acá: caduca en cada commit.
 
 ---
 

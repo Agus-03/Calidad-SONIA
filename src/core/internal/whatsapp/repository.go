@@ -25,6 +25,11 @@ func NewRepository(exec db.Executor, cipher *encryption.Cipher) *Repository {
 	return &Repository{exec: exec, cipher: cipher}
 }
 
+// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).
+func (r *Repository) WithExecutor(exec db.Executor) *Repository {
+	return &Repository{exec: exec, cipher: r.cipher}
+}
+
 const inboxSelect = `
 SELECT id, account_id, default_ai_agent_id, phone_number_id, verify_token, access_token_encrypted, app_secret_encrypted
 FROM   inboxes

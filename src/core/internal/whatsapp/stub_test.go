@@ -5,10 +5,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
@@ -110,14 +112,50 @@ func (s *stubAggregate) RecordInbound(_ context.Context, c conversations.Convers
 	return conversations.Message{ID: uuid.New(), ConversationID: c.ID, WAMID: &wamid}, nil
 }
 
-// channel builds the pair every case needs, using the values of src/core/seeds so the fixtures agree with the demo rows.
-func channel() (*stubChannel, *stubAggregate) {
+// stubContacts is the alta automática side: Create either records the row or answers what the test asked it to.
+type stubContacts struct {
+	created []contacts.Contact
+
+	// dupPhone simulates the race of two deliveries creating the same first-time number: Create refuses it as a duplicate.
+	dupPhone string
+	// onDuplicate lets a case make the retried read succeed right when the duplicate is reported, as the winner's commit would.
+	onDuplicate func()
+
+	err error
+}
+
+func (c *stubContacts) Create(_ context.Context, contact contacts.Contact) error {
+	if c.err != nil {
+		return c.err
+	}
+	if contact.PhoneWhatsapp == c.dupPhone {
+		if c.onDuplicate != nil {
+			c.onDuplicate()
+		}
+		return contacts.ErrDuplicatePhone
+	}
+	c.created = append(c.created, contact)
+	return nil
+}
+
+// channel builds the trio every case needs, using the values of src/core/seeds so the fixtures agree with the demo rows.
+func channel() (*stubChannel, *stubAggregate, *stubContacts) {
 	agent := uuid.New()
 	return &stubChannel{
-		verifyToken:   "sonia-demo-verify-token",
-		phoneNumberID: "000000000000000",
-		inbox:         Inbox{ID: uuid.New(), AccountID: uuid.New(), DefaultAIAgentID: &agent, PhoneNumberID: "000000000000000", AppSecret: testAppSecret},
-		knownPhone:    "5493510000000",
-		contactID:     uuid.New(),
-	}, &stubAggregate{conversationID: uuid.New()}
+			verifyToken:   "sonia-demo-verify-token",
+			phoneNumberID: "000000000000000",
+			inbox:         Inbox{ID: uuid.New(), AccountID: uuid.New(), DefaultAIAgentID: &agent, PhoneNumberID: "000000000000000", AppSecret: testAppSecret},
+			knownPhone:    "5493510000000",
+			contactID:     uuid.New(),
+		},
+		&stubAggregate{conversationID: uuid.New()},
+		&stubContacts{}
+}
+
+// service wires the trio into one Service, with the transaction as a plain call: what the tests check is behaviour and order,
+// not that a real Postgres binds the three collaborators together (that lives in the integration tests), matching turn/'s stub.
+func service(repo *stubChannel, agg *stubAggregate, cs *stubContacts, log *slog.Logger) *Service {
+	return NewService(repo, func(_ context.Context, fn func(Store, Aggregate, Contacts) error) error {
+		return fn(repo, agg, cs)
+	}, log)
 }

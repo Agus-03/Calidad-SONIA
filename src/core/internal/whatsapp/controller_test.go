@@ -29,8 +29,8 @@ func (r *recordingStarter) Start(_ context.Context, conversationID, _ uuid.UUID,
 }
 
 func mount(starter TurnStarter) (*stubChannel, *stubAggregate, http.Handler) {
-	repo, agg := channel()
-	controller := NewController(NewService(repo, agg, slog.Default()), starter, slog.Default())
+	repo, agg, cs := channel()
+	controller := NewController(service(repo, agg, cs, slog.Default()), starter, slog.Default())
 	return repo, agg, soniahttp.NewRouter(soniahttp.RouterOptions{
 		PublicControllers: []soniahttp.Controller{controller},
 	})

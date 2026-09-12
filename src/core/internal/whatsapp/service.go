@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -31,37 +33,44 @@ const subscribeMode = "subscribe"
 // Meta names the algorithm in front of the hex digest, so a header without it is not a signature this code knows how to check.
 const signaturePrefix = "sha256="
 
-// inboxFinder is declared by the consumer and not by the repository, so the handshake can be tested without a database.
-type inboxFinder interface {
+// Store is the slice of the repository the channel needs, declared here so a test needs no database. Exported because
+// internal/app/deps.go must bind it to a transaction from outside the package, the same way turn.Store is (regla 5).
+type Store interface {
 	InboxByVerifyToken(ctx context.Context, token string) (Inbox, error)
-}
-
-// channelStore is the slice of the repository the channel needs, declared here so a test needs no database.
-type channelStore interface {
-	inboxFinder
 	InboxByPhoneNumberID(ctx context.Context, phoneNumberID string) (Inbox, error)
 	SaveWebhookEvent(ctx context.Context, event WebhookEvent) error
 	MarkEventProcessed(ctx context.Context, eventID uuid.UUID, at time.Time) error
 	ContactByPhone(ctx context.Context, accountID uuid.UUID, phone string) (Contact, error)
 }
 
-// aggregate is what conversations/ exposes to the channel: whatsapp never writes those two tables itself (regla 1).
-type aggregate interface {
+// Aggregate is what conversations/ exposes to the channel: whatsapp never writes those two tables itself (regla 1).
+type Aggregate interface {
 	EnsureOpen(ctx context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, at time.Time) (conversations.Conversation, error)
 	RecordInbound(ctx context.Context, c conversations.Conversation, wamid, text string, contentType enums.MessageContentType, at time.Time) (conversations.Message, error)
 }
 
-type Service struct {
-	repo          channelStore
-	conversations aggregate
-	log           *slog.Logger
+// Contacts is what contacts/ exposes to the channel: an unknown number gets a row through here and never through SQL of our
+// own, the same pattern contacts/ itself uses to reach labels/ (struct.md regla 1).
+type Contacts interface {
+	Create(ctx context.Context, c contacts.Contact) error
 }
 
-func NewService(repo channelStore, agg aggregate, log *slog.Logger) *Service {
+// TxFunc runs fn in one transaction with the three collaborators bound to it (regla 5): the event, the contact it may create
+// and the conversation it opens commit together or not at all.
+type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Contacts) error) error
+
+type Service struct {
+	// Pool-bound: Verify and the inbox lookup that decides where a payload writes need no transaction of their own.
+	repo Store
+	tx   TxFunc
+	log  *slog.Logger
+}
+
+func NewService(repo Store, tx TxFunc, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{repo: repo, conversations: agg, log: log}
+	return &Service{repo: repo, tx: tx, log: log}
 }
 
 // Inbound is what the turn needs to start, and what the controller returns to after the 200 has gone out.
@@ -117,58 +126,108 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 	if !signed {
 		event.Status = enums.WebhookEventStatusDiscarded
 	}
-	if err := s.repo.SaveWebhookEvent(ctx, event); err != nil {
-		return nil, err
-	}
-
-	if !signed {
-		s.log.Warn("webhook discarded, the signature does not match", slog.String("inbox_id", inbox.ID.String()))
-		return nil, nil
-	}
 
 	var started []Inbound
-	for _, message := range value.Messages {
-		inbound, err := s.recordMessage(ctx, inbox, message, at)
-		if errors.Is(err, ErrContactNotFound) {
-			// Creating a contact from a message is Fase 4; until then an unknown number is logged and dropped, never invented.
-			s.log.Warn("message from an unknown contact", slog.String("wamid", message.ID))
-			continue
+	// One transaction for the whole change: the event, any contact it creates and every message it stores are one unit (regla 5).
+	// whatsapp/ is the one that conducts here, the same way turn/ conducts its own (07-secuencia).
+	err = s.tx(ctx, func(store Store, agg Aggregate, registrar Contacts) error {
+		if err := store.SaveWebhookEvent(ctx, event); err != nil {
+			return err
 		}
-		if errors.Is(err, conversations.ErrDuplicateWAMID) {
-			// Meta redelivers what it did not hear a 200 for, and skipping is right: the turn already ran the first time (07-secuencia).
-			s.log.Info("message already stored, redelivery ignored", slog.String("wamid", message.ID))
-			continue
+		if !signed {
+			s.log.Warn("webhook discarded, the signature does not match", slog.String("inbox_id", inbox.ID.String()))
+			return nil
 		}
-		if err != nil {
-			return nil, err
-		}
-		started = append(started, inbound)
-	}
 
-	if err := s.repo.MarkEventProcessed(ctx, event.ID, at); err != nil {
+		for _, message := range value.Messages {
+			inbound, err := s.recordMessage(ctx, store, agg, registrar, inbox, value, message, at)
+			if errors.Is(err, conversations.ErrDuplicateWAMID) {
+				// Meta redelivers what it did not hear a 200 for, and skipping is right: the turn already ran the first time (07-secuencia).
+				s.log.Info("message already stored, redelivery ignored", slog.String("wamid", message.ID))
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			started = append(started, inbound)
+		}
+
+		return store.MarkEventProcessed(ctx, event.ID, at)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return started, nil
 }
 
-func (s *Service) recordMessage(ctx context.Context, inbox Inbox, message MetaMessage, at time.Time) (Inbound, error) {
-	contact, err := s.repo.ContactByPhone(ctx, inbox.AccountID, message.From)
+func (s *Service) recordMessage(
+	ctx context.Context, store Store, agg Aggregate, registrar Contacts, inbox Inbox, value Value, message MetaMessage, at time.Time,
+) (Inbound, error) {
+	contact, err := s.contactFor(ctx, store, registrar, inbox, value, message)
 	if err != nil {
 		return Inbound{}, err
 	}
 
 	sentAt := message.SentAt(at)
-	conversation, err := s.conversations.EnsureOpen(ctx, contact.ID, inbox.ID, inbox.DefaultAIAgentID, sentAt)
+	conversation, err := agg.EnsureOpen(ctx, contact.ID, inbox.ID, inbox.DefaultAIAgentID, sentAt)
 	if err != nil {
 		return Inbound{}, err
 	}
 
-	stored, err := s.conversations.RecordInbound(ctx, conversation, message.ID, textOf(message), contentTypeOf(message), sentAt)
+	stored, err := agg.RecordInbound(ctx, conversation, message.ID, textOf(message), contentTypeOf(message), sentAt)
 	if err != nil {
 		return Inbound{}, err
 	}
 
 	return Inbound{ConversationID: conversation.ID, MessageID: stored.ID, AIAgentID: conversation.AIAgentID}, nil
+}
+
+// contactFor resolves the contact a message names, creating one the moment WhatsApp names a number nobody has seen: F15 needs
+// an origin for every contact, sold or not (ADR-0001), and there is no ABM screen upstream of a webhook to have created it first.
+func (s *Service) contactFor(ctx context.Context, store Store, registrar Contacts, inbox Inbox, value Value, message MetaMessage) (Contact, error) {
+	found, err := store.ContactByPhone(ctx, inbox.AccountID, message.From)
+	if err == nil {
+		return found, nil
+	}
+	if !errors.Is(err, ErrContactNotFound) {
+		return Contact{}, err
+	}
+
+	created := contacts.Contact{
+		ID:            id.New(),
+		AccountID:     inbox.AccountID,
+		PhoneWhatsapp: message.From,
+		// WhatsApp gives one display name and this package asks for no lastname: it stays blank until an operator splits it (F30).
+		Name:          contactNameOrPhone(profileNameFor(value, message.From), message.From),
+		Type:          enums.ContactTypeProspect,
+		SourceChannel: enums.SourceChannelDirect,
+	}
+	if err := registrar.Create(ctx, created); err != nil {
+		if errors.Is(err, contacts.ErrDuplicatePhone) {
+			// Two deliveries raced to create the same first-time number inside their own transactions; the loser reads what the winner committed.
+			return store.ContactByPhone(ctx, inbox.AccountID, message.From)
+		}
+		return Contact{}, fmt.Errorf("whatsapp: create the contact a message named: %w", err)
+	}
+	return Contact{ID: created.ID, AccountID: created.AccountID}, nil
+}
+
+// profileNameFor reads the display name Meta sends once per contact and matches it by wa_id: MetaMessage itself carries no name.
+func profileNameFor(value Value, waID string) string {
+	for _, c := range value.Contacts {
+		if c.WaID == waID {
+			return c.Profile.Name
+		}
+	}
+	return ""
+}
+
+// contactNameOrPhone falls back to the number because name is NOT NULL: a business-only WhatsApp profile often carries none at all.
+func contactNameOrPhone(name, phone string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return phone
 }
 
 // signedBy is computed over the raw bytes, never over a re-encoding of the parsed payload: Meta signed what it sent, byte for byte.

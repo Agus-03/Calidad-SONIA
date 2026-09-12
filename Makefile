@@ -12,7 +12,7 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 -include .env
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin pgadmin pgadmin-down
+.PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin pgadmin pgadmin-down dbhub dbhub-down
 
 help:
 	@echo "up         levanta la base, el nucleo y el cerebro"
@@ -30,6 +30,8 @@ help:
 	@echo "seed-admin crea la cuenta y su primer admin, con lo que dice SEED_ADMIN_* del .env"
 	@echo "pgadmin    abre la base en el navegador, en localhost:5050"
 	@echo "pgadmin-down      lo baja sin tocar los tres servicios"
+	@echo "dbhub      levanta el MCP de PostgreSQL de .mcp.json, de solo lectura, en localhost:8090"
+	@echo "dbhub-down        lo baja sin tocar los tres servicios"
 
 up:
 	$(COMPOSE) up -d --build
@@ -85,6 +87,14 @@ pgadmin:
 
 pgadmin-down:
 	$(COMPOSE_DEV) rm -sf pgadmin
+
+# Brings the database with it for the same reason as pgadmin: without it every MCP query fails on connect.
+dbhub:
+	$(COMPOSE_DEV) up -d db dbhub
+	@echo "MCP de PostgreSQL en http://localhost:8090/mcp - solo lectura, contra la base de desarrollo"
+
+dbhub-down:
+	$(COMPOSE_DEV) rm -sf dbhub
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)

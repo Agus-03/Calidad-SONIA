@@ -6,7 +6,7 @@
 | **Autoridad** | Detalla [`08-structure-rules.md`](design/08-structure-rules.md) (las 12 reglas) y el resumen de *Estructura del código* en [`CLAUDE.md`](../CLAUDE.md), que son la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-09 |
+| **Última revisión** | 2026-09-12 |
 
 ---
 
@@ -193,11 +193,13 @@ sonia/
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   └── whatsapp/               canal · F20, F29
-│   │   │       ├── webhook.go          entrada · valida la firma HMAC-SHA256
-│   │   │       ├── client.go           envío a Meta
-│   │   │       ├── service.go
-│   │   │       ├── repository.go
-│   │   │       └── model.go
+│   │   │       ├── controller.go       entrada del webhook · lee la firma y responde a Meta antes del turno
+│   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador
+│   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja
+│   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031)
+│   │   │       ├── model.go
+│   │   │       ├── payload.go          la forma que manda Meta, reducida a lo que se lee
+│   │   │       └── client.go           envío a Meta
 │   │   │
 │   │   ├── migrations/                 DUEÑO ÚNICO del esquema
 │   │   │   ├── README.md

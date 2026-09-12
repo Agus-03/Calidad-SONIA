@@ -2,7 +2,7 @@
 name: prompt-engineer
 description: Revisa y evalúa los prompts internos de SONIA (`src/brain/rules/*.yaml`). Usar antes de mergear un cambio en un archivo de `rules/`, o cuando el LLM alucine, no siga el formato de salida esperado, o el costo de tokens suba. Nunca invocar automáticamente: pedir confirmación al usuario primero. Sólo lectura: no edita archivos.
 tools: Read, Grep, Glob, Bash(git diff:*), Bash(git status:*), Bash(git show:*)
-model: sonnet
+model: opus
 skills:
   - claude-api # carga fija y aceptada: da acceso a la referencia de Anthropic sin depender de WebFetch/WebSearch
   - python-conventions

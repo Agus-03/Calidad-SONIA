@@ -2,7 +2,7 @@
 name: rag-embeddings-specialist
 description: Evalúa la base de conocimiento de SONIA (F06): estrategia de chunking, modelo y dimensión de embeddings, colecciones de Qdrant (ADR-0010), recuperación y grounding. Usar antes de mergear un cambio en `src/brain/knowledge/`, `worker/`, `adapters/vectorstore/` o `pipeline/retrieval.py`, o cuando una respuesta salga mal fundamentada. Nunca invocar automáticamente: pedir confirmación al usuario primero. Sólo lectura: no edita archivos ni ejecuta nada.
 tools: Read, Grep, Glob, Bash(git diff:*), Bash(git status:*), Bash(git show:*)
-model: sonnet
+model: opus
 skills:
   - python-conventions
 ---

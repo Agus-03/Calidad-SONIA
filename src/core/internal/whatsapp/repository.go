@@ -67,6 +67,35 @@ func (r *Repository) InboxByID(ctx context.Context, inboxID uuid.UUID) (Inbox, e
 	return r.scanInbox(r.exec.QueryRow(ctx, inboxSelect+" AND id = $1", inboxID))
 }
 
+const inboxConnect = `
+UPDATE inboxes
+SET    access_token_encrypted = $2, app_secret_encrypted = $3, updated_at = now()
+WHERE  phone_number_id = $1 AND deleted_at IS NULL
+RETURNING id`
+
+// Connect updates and never inserts: the rest of the row is plain SQL anyone can write, and only the two secrets need the cipher.
+// It overwrites on purpose, because running it again is how an expired or leaked token gets replaced (ADR-0031).
+func (r *Repository) Connect(ctx context.Context, phoneNumberID, accessToken, appSecret string) (uuid.UUID, error) {
+	token, err := r.cipher.Encrypt(accessToken)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("whatsapp: encrypt the access token: %w", err)
+	}
+	secret, err := r.cipher.Encrypt(appSecret)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("whatsapp: encrypt the app secret: %w", err)
+	}
+
+	var inboxID uuid.UUID
+	err = r.exec.QueryRow(ctx, inboxConnect, phoneNumberID, token, secret).Scan(&inboxID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrInboxNotFound
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("whatsapp: connect inbox: %w", err)
+	}
+	return inboxID, nil
+}
+
 const webhookEventInsert = `
 INSERT INTO webhook_events (id, inbox_id, event_type, wamid, payload_json, signature_valid, status, received_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`

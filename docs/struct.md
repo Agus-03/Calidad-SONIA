@@ -23,7 +23,7 @@ sonia/
 ├── .mcp.json                           MCP de Claude Code: Atlassian (OAuth por persona) · PostgreSQL vía `make dbhub`
 ├── CLAUDE.md
 ├── LICENSE
-├── Makefile                            up · migrate · seed · seed-admin · test · test-integration · smoke
+├── Makefile                            up · migrate · seed · seed-admin · connect-inbox · test · test-integration · smoke
 ├── README.md
 │
 ├── contracts/                          fuente única compartida por los dos servicios
@@ -115,6 +115,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
 │   │   │   │   ├── app.go              Run(ctx): config, pool, router, apagado ordenado
+│   │   │   │   ├── connect.go          --connect-inbox: cifra los secretos de Meta de una bandeja que ya existe (ADR-0033)
 │   │   │   │   ├── deps.go             el grafo de objetos · lo único que crece por contexto
 │   │   │   │   └── seed.go             --seed-admin: la cuenta y su primer admin · nunca al arrancar (regla 3)
 │   │   │   │

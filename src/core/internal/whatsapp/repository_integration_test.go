@@ -198,6 +198,70 @@ func TestASecretUnderAnotherKeyRefusesTheInbox(t *testing.T) {
 	}
 }
 
+// TestConnectWritesSecretsTheChannelReadsBack is the one write SQL cannot do: the two secrets go in through the cipher and come
+// back through the same reads the webhook and the turn use, and a second run replaces them (ADR-0031).
+func TestConnectWritesSecretsTheChannelReadsBack(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		seeded := insertInbox(ctx, t, exec, account, nil, nil)
+
+		connected, err := repo.Connect(ctx, seeded.phoneNumberID, "EAAG-primero", "secreto-de-la-app")
+		if err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		if connected != seeded.id {
+			t.Fatalf("Connect answered %v, want the row it was pointed at, %v", connected, seeded.id)
+		}
+
+		var rawToken, rawSecret []byte
+		if err := exec.QueryRow(ctx, `SELECT access_token_encrypted, app_secret_encrypted FROM inboxes WHERE id = $1`, seeded.id).
+			Scan(&rawToken, &rawSecret); err != nil {
+			t.Fatalf("read the raw columns: %v", err)
+		}
+		if bytes.Contains(rawToken, []byte("EAAG-primero")) || bytes.Contains(rawSecret, []byte("secreto-de-la-app")) {
+			t.Fatalf("Connect wrote a secret in the clear")
+		}
+
+		// The second run is a token that expired and was replaced, which is the reason Connect overwrites instead of refusing.
+		if _, err := repo.Connect(ctx, seeded.phoneNumberID, "EAAG-segundo", "secreto-de-la-app"); err != nil {
+			t.Fatalf("second Connect: %v", err)
+		}
+		got, err := repo.InboxByPhoneNumberID(ctx, seeded.phoneNumberID)
+		if err != nil {
+			t.Fatalf("InboxByPhoneNumberID: %v", err)
+		}
+		if got.AccessToken != "EAAG-segundo" || got.AppSecret != "secreto-de-la-app" {
+			t.Fatalf("read token=%q secret=%q, want the ones of the second run", got.AccessToken, got.AppSecret)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestConnectingANumberWithNoRowIsNotFound keeps Connect from being mistaken for a way to create an inbox: the row comes first.
+func TestConnectingANumberWithNoRowIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		_, err := NewRepository(exec, testCipher(t)).Connect(ctx, "it-"+id.New().String(), "EAAG", "secreto")
+		if !errors.Is(err, ErrInboxNotFound) {
+			t.Fatalf("Connect on a number with no row: got %v, want ErrInboxNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
 // TestADiscardedEventIsKeptAsTheSchemaDeclares writes the row a forgery leaves, so the CHECK of webhook_events and the
 // repository agree on it: signature_valid false, status discarded, and no processed_at (F20).
 func TestADiscardedEventIsKeptAsTheSchemaDeclares(t *testing.T) {

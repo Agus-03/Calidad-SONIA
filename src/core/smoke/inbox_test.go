@@ -80,6 +80,52 @@ func TestAnOperatorTakesThePoolByAnsweringThroughTheRealProcess(t *testing.T) {
 	if code, _ := refusal(t, body); code != "conversation_not_found" {
 		t.Fatalf("the refusal says %q, want conversation_not_found", code)
 	}
+
+	// The thread the operator reads before answering again: its own answer on top, sent, and signed with its name.
+	thread := "/api/v1/conversations/" + conversation + "/messages"
+	status, body = call(t, core, http.MethodGet, thread, first, "")
+	if status != http.StatusOK {
+		t.Fatalf("reading the thread: got %d, want 200 - %s", status, body)
+	}
+	if newest := newestOf(t, body); newest.SenderType != "operator" || newest.Status != "sent" || newest.SenderOperatorID != d.firstID.String() {
+		t.Fatalf("the newest message is %+v, want the operator's answer, sent and signed - %s", newest, body)
+	}
+	if status, body = call(t, core, http.MethodGet, thread, second, ""); status != http.StatusNotFound {
+		t.Fatalf("the other operator reading the thread: got %d, want 404 - %s", status, body)
+	}
+}
+
+type drawnMessage struct {
+	SenderType       string
+	Status           string
+	SenderOperatorID string
+}
+
+// newestOf reads the first message of a thread page, which is the newest one.
+func newestOf(t *testing.T, body string) drawnMessage {
+	t.Helper()
+
+	var page struct {
+		Items []struct {
+			SenderType     string  `json:"sender_type"`
+			Status         *string `json:"status"`
+			SenderOperator *struct {
+				ID string `json:"id"`
+			} `json:"sender_operator"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &page); err != nil || len(page.Items) == 0 {
+		t.Fatalf("the thread is not a page with messages: %v - %s", err, body)
+	}
+	newest := page.Items[0]
+	out := drawnMessage{SenderType: newest.SenderType}
+	if newest.Status != nil {
+		out.Status = *newest.Status
+	}
+	if newest.SenderOperator != nil {
+		out.SenderOperatorID = newest.SenderOperator.ID
+	}
+	return out
 }
 
 // buildDesk writes by hand what nothing in the system creates over HTTP yet: operators are seeded like the contact walk seeds them,

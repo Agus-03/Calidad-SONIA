@@ -101,6 +101,33 @@ func (r *Repository) Connect(ctx context.Context, phoneNumberID, accessToken, ap
 	return inboxID, nil
 }
 
+// Every inbox of the account and not only the live ones: a default naming a removed agent is wrong whether or not the inbox is.
+const inboxClearDefaultAgent = `
+UPDATE inboxes
+SET    default_ai_agent_id = NULL, updated_at = now()
+WHERE  account_id = $1 AND default_ai_agent_id = $2
+RETURNING id`
+
+// ClearDefaultAgent runs inside the transaction that removes the agent, so no conversation is born with it after the removal
+// commits (ADR-0038). It returns the inboxes it changed, because the audit of the removal is the only place that records them.
+func (r *Repository) ClearDefaultAgent(ctx context.Context, accountID, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, inboxClearDefaultAgent, accountID, aiAgentID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsapp: clear the default agent: %w", err)
+	}
+	defer rows.Close()
+
+	cleared := []uuid.UUID{}
+	for rows.Next() {
+		var inboxID uuid.UUID
+		if err := rows.Scan(&inboxID); err != nil {
+			return nil, fmt.Errorf("whatsapp: scan a cleared inbox: %w", err)
+		}
+		cleared = append(cleared, inboxID)
+	}
+	return cleared, rows.Err()
+}
+
 const webhookEventInsert = `
 INSERT INTO webhook_events (id, inbox_id, event_type, wamid, payload_json, signature_valid, status, received_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`

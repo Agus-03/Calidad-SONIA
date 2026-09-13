@@ -3,8 +3,10 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
@@ -43,6 +45,67 @@ func TestOneLiveInboxPerNumber(t *testing.T) {
 		var pgErr *pgconn.PgError
 		if err := insert(); !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 			t.Fatalf("a second live inbox for the number: got %v, want a unique violation", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestRemovingAnAgentClearsTheInboxesThatDefaultedToIt is the half of the removal whatsapp/ owns: after it, no new conversation
+// is born with the removed agent, and the inboxes that pointed elsewhere keep their own default (ADR-0038).
+func TestRemovingAnAgentClearsTheInboxesThatDefaultedToIt(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		agent := func() uuid.UUID {
+			agentID := id.New()
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO ai_agents (id, account_id, name, default_mode, llm_provider, llm_model)
+				VALUES ($1, $2, 'Agente de integracion', 'autonomous', 'cohere', 'command-a-03-2025')`,
+				agentID, account); err != nil {
+				t.Fatalf("seed an agent: %v", err)
+			}
+			return agentID
+		}
+		inbox := func(agentID uuid.UUID) uuid.UUID {
+			inboxID := id.New()
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO inboxes (id, account_id, default_ai_agent_id, phone_number_id, waba_id, display_name, verify_token, status)
+				VALUES ($1, $2, $3, $4, 'it-waba', 'Numero de integracion', $5, 'active')`,
+				inboxID, account, agentID, "it-"+id.New().String(), "it-"+id.New().String()); err != nil {
+				t.Fatalf("seed an inbox: %v", err)
+			}
+			return inboxID
+		}
+
+		removed, kept := agent(), agent()
+		first, second, other := inbox(removed), inbox(removed), inbox(kept)
+
+		cleared, err := NewRepository(exec, testCipher(t)).ClearDefaultAgent(ctx, account, removed)
+		if err != nil {
+			t.Fatalf("ClearDefaultAgent: %v", err)
+		}
+		if len(cleared) != 2 || !slices.Contains(cleared, first) || !slices.Contains(cleared, second) {
+			t.Fatalf("cleared = %v, want exactly %v and %v", cleared, first, second)
+		}
+
+		var defaults []*uuid.UUID
+		for _, inboxID := range []uuid.UUID{first, second, other} {
+			var agentID *uuid.UUID
+			if err := exec.QueryRow(ctx, `SELECT default_ai_agent_id FROM inboxes WHERE id = $1`, inboxID).Scan(&agentID); err != nil {
+				t.Fatalf("read the default of %v: %v", inboxID, err)
+			}
+			defaults = append(defaults, agentID)
+		}
+		if defaults[0] != nil || defaults[1] != nil {
+			t.Fatalf("the inboxes of the removed agent still default to %v and %v, want NULL", defaults[0], defaults[1])
+		}
+		if defaults[2] == nil || *defaults[2] != kept {
+			t.Fatalf("the inbox of another agent defaults to %v, want it untouched on %v", defaults[2], kept)
 		}
 		return rollback
 	})

@@ -3,10 +3,13 @@ package smoke
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
@@ -179,4 +182,148 @@ func holderOf(t *testing.T, body, conversationID string) string {
 		}
 	}
 	return ""
+}
+
+// How long a message is watched for an answer that must not come. A healthy doubled turn lands well under a second (turnDeadline),
+// so three is room enough for the bot to have answered if it was going to; the positive control below is what makes it a proof.
+const silenceWindow = 3 * time.Second
+
+// TestTheBotTurnedOffStaysSilentThroughTheRealProcess is the proof that the inbox of Fase 5 is manual: a supervisor turns the agent
+// off over the API, the customer writes, and nothing answers. Then the agent is turned back on and the next message is answered,
+// which is what tells "the mode kept it quiet" apart from "the stack was down".
+//
+// It works on the demo contact's open conversation because postWebhook writes as that contact, and it restores the mode it found.
+func TestTheBotTurnedOffStaysSilentThroughTheRealProcess(t *testing.T) {
+	core, brain, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+	waitForHealth(t, brain)
+
+	secret := signingSecret(ctx, t, pool)
+	conversation := demoConversation(ctx, t, core, pool, secret)
+	supervisor, operator := seedSwitchers(ctx, t, core, pool)
+	path := "/api/v1/conversations/" + conversation.String() + "/mode"
+
+	// The decision of the team, through the real router: the vendor cannot touch the toggle (it departs from Anexo B).
+	if status, body := call(t, core, http.MethodPatch, path, operator, `{"mode":"off"}`); status != http.StatusForbidden {
+		t.Fatalf("an operator turning the bot off: got %d, want 403 - %s", status, body)
+	}
+
+	if status, body := call(t, core, http.MethodPatch, path, supervisor, `{"mode":"off"}`); status != http.StatusOK {
+		t.Fatalf("a supervisor turning the bot off: got %d, want 200 - %s", status, body)
+	}
+	silenced := "wamid.smoke.off." + uuid.New().String()
+	if status := postWebhook(t, core, silenced, secret); status != http.StatusOK {
+		t.Fatalf("POST /webhooks/whatsapp: got %d, want 200", status)
+	}
+	if answeredWithin(ctx, t, pool, silenced, silenceWindow) {
+		t.Fatalf("the bot answered a conversation a supervisor had turned off")
+	}
+
+	if status, body := call(t, core, http.MethodPatch, path, supervisor, `{"mode":"autonomous"}`); status != http.StatusOK {
+		t.Fatalf("a supervisor turning the bot back on: got %d, want 200 - %s", status, body)
+	}
+	heard := "wamid.smoke.on." + uuid.New().String()
+	if status := postWebhook(t, core, heard, secret); status != http.StatusOK {
+		t.Fatalf("POST /webhooks/whatsapp: got %d, want 200", status)
+	}
+	if got := awaitTurn(ctx, t, pool, heard); got.messageStatus != "sent" {
+		t.Fatalf("with the bot back on, the answer came out %q, want sent", got.messageStatus)
+	}
+
+	// By now the silenced message's turn is long over: if it had been answered, it would show here.
+	if answeredWithin(ctx, t, pool, silenced, 0) {
+		t.Fatalf("the message sent while the bot was off got an answer after all")
+	}
+}
+
+// demoConversation returns the open conversation of the demo contact, letting a first webhook open it when a fresh database has
+// none yet, and restores its mode when the case ends so the other cases start from the conversation they expect.
+func demoConversation(ctx context.Context, t *testing.T, core string, pool db.Pool, secret string) uuid.UUID {
+	t.Helper()
+
+	const open = `
+		SELECT c.id, c.mode
+		FROM   conversations c
+		JOIN   contacts ct ON ct.id = c.contact_id
+		WHERE  ct.phone_whatsapp = $1 AND ct.deleted_at IS NULL AND c.status <> 'resolved' AND c.deleted_at IS NULL`
+
+	var conversation uuid.UUID
+	var mode string
+	err := pool.QueryRow(ctx, open, seededContactPhone).Scan(&conversation, &mode)
+	if errors.Is(err, pgx.ErrNoRows) {
+		opening := "wamid.smoke.opening." + uuid.New().String()
+		if status := postWebhook(t, core, opening, secret); status != http.StatusOK {
+			t.Fatalf("opening the demo conversation: got %d, want 200", status)
+		}
+		awaitTurn(ctx, t, pool, opening)
+		err = pool.QueryRow(ctx, open, seededContactPhone).Scan(&conversation, &mode)
+	}
+	if err != nil {
+		t.Fatalf("reading the demo conversation: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `UPDATE conversations SET mode = $2 WHERE id = $1`, conversation, mode); err != nil {
+			t.Errorf("restoring the mode of the demo conversation: %v", err)
+		}
+	})
+	return conversation
+}
+
+// seedSwitchers logs in one role that may touch the toggle and one that may not.
+func seedSwitchers(ctx context.Context, t *testing.T, core string, pool db.Pool) (supervisor, operator string) {
+	t.Helper()
+
+	var account uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM accounts LIMIT 1`).Scan(&account); err != nil {
+		t.Skip("the demo rows are missing: load src/core/seeds/0001_demo.sql first")
+	}
+	hash, err := operators.Hash(walkerPassword)
+	if err != nil {
+		t.Fatalf("hashing the password: %v", err)
+	}
+
+	seeded := []uuid.UUID{}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM operators WHERE id = ANY($1)`, seeded); err != nil {
+			t.Errorf("cleaning up the operators: %v", err)
+		}
+	})
+
+	tokens := map[string]string{}
+	for _, role := range []string{"supervisor", "operator"} {
+		operatorID := id.New()
+		email := "switch-" + operatorID.String() + "@coop.test"
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+			VALUES ($1, $2, 'Interruptor', $3, $4, $5, $3, true)`,
+			operatorID, account, role, email, hash); err != nil {
+			t.Fatalf("seeding the %s: %v", role, err)
+		}
+		seeded = append(seeded, operatorID)
+		tokens[role] = login(t, core, email, walkerPassword)
+	}
+	return tokens["supervisor"], tokens["operator"]
+}
+
+// answeredWithin watches one inbound message for the turn that would answer it: a batch linked to it is the first trace a turn
+// leaves, and a conversation that is off never opens one (turn/orchestrator.go).
+func answeredWithin(ctx context.Context, t *testing.T, pool db.Pool, wamid string, window time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(window)
+	for {
+		var batched bool
+		if err := pool.QueryRow(ctx, `SELECT message_batch_id IS NOT NULL FROM messages WHERE wamid = $1`, wamid).Scan(&batched); err != nil {
+			t.Fatalf("the inbound message %s was never stored: %v", wamid, err)
+		}
+		if batched {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }

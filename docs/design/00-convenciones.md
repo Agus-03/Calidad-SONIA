@@ -116,6 +116,12 @@ El español gana en la documentación porque el trabajo se escribe, se presenta 
 | Índice | `idx_<tabla>_<columnas>` | `idx_messages_conversation_id_created_at` |
 | Restricción única | `uq_<tabla>_<columnas>` | `uq_contacts_phone_whatsapp` |
 
+**Aplicada a todo `0001` el 2026-09-13**, con dos casos que la regla no prevé:
+- **Un índice sobre una expresión** no tiene columnas que nombrar. Se nombra por lo que garantiza: `uq_accounts_single_row`, que indexa la constante `true`.
+- **Un nombre que pasa los 63 caracteres** que PostgreSQL conserva se abrevia en las columnas, porque de otro modo se trunca sin avisar: `uq_signal_evaluations_batch_signal_classifier_version`.
+
+Un índice o restricción única escrito en línea (`UNIQUE` en la columna) también lleva su nombre explícito: el que PostgreSQL pone solo (`<tabla>_<columna>_key`) no sigue la regla.
+
 **Justificación.** Tablas en plural porque una tabla contiene un conjunto de filas; la fila individual es la entidad singular. Esa distinción hace que el modelo se lea solo: `conversations` tiene muchas `Conversation`.
 
 PK siempre `id` y FK siempre `<entidad>_id` porque vuelve las uniones predecibles: `messages.conversation_id = conversations.id` no requiere consultar el esquema. El Anexo C ya sigue mayormente este patrón; acá se lo declara como regla.
@@ -366,7 +372,7 @@ Antes de dar por cerrado cualquier diagrama, esquema o migración:
 
 Tres decisiones de este documento tienen efectos fuera de él y conviene confirmarlas explícitamente:
 
-1. **El renombre de los roles del Anexo B** (`User` → `operator`, `Super Agent` → `supervisor`). Cambia terminología del anteproyecto y debe reflejarse en el informe final. Las capacidades no se modifican. **Enmendado el 2026-09-13 por [ADR-0035](02-decisiones/0035-reglas-de-la-bandeja-manual.md):** hay una excepción, el cambio de modo del agente IA, que pasa del `operator` a `supervisor` y `admin`. También va al informe, como desviación de F27.
+1. **El renombre de los roles del Anexo B** (`User` → `operator`, `Super Agent` → `supervisor`). Cambia terminología del anteproyecto y debe reflejarse en el informe final. Las capacidades no se modifican. **Enmendado el 2026-09-13 por [ADR-0035](02-decisiones/0035-reglas-de-la-bandeja-manual.md):** hay una excepción, el cambio de modo del agente IA, que se le quita al `operator` y queda sólo en `supervisor` y `admin`. También va al informe, como desviación de F27.
 2. **La separación entre eliminar, ocultar y anonimizar**, y la lectura de F29 como restricción del canal y no de la base. Es la interpretación que hace compatibles a F29 y al derecho de supresión de la Ley 25.326, y merece un párrafo en el informe.
 3. **El nombre `MessageContentType`** en lugar de `MessageType`, para que la enumeración coincida con la columna que tipa.
 

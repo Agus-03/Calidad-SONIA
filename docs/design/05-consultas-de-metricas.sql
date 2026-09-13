@@ -567,12 +567,19 @@ ORDER  BY conversaciones DESC;
 --   la bandeja: el argumento de rendimiento de H-12 no aplica acá.
 -- SUPUESTO S2: se reporta MEDIANA además del promedio. Los tiempos de respuesta
 --   tienen cola larga y el promedio se desplaza con unos pocos casos extremos.
+-- SUPUESTO S3: la primera respuesta es la primera que LE LLEGÓ al cliente, no el
+--   primer intento. Un saliente `failed`, o uno que quedó sin estado porque el
+--   envío nunca se confirmó, no cuenta: el cliente siguió esperando. Es la misma
+--   regla que `first_response_at` (ADR-0035, regla 7). Tomar el pool es otra
+--   cosa y cuenta el primer envío llegue o no, pero eso no es un tiempo de
+--   respuesta.
 
 WITH primer_saliente AS (
     SELECT DISTINCT ON (m.conversation_id)
            m.conversation_id, m.sender_type, m.created_at
     FROM   messages m
     WHERE  m.direction = 'outbound'
+      AND  m.status IN ('sent', 'delivered', 'read')                        -- S3
     ORDER  BY m.conversation_id, m.created_at
 )
 SELECT p.sender_type,

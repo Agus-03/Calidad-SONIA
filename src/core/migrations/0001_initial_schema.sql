@@ -10,7 +10,8 @@ CREATE TABLE accounts (
 );
 
 -- The single-row invariant in DDL and not only in prose: a second row would read as the multi-tenancy that 7.3 excludes.
-CREATE UNIQUE INDEX accounts_single_row ON accounts ((true));
+-- Named for what it holds and not for a column (C03), because it indexes the constant true and has none.
+CREATE UNIQUE INDEX uq_accounts_single_row ON accounts ((true));
 
 CREATE TABLE operators (
     id            uuid        PRIMARY KEY,
@@ -27,7 +28,7 @@ CREATE TABLE operators (
 );
 
 -- Unique among the not-deleted (C09): taking an operator down frees their address again.
-CREATE UNIQUE INDEX operators_email_unique ON operators (email) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_operators_email ON operators (email) WHERE deleted_at IS NULL;
 
 -- Bloque 2 - the AI agent is AIAgent and never Agent (C01).
 CREATE TABLE ai_agents (
@@ -66,7 +67,7 @@ CREATE TABLE inboxes (
 );
 
 -- One inbox per number: Meta names the number and nothing else in each webhook, so two live rows would split its messages (ADR-0012).
-CREATE UNIQUE INDEX inboxes_phone_number_id_unique ON inboxes (phone_number_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_inboxes_phone_number_id ON inboxes (phone_number_id) WHERE deleted_at IS NULL;
 
 -- Bloque 1 - the four encrypted columns are bytea because ADR-0006 keeps the ciphertext and not the reading.
 CREATE TABLE contacts (
@@ -93,7 +94,7 @@ CREATE TABLE contacts (
     deleted_at         timestamptz
 );
 
-CREATE UNIQUE INDEX contacts_phone_whatsapp_unique ON contacts (phone_whatsapp) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_contacts_phone_whatsapp ON contacts (phone_whatsapp) WHERE deleted_at IS NULL;
 
 CREATE TABLE conversations (
     id                      uuid        PRIMARY KEY,
@@ -121,10 +122,10 @@ CREATE TABLE conversations (
 );
 
 -- ADR-0002: an inbound message on a resolved conversation opens a new one, so at most one is unresolved at a time.
-CREATE UNIQUE INDEX conversations_one_open_per_contact ON conversations (contact_id) WHERE status <> 'resolved' AND deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_conversations_contact_id ON conversations (contact_id) WHERE status <> 'resolved' AND deleted_at IS NULL;
 
--- ADR-0036: the inbox pages by (last_activity_at, id) on every load; a declared exception to waiting for a slow query (migrations/README.md).
-CREATE INDEX conversations_inbox_order ON conversations (last_activity_at, id) WHERE deleted_at IS NULL;
+-- ADR-0036, regla 10: the inbox pages by (last_activity_at, id) on every load; a declared exception to waiting for a slow query (migrations/README.md).
+CREATE INDEX idx_conversations_last_activity_at_id ON conversations (last_activity_at, id) WHERE deleted_at IS NULL;
 
 -- Bloque 3 - the turn lives here (ADR-0022); immutable, so opened_at plays the part of created_at.
 CREATE TABLE message_batches (
@@ -141,14 +142,14 @@ CREATE TABLE message_batches (
 );
 
 -- ADR-0022 makes this the source of truth of the turn number, and three tables copy it from here.
-CREATE UNIQUE INDEX message_batches_turn_unique ON message_batches (conversation_id, turn_number);
+CREATE UNIQUE INDEX uq_message_batches_conversation_id_turn_number ON message_batches (conversation_id, turn_number);
 
 -- No deleted_at of any kind: messages are the record F34 to F36 and OE7 are computed on (C09).
 CREATE TABLE messages (
     id                 uuid        PRIMARY KEY,
     conversation_id    uuid        NOT NULL REFERENCES conversations (id),
     message_batch_id   uuid        REFERENCES message_batches (id),
-    wamid              varchar     UNIQUE,
+    wamid              varchar     CONSTRAINT uq_messages_wamid UNIQUE,
     context_wamid      varchar,
     direction          varchar     NOT NULL CHECK (direction IN ('inbound', 'outbound')),
     sender_type        varchar     NOT NULL CHECK (sender_type IN ('contact', 'ai_agent', 'operator', 'system')),
@@ -177,8 +178,8 @@ CREATE TABLE messages (
     )
 );
 
--- ADR-0036: the thread and the last message of each inbox row read one conversation newest first; the same declared exception.
-CREATE INDEX messages_thread_order ON messages (conversation_id, created_at, id);
+-- ADR-0036, regla 10: the thread and the last message of each inbox row read one conversation newest first; the same declared exception.
+CREATE INDEX idx_messages_conversation_id_created_at_id ON messages (conversation_id, created_at, id);
 
 -- Bloque 2 - the six components of F01; the admin edits them and they are not in rules/ (regla 9).
 CREATE TABLE prompt_components (
@@ -194,7 +195,7 @@ CREATE TABLE prompt_components (
 );
 
 -- F01 declares one component of each type per agent; active is ablation and deleted_at is a definitive removal.
-CREATE UNIQUE INDEX prompt_components_one_active_type ON prompt_components (ai_agent_id, type) WHERE active AND deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_prompt_components_ai_agent_id_type ON prompt_components (ai_agent_id, type) WHERE active AND deleted_at IS NULL;
 
 -- H-20: active is versioned too, or OE1 compares a set against itself and can only ever return 100 percent.
 CREATE TABLE prompt_component_versions (
@@ -208,7 +209,7 @@ CREATE TABLE prompt_component_versions (
     created_at             timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX prompt_component_versions_number_unique ON prompt_component_versions (prompt_component_id, version_number);
+CREATE UNIQUE INDEX uq_prompt_component_versions_prompt_component_id_version_number ON prompt_component_versions (prompt_component_id, version_number);
 
 -- F12 - one row per signal, and the threshold here is mutable: what ruled an evaluation is frozen in signal_evaluations.
 CREATE TABLE transfer_policies (
@@ -249,7 +250,7 @@ CREATE TABLE pipeline_steps (
 -- H-02 - the current state, one row per conversation; the history is in conversation_context_versions.
 CREATE TABLE conversation_contexts (
     id                  uuid        PRIMARY KEY,
-    conversation_id     uuid        NOT NULL UNIQUE REFERENCES conversations (id),
+    conversation_id     uuid        NOT NULL CONSTRAINT uq_conversation_contexts_conversation_id UNIQUE REFERENCES conversations (id),
     turn_number         integer     NOT NULL,
     summary             text,
     primary_intent      varchar,
@@ -387,7 +388,7 @@ CREATE TABLE labels (
 );
 
 -- Folds case because "Ventas" and "ventas" are one label to whoever tags, and is scoped by account because the catalogue belongs to one (F19).
-CREATE UNIQUE INDEX labels_name_unique ON labels (account_id, lower(name)) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_labels_account_id_name ON labels (account_id, lower(name)) WHERE deleted_at IS NULL;
 
 -- Physical delete, a declared exception to C09: unlabelling is routine and no metric counts historical labellings.
 CREATE TABLE contact_labels (
@@ -396,11 +397,11 @@ CREATE TABLE contact_labels (
     label_id                uuid        NOT NULL REFERENCES labels (id),
     assigned_by_operator_id uuid        REFERENCES operators (id),
     created_at              timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT contact_labels_unique UNIQUE (contact_id, label_id)
+    CONSTRAINT uq_contact_labels_contact_id_label_id UNIQUE (contact_id, label_id)
 );
 
 -- The unique index above answers "which labels has this contact"; F33 asks the inverse, which ADR-0003 named as a reason to keep this table at all.
-CREATE INDEX contact_labels_label_id ON contact_labels (label_id);
+CREATE INDEX idx_contact_labels_label_id ON contact_labels (label_id);
 
 CREATE TABLE conversation_labels (
     id                      uuid        PRIMARY KEY,
@@ -408,7 +409,7 @@ CREATE TABLE conversation_labels (
     label_id                uuid        NOT NULL REFERENCES labels (id),
     assigned_by_operator_id uuid        REFERENCES operators (id),
     created_at              timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT conversation_labels_unique UNIQUE (conversation_id, label_id)
+    CONSTRAINT uq_conversation_labels_conversation_id_label_id UNIQUE (conversation_id, label_id)
 );
 
 -- ADR-0002 - the contact is mandatory and the conversation is not: a reminder outlives the conversation that raised it.
@@ -497,7 +498,8 @@ CREATE TABLE signal_evaluations (
 );
 
 -- Reclassifying with a new version writes new rows instead of duplicating, which is what allows the threshold sweep.
-CREATE UNIQUE INDEX signal_evaluations_one_per_version ON signal_evaluations (message_batch_id, signal_type, classifier_version);
+-- The column names are shortened because the full uq_<table>_<columns> of C03 passes the 63 characters PostgreSQL keeps of a name.
+CREATE UNIQUE INDEX uq_signal_evaluations_batch_signal_classifier_version ON signal_evaluations (message_batch_id, signal_type, classifier_version);
 
 -- The event points at the evidence and does not copy it: F36 reaches the signal type by join.
 CREATE TABLE transfer_events (

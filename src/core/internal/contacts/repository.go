@@ -67,7 +67,7 @@ func (r *Repository) narrow(scope Scope, filter Filter) (where string, args []an
 				len(args))
 		} else {
 			// Counting how many of the asked-for labels the contact carries, against how many were asked. count(*) needs no DISTINCT
-			// because contact_labels_unique forbids the same label twice on one contact, and the ids were deduplicated upstream.
+			// because uq_contact_labels_contact_id_label_id forbids the same label twice on one contact, and the ids were deduplicated upstream.
 			args = append(args, len(filter.LabelIDs))
 			labelled = fmt.Sprintf(
 				`(SELECT count(*) FROM contact_labels tag WHERE tag.contact_id = contacts.id AND tag.label_id = ANY($%d)) = $%d`,

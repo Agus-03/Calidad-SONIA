@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño y de código: reglas 1, 6, 7, 8 y 9 |
+| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño y de código: reglas 1, 6, 7, 8 y 9 · **regla 10 enmendada por [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md)** el mismo día: el `operator` prende y apaga el bot de sus conversaciones, así que la desviación de F27 de §3.1 y las *"dos voces"* de §4 dejan de valer. Con toda conversación asignada al llegar, el pool de las reglas 1, 5, 7 y 8 queda sólo para lo que nadie pudo recibir |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 5 (bandeja manual mínima) |
 | **Resuelve** | Qué conversaciones alcanza cada rol en la bandeja, cuáles puede responder, quién cambia el modo del agente IA y cuándo se decide la reasignación propia del `operator` |

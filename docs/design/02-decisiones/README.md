@@ -29,7 +29,7 @@ Dos reglas que conviene sostener:
 | [0001](0001-origen-del-contacto.md) | Origen del contacto en `contacts`, no en `sales` | H-13 | Aceptada |
 | [0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md) | Ciclo de vida de la conversación y vínculo de los recordatorios | H-14 | Aceptada |
 | [0003](0003-etiquetas-catalogo-y-relaciones.md) | Etiquetas: catálogo único con relaciones a contactos y conversaciones | H-07, H-16 | Aceptada |
-| [0004](0004-asignacion-de-conversaciones.md) | Asignación de conversaciones: pool con autoasignación | H-15 | Aceptada |
+| [0004](0004-asignacion-de-conversaciones.md) | Asignación de conversaciones: pool con autoasignación | H-15 | Aceptada · §2 enmendada por [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) |
 | [0005](0005-base-de-conocimiento.md) | Base de conocimiento: una por agente, con múltiples documentos | H-06 | Aceptada |
 | [0006](0006-anonimizacion-de-pii.md) | Anonimización de PII antes del envío al LLM externo | — | Aceptada |
 | [0007](0007-alcance-del-registro-de-auditoria.md) | Alcance del registro de auditoría | — | Aceptada |
@@ -60,8 +60,9 @@ Dos reglas que conviene sostener:
 | [0032](0032-acceso-a-contactos-y-datos-sensibles.md) | Acceso a contactos: la agenda la ven los tres roles, los datos sensibles no | H-32 a H-37, H-39 · reemplaza a ADR-0011 | Aceptada · §4 enmendada por [ADR-0035](0035-reglas-de-la-bandeja-manual.md) |
 | [0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md) | Los secretos de las bandejas admiten NULL, y `0001` se congela con la primera WABA real | Fase 4 · enmienda ADR-0031 §4 | Aceptada |
 | [0034](0034-origen-y-tipo-de-un-contacto-creado-por-el-webhook.md) | Origen y tipo de un contacto que crea el webhook, sin leer `referral` | Fase 4 | Aceptada |
-| [0035](0035-reglas-de-la-bandeja-manual.md) | Reglas de la bandeja manual: quién ve, quién responde y quién apaga el bot | Fase 5 · enmienda ADR-0032 §4 | Aceptada |
+| [0035](0035-reglas-de-la-bandeja-manual.md) | Reglas de la bandeja manual: quién ve, quién responde y quién apaga el bot | Fase 5 · enmienda ADR-0032 §4 | Aceptada · regla 10 enmendada por [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) |
 | [0036](0036-paginacion-por-cursor-en-la-bandeja.md) | La bandeja y el hilo paginan por cursor, no por número de página | Fase 5 | Aceptada |
+| [0037](0037-toda-conversacion-nace-con-vendedor.md) | Toda conversación nace con un vendedor, y el vendedor maneja el bot de las suyas | Fase 5 · enmienda ADR-0004 §2 y ADR-0035 regla 10 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 
@@ -77,7 +78,9 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 
 **ADR-0033 es el primero que enmienda a otro ADR en lugar de reemplazarlo.** La decisión de ADR-0031 —AES-256-GCM en la aplicación, con la llave en el entorno— se sostiene entera. Lo que dejó de ser cierto es una consecuencia de su §4, que describía el esquema de ese momento. Reemplazar el ADR completo por una línea obligaría a leer dos documentos para entender una sola decisión que no cambió. Por eso se hizo como ADR-0015 con `03-capa-prompts.md`: el texto original queda como estaba y su estado apunta a la enmienda.
 
-**ADR-0035 es la primera decisión que contradice un requisito del Anexo A**, no sólo un anexo o una sección. F27 dice *"El operador cambia el modo del agente"*, y el equipo reservó el modo a `supervisor` y `admin`. Se registró como desviación, con sus argumentos y su costo principal (un vendedor que toma una conversación no puede callar al bot). Hay que declararla en el informe final. La tabla de C01 en [`00-convenciones.md`](../00-convenciones.md), que le atribuía esa capacidad al `operator`, quedó marcada como enmendada el mismo día.
+**ADR-0035 es la primera decisión que contradice un requisito del Anexo A**, no sólo un anexo o una sección. F27 dice *"El operador cambia el modo del agente"*, y el equipo reservó el modo a `supervisor` y `admin`. Se registró como desviación, con sus argumentos y su costo principal (un vendedor que toma una conversación no puede callar al bot). La tabla de C01 en [`00-convenciones.md`](../00-convenciones.md), que le atribuía esa capacidad al `operator`, quedó marcada como enmendada el mismo día.
+
+**[ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) revirtió esa desviación antes del merge.** La revisión de diseño encontró que uno de sus dos argumentos no se sostenía: el vendedor podía quedarse con una venta tomando el pool, sin apagar el bot. El equipo cerró el agujero haciendo que toda conversación nazca asignada a un vendedor, y con eso el vendedor recuperó el interruptor de sus conversaciones. Ninguna de las dos decisiones se borró: ADR-0035 conserva el razonamiento que se revirtió y su estado apunta a la enmienda. **ADR-0037 revierte además dos alternativas que ADR-0004 había descartado** —la asignación al crear la conversación y el reparto por turnos—, y lo declara.
 
 ---
 
@@ -88,7 +91,9 @@ Ninguna de las primeras bloqueaba el avance a los Pasos 4 y 5. De las tres que a
 ### Derivadas de las decisiones tomadas
 
 - [x] **Vista de historial del operador** → **resuelto por [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md), regla 6**: el operador ve el historial unificado del contacto (F32), filtrado a las conversaciones asignadas a él. Desaparece la causa del pendiente: F32 ya no está restringido a `admin`, porque [ADR-0011](0011-acceso-a-datos-sensibles.md) fue reemplazada. **Queda una salvedad de calendario**: la regla está decidida y escrita, pero **la pantalla se construye en la Fase 14**.
-- [ ] **Declarar en el informe final la desviación de F27.** [ADR-0035](0035-reglas-de-la-bandeja-manual.md) reserva el modo del agente IA a `supervisor` y `admin`, contra *"El operador cambia el modo del agente"*. El ADR y C01 lo registran; falta el informe.
+- [x] **Declarar en el informe final la desviación de F27** → **ya no hace falta: [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) la revirtió.** El `operator` vuelve a prender y apagar el bot de sus conversaciones. Lo que sí conviene contar en el informe es el camino: una desviación declarada, encontrada débil en la revisión y revertida antes del merge.
+- [ ] **Ausencias del vendedor y conversaciones trabadas.** Con el reparto de [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md), un vendedor activo pero ausente sigue recibiendo conversaciones, y nadie puede sacárselas hasta que exista la reasignación de F26. **Fase 11**, junto con la reasignación propia de abajo.
+- [ ] **Registrar quién cambia el modo del agente IA y cuándo.** Con el interruptor en manos de cada vendedor (ADR-0037, regla 4), la población que miden F36 y OE6 depende de decisiones que hoy no dejan rastro. Hay que decidir dónde vive ese registro, porque [ADR-0007](0007-alcance-del-registro-de-auditoria.md) acota la auditoría a la configuración del agente IA.
 - [ ] **Si el `operator` puede reasignar sus propias conversaciones.** Ya se movió de fecha dos veces: [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md) la citó para la Fase 5 y [ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 16, la pasó a la **Fase 11**. Hay que decidirla **antes** de construir F26, no después.
 - [ ] **Cómo convive el cursor de la bandeja con los filtros de F23.** Un filtro que cambie el orden necesita su propio cursor ([ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md)). **Fase 10**.
 - [ ] **Registro de desencriptado de datos sensibles.** Mejora de trazabilidad, sin urgencia una vez acotado el acceso por asignación. Ver [ADR-0007](0007-alcance-del-registro-de-auditoria.md).

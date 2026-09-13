@@ -427,3 +427,96 @@ func TestTheSendHandlerRefusesWithoutAnActor(t *testing.T) {
 		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
 	}
 }
+
+func patchMode(engine http.Handler, conversationID, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/conversations/"+conversationID+"/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestOnlyTheRolesAboveTheVendorsChangeTheMode is the decision of the team written as a test, and a departure from Anexo B that
+// has to stay visible: the basic operator is refused by the router, before the service is asked anything.
+func TestOnlyTheRolesAboveTheVendorsChangeTheMode(t *testing.T) {
+	for _, tc := range []struct {
+		role enums.OperatorRole
+		want int
+	}{
+		{enums.OperatorRoleOperator, http.StatusForbidden},
+		{enums.OperatorRoleSupervisor, http.StatusOK},
+		{enums.OperatorRoleAdmin, http.StatusOK},
+	} {
+		t.Run(string(tc.role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			// Held by somebody else on purpose: both roles see the whole team, so the holder does not decide who changes the mode.
+			holder := id.New()
+			target := d.open(&holder)
+
+			rec := patchMode(mountDesk(tc.role, d), target.ConversationID.String(), `{"mode":"off"}`)
+			if rec.Code != tc.want {
+				t.Fatalf("PATCH as %s: got %d, want %d - body %s", tc.role, rec.Code, tc.want, rec.Body)
+			}
+			if tc.want == http.StatusOK && !strings.Contains(rec.Body.String(), `"mode":"off"`) {
+				t.Fatalf("the answer does not carry the mode - body %s", rec.Body)
+			}
+			if _, written := d.aggregate.modes[target.ConversationID]; written != (tc.want == http.StatusOK) {
+				t.Fatalf("written = %v for %s", written, tc.role)
+			}
+		})
+	}
+}
+
+// TestEachModeRefusalHasItsOwnCode is what the frontend switches on when the toggle does not move.
+func TestEachModeRefusalHasItsOwnCode(t *testing.T) {
+	onePooled := func(d *desk) string { return d.open(nil).ConversationID.String() }
+
+	for _, tc := range []struct {
+		name     string
+		shape    func(*desk) string
+		body     string
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", func(*desk) string { return "no-es-un-id" }, `{"mode":"off"}`, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the body has no mode", onePooled, `{}`, http.StatusBadRequest, "invalid_body"},
+		{"a word that is not a mode", onePooled, `{"mode":"robot"}`, http.StatusBadRequest, "invalid_mode"},
+		{"suggestion before Fase 9", onePooled, `{"mode":"suggestion"}`, http.StatusBadRequest, "mode_not_available"},
+		{"the conversation does not exist", func(*desk) string { return id.New().String() }, `{"mode":"off"}`, http.StatusNotFound, "conversation_not_found"},
+		{"no agent to turn on", func(d *desk) string {
+			target := d.open(nil)
+			target.AIAgentID, target.Mode = nil, enums.AgentModeOff
+			d.store.targets[target.ConversationID] = target
+			return target.ConversationID.String()
+		}, `{"mode":"autonomous"}`, http.StatusConflict, "no_ai_agent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			conversationID := tc.shape(d)
+
+			rec := patchMode(mountDesk(enums.OperatorRoleSupervisor, d), conversationID, tc.body)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheModeHandlerRefusesWithoutAnActor guards the wiring the same way the other two handlers do.
+func TestTheModeHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPatch, "/conversations/x/mode", strings.NewReader(`{"mode":"off"}`))
+
+	NewController(newDesk(&stubStore{}).service, nil).setMode(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}

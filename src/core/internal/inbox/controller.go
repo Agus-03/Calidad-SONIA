@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -193,6 +194,41 @@ func (c *Controller) send(gc *gin.Context) {
 	soniahttp.Created(gc, presentMessage(message))
 }
 
+type modeRequest struct {
+	Mode string `json:"mode" binding:"required"`
+}
+
+type modeResponse struct {
+	ID   string `json:"id"`
+	Mode string `json:"mode"`
+}
+
+// setMode answers the mode the conversation ends with, which is also what a request for the mode it already had gets back.
+func (c *Controller) setMode(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req modeRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "a mode is required").WithCause(err))
+		return
+	}
+
+	mode, err := c.service.SetMode(gc.Request.Context(), scope, conversationID, enums.AgentMode(req.Mode))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.OK(gc, modeResponse{ID: conversationID.String(), Mode: string(mode)})
+}
+
 // translate turns what the package knows into what the frontend switches on, and lets anything else fall through as a 500.
 func translate(err error) error {
 	switch {
@@ -206,6 +242,12 @@ func translate(err error) error {
 		return soniahttp.Conflict("window_expired", "the 24 hour window closed: only a template can reach the contact now").WithCause(err)
 	case errors.Is(err, ErrEmptyText):
 		return soniahttp.BadRequest("invalid_text", "the answer cannot be empty").WithCause(err)
+	case errors.Is(err, ErrUnknownMode):
+		return soniahttp.BadRequest("invalid_mode", "the mode is not one of autonomous, suggestion, off").WithCause(err)
+	case errors.Is(err, ErrModeNotAvailable):
+		return soniahttp.BadRequest("mode_not_available", "only autonomous and off can be chosen for now").WithCause(err)
+	case errors.Is(err, ErrNoAgent):
+		return soniahttp.Conflict("no_ai_agent", "the conversation has no agent to turn on").WithCause(err)
 	default:
 		return err
 	}

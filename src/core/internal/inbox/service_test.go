@@ -325,3 +325,80 @@ func TestAWriteThatFailsInsideTheTransactionSendsNothing(t *testing.T) {
 		})
 	}
 }
+
+// TestTheModeChangesOnlyWhenItMakesSense is F27 as this phase offers it: off and back on, never suggestion before its cycle exists,
+// never on for a conversation born without an agent, and nothing written for a change that changes nothing.
+func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		shape     func(*Target)
+		mode      enums.AgentMode
+		wantErr   error
+		wantWrite bool
+	}{
+		{"turning the bot off", func(*Target) {}, enums.AgentModeOff, nil, true},
+		{"turning it back on", func(t *Target) { t.Mode = enums.AgentModeOff }, enums.AgentModeAutonomous, nil, true},
+		{"asking for the mode it already has writes nothing", func(*Target) {}, enums.AgentModeAutonomous, nil, false},
+		{"suggestion waits for Fase 9: stored now, the orchestrator would read it as silence",
+			func(*Target) {}, enums.AgentModeSuggestion, ErrModeNotAvailable, false},
+		{"a word that is not a mode of F02", func(*Target) {}, enums.AgentMode("robot"), ErrUnknownMode, false},
+		{"a conversation born without an agent has no bot to turn on",
+			func(t *Target) { t.AIAgentID, t.Mode = nil, enums.AgentModeOff }, enums.AgentModeAutonomous, ErrNoAgent, false},
+		{"a resolved conversation is a closed unit of work (ADR-0002)",
+			func(t *Target) { t.Status = enums.ConversationStatusResolved }, enums.AgentModeOff, ErrResolved, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(nil)
+			tc.shape(&target)
+			d.store.targets[target.ConversationID] = target
+
+			got, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleSupervisor), target.ConversationID, tc.mode)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("SetMode: got %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && got != tc.mode {
+				t.Fatalf("answered mode %q, want %q", got, tc.mode)
+			}
+			if _, written := d.aggregate.modes[target.ConversationID]; written != tc.wantWrite {
+				t.Fatalf("written = %v, want %v", written, tc.wantWrite)
+			}
+			// Turning the bot off is not answering, so it never takes the pool (ADR-0004).
+			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 {
+				t.Fatalf("changing the mode assigned the conversation")
+			}
+		})
+	}
+}
+
+// TestTheModeReportsWhatTheAggregateSaid covers the race the predicate settles: the conversation lost its agent or its row between
+// the read and the write, and the caller hears the reason and not a 500.
+func TestTheModeReportsWhatTheAggregateSaid(t *testing.T) {
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{"the predicate found no agent", conversations.ErrNoAgent, ErrNoAgent},
+		{"the row was gone", conversations.ErrNotFound, ErrNotFound},
+		{"the database did not answer", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			d.aggregate.setModeErr = tc.err
+			target := d.open(nil)
+
+			_, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID, enums.AgentModeOff)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("SetMode: got %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	d := newDesk(&stubStore{})
+	if _, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetMode on a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}

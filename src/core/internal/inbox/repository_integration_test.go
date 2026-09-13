@@ -417,3 +417,48 @@ func TestAClosedWindowWritesNothing(t *testing.T) {
 		}
 	})
 }
+
+// TestASupervisorTurnsTheBotOffWithoutTakingTheConversation is F27 end to end against real DDL: the mode moves, the agent and the
+// holder stay where they were, and a conversation born without an agent cannot be turned on.
+func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET ai_agent_id = (SELECT id FROM ai_agents LIMIT 1) WHERE id = $1`, w.mineConv); err != nil {
+			t.Fatalf("give the conversation an agent: %v", err)
+		}
+		service := sendingDesk(exec, &stubSender{})
+		supervisor := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleSupervisor}
+
+		read := func(conversationID uuid.UUID) (enums.AgentMode, *uuid.UUID, *uuid.UUID) {
+			t.Helper()
+			var mode enums.AgentMode
+			var agent, holder *uuid.UUID
+			if err := exec.QueryRow(ctx, `SELECT mode, ai_agent_id, operator_id FROM conversations WHERE id = $1`, conversationID).
+				Scan(&mode, &agent, &holder); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+			return mode, agent, holder
+		}
+
+		for _, want := range []enums.AgentMode{enums.AgentModeAutonomous, enums.AgentModeOff} {
+			got, err := service.SetMode(ctx, supervisor, w.mineConv, want)
+			if err != nil || got != want {
+				t.Fatalf("SetMode %s on another operator's conversation: got %q, %v", want, got, err)
+			}
+			mode, agent, holder := read(w.mineConv)
+			if mode != want || agent == nil {
+				t.Fatalf("after %s: mode %q agent %v, want the mode moved and the agent kept", want, mode, agent)
+			}
+			if holder == nil || *holder != w.mine {
+				t.Fatalf("changing the mode moved the conversation to %v", holder)
+			}
+		}
+
+		if _, err := service.SetMode(ctx, supervisor, w.pooledConv, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAgent) {
+			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAgent", err)
+		}
+		if _, _, holder := read(w.pooledConv); holder != nil {
+			t.Fatalf("a mode request took the pool for %v", *holder)
+		}
+	})
+}

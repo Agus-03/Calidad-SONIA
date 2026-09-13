@@ -31,6 +31,16 @@ var (
 	ErrWindowClosed = errors.New("inbox: the 24 hour window of the conversation is closed")
 
 	ErrEmptyText = errors.New("inbox: the answer has no text")
+
+	// ErrUnknownMode is a word that is not one of the three of F02, told apart from a real mode this phase does not offer yet.
+	ErrUnknownMode = errors.New("inbox: the mode is not one of autonomous, suggestion, off")
+
+	// ErrModeNotAvailable is suggestion before Fase 9: accepting it would store a mode the orchestrator reads as silence, since the
+	// review cycle that makes it a mode does not exist yet.
+	ErrModeNotAvailable = errors.New("inbox: only autonomous and off are available until the suggestion cycle exists")
+
+	// ErrNoAgent refuses to turn on a bot the conversation was born without (conversations.ErrNoAgent, seen from here).
+	ErrNoAgent = errors.New("inbox: the conversation has no agent to turn on")
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
@@ -58,6 +68,7 @@ type Aggregate interface {
 	RecordOperatorOutbound(ctx context.Context, conversationID, operatorID uuid.UUID, text string, at time.Time) (conversations.Message, error)
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
+	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 }
 
 // Channel is the one question this package asks whatsapp/ before sending: which number, with which token.
@@ -152,6 +163,48 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 	}
 
 	return s.deliver(ctx, target, message), nil
+}
+
+// SetMode turns the agent of one conversation on or off without touching the others (F27, brought forward from Fase 10). Who may call it
+// is decided in routes.go and not here; what this decides is which changes make sense for the conversation.
+//
+// It does not take the conversation out of the pool: answering is what assigns (ADR-0004), and turning the bot off is not an answer.
+//
+// The orchestrator reads the mode when a turn starts, so an answer the brain is already generating still goes out after the bot is
+// turned off. That gap is known and is closed in Fase 9, when the three modes branch the orchestrator.
+func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.UUID, mode enums.AgentMode) (enums.AgentMode, error) {
+	if !mode.IsValid() {
+		return "", ErrUnknownMode
+	}
+	if mode == enums.AgentModeSuggestion {
+		return "", ErrModeNotAvailable
+	}
+
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return "", err
+	}
+	if target.Status == enums.ConversationStatusResolved {
+		return "", ErrResolved
+	}
+	// Asking for the mode it already has is the state the caller wants, so it is answered and not written twice.
+	if target.Mode == mode {
+		return mode, nil
+	}
+	if mode != enums.AgentModeOff && target.AIAgentID == nil {
+		return "", ErrNoAgent
+	}
+
+	switch err := s.opts.Aggregate.SetMode(ctx, conversationID, mode); {
+	case err == nil:
+		return mode, nil
+	case errors.Is(err, conversations.ErrNoAgent):
+		return "", ErrNoAgent
+	case errors.Is(err, conversations.ErrNotFound):
+		return "", ErrNotFound
+	default:
+		return "", err
+	}
 }
 
 // mayAnswer is decision 5 of the phase: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole

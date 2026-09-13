@@ -84,8 +84,8 @@ type Cursor struct {
 	ID             uuid.UUID
 }
 
-// Target is what sending needs and the conversation id does not carry: where it goes, who holds it, and whether Meta still
-// accepts a free form answer (ADR-0008).
+// Target is what acting on a conversation needs and its id does not carry: where an answer goes, who holds it, whether Meta still
+// accepts a free form answer (ADR-0008), and which bot answers in what mode (F27).
 type Target struct {
 	ConversationID  uuid.UUID
 	InboxID         uuid.UUID
@@ -93,6 +93,8 @@ type Target struct {
 	OperatorID      *uuid.UUID
 	Status          enums.ConversationStatus
 	WindowExpiresAt time.Time
+	AIAgentID       *uuid.UUID
+	Mode            enums.AgentMode
 }
 
 // Assignment is one row of conversation_assignments: immutable, because F26 asks for the history and a row that changes is not one.

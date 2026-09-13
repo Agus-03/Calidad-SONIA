@@ -97,11 +97,24 @@ type stubAggregate struct {
 	recordErr     error
 	markSentErr   error
 	markFailedErr error
+	setModeErr    error
 
 	claimed  map[uuid.UUID]uuid.UUID
 	recorded []conversations.Message
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
+	modes    map[uuid.UUID]enums.AgentMode
+}
+
+func (a *stubAggregate) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	if a.setModeErr != nil {
+		return a.setModeErr
+	}
+	if a.modes == nil {
+		a.modes = map[uuid.UUID]enums.AgentMode{}
+	}
+	a.modes[conversationID] = mode
+	return nil
 }
 
 func (a *stubAggregate) Claim(_ context.Context, conversationID, operatorID uuid.UUID) error {
@@ -204,9 +217,11 @@ func newDesk(store *stubStore) *desk {
 
 // open adds a conversation the window still admits, held by holder or in the pool when holder is nil.
 func (d *desk) open(holder *uuid.UUID) Target {
+	agent := id.New()
 	t := Target{
 		ConversationID: id.New(), InboxID: id.New(), ContactPhone: "5493510000000",
 		OperatorID: holder, Status: enums.ConversationStatusActive, WindowExpiresAt: time.Now().Add(time.Hour),
+		AIAgentID: &agent, Mode: enums.AgentModeAutonomous,
 	}
 	d.store.targets[t.ConversationID] = t
 	return t

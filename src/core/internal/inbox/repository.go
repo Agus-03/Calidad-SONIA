@@ -100,7 +100,7 @@ func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit
 
 // Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists.
 const targetSelect = `
-SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at
+SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode
 FROM   conversations c
 JOIN   contacts ct ON ct.id = c.contact_id
 WHERE  c.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
@@ -109,7 +109,7 @@ WHERE  c.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
 func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, accountID, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt, &t.AIAgentID, &t.Mode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrNotFound
 	}

@@ -19,10 +19,11 @@ var (
 	ErrAlreadyOpen    = errors.New("conversations: the contact already has an open conversation")
 	ErrDuplicateWAMID = errors.New("conversations: the channel id is already stored")
 
-	// ErrTaken is the pool race lost: somebody else answered first and the conversation is theirs (ADR-0004).
+	// ErrTaken is the pool race lost: somebody else answered first and the conversation is theirs (ADR-0004, ADR-0035 regla 8).
 	ErrTaken = errors.New("conversations: the conversation is already assigned to an operator")
 
-	// ErrNoAgent refuses to turn on a bot that does not exist: a conversation born without an agent has nobody to answer it.
+	// ErrNoAgent refuses to turn on a bot that does not exist: a conversation born without an agent has nobody to answer it
+	// (ADR-0035, regla 12).
 	ErrNoAgent = errors.New("conversations: the conversation has no agent to turn on")
 )
 
@@ -150,7 +151,8 @@ func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, op
 }
 
 // appendOutbound moves last_activity_at with the row, for the agent and the operator alike: the inbox orders by that column, and
-// a conversation somebody just answered would otherwise sink below the ones nobody touched since their last inbound message.
+// a conversation somebody just answered would otherwise sink below the ones nobody touched since their last inbound message
+// (ADR-0036, regla 2).
 func (s *Service) appendOutbound(ctx context.Context, message Message) (Message, error) {
 	if err := s.repo.AppendMessage(ctx, message); err != nil {
 		return Message{}, fmt.Errorf("conversations: record outbound: %w", err)
@@ -162,13 +164,14 @@ func (s *Service) appendOutbound(ctx context.Context, message Message) (Message,
 }
 
 // Claim takes a conversation out of the pool for whoever answers it first (ADR-0004). It returns ErrTaken when somebody already
-// did, and the caller is expected to hold it in the transaction that writes the answer, so losing the race writes nothing.
+// did, and the caller is expected to hold it in the transaction that writes the answer, so losing the race writes nothing
+// (ADR-0035, reglas 7 y 8).
 func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error {
 	return s.repo.Claim(ctx, conversationID, operatorID)
 }
 
 // SetMode changes how the agent answers one conversation and leaves ai_agent_id alone: turning the bot off is a mode and not the
-// loss of the agent, or it could never be turned back on (F27). Which modes a caller may ask for is the caller's rule.
+// loss of the agent, or it could never be turned back on (F27, ADR-0035 regla 12). Which modes a caller may ask for is the caller's rule.
 func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
 	return s.repo.SetMode(ctx, conversationID, mode)
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 )
 
-// TestTheScopeReachesOnlyWhatIsAssignedNow is ADR-0032, reglas 2 and 3, against real DDL: an operator reaches the contact of a
+// TestTheScopeReachesOnlyWhatIsAssignedNow is ADR-0032, reglas 2 y 3, against real DDL: an operator reaches the contact of a
 // conversation it holds right now, and not one in the pool, one held by somebody else or one that was deleted.
 func TestTheScopeReachesOnlyWhatIsAssignedNow(t *testing.T) {
 	ctx := context.Background()

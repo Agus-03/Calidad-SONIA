@@ -17,8 +17,8 @@ type Scope struct {
 	Role       enums.OperatorRole
 }
 
-// Anexo B gives the supervisor "visualizar conversaciones de todo el equipo" and the admin everything the supervisor has, so only those
-// two are exempt: an empty or unknown role falls to the narrow side, the same default contacts/ keeps.
+// Anexo B lets the supervisor see the conversations of the whole team and gives the admin all the supervisor has, so only those two
+// are exempt: an empty or unknown role falls to the narrow side, the same default contacts/ keeps (ADR-0035, regla 1).
 func (s Scope) seesTheWholeTeam() bool {
 	return s.Role == enums.OperatorRoleSupervisor || s.Role == enums.OperatorRoleAdmin
 }
@@ -49,7 +49,7 @@ type Summary struct {
 	LastActivityAt  time.Time
 }
 
-// Contact is not the entity of contacts/: it is the three fields the row draws, and none of the four sensitive ones (ADR-0032, regla 4).
+// Contact is not the entity of contacts/: it is the three fields the row draws, and none of the four sensitive ones for any role (ADR-0035, regla 4).
 type Contact struct {
 	ID            uuid.UUID
 	Name          string
@@ -77,16 +77,15 @@ type Message struct {
 	SentAt      time.Time
 }
 
-// Cursor is the row a page ended on: its instant in the column the page is ordered by — last_activity_at for the inbox, created_at
-// for a thread — and its id to break the tie. A page continues after it instead of skipping a count of rows, because rows keep
-// arriving at the top of both and an offset would then show one twice and skip another.
+// Cursor is the row a page ended on, its instant and its id to break the tie. A page continues after it instead of skipping a count,
+// because rows keep arriving at the top and an offset would show one twice and skip another (ADR-0036, reglas 2 y 3).
 type Cursor struct {
 	At time.Time
 	ID uuid.UUID
 }
 
 // ThreadMessage is a message as the thread of one conversation shows it: the message the listing draws, plus who wrote it when a
-// person did, and the instant it was recorded, which is what orders the thread (C06).
+// person did, and the instant it was recorded, which is what orders the thread (C06, ADR-0036 regla 2).
 type ThreadMessage struct {
 	Message
 	SenderOperator *Operator
@@ -116,18 +115,19 @@ type Target struct {
 type Assignment struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
-	// Nil when the conversation comes from the pool, which is the only kind this phase writes (ADR-0004).
+	// Nil when the conversation comes from the pool, which is the only kind this phase writes (ADR-0035, regla 15).
 	FromOperatorID *uuid.UUID
 	ToOperatorID   uuid.UUID
-	// The same as ToOperatorID in an auto assignment: the operator who answered is the one who took it (DER, entidades).
+	// The same as ToOperatorID in an auto assignment: the operator who answered is the one who took it (ADR-0035, regla 7).
 	AssignedByOperatorID *uuid.UUID
 	Reason               string
 }
 
-// Page has no total on purpose: F22 does not ask for one, and counting the whole inbox on every page is the query a cursor exists to avoid.
+// Page has no total on purpose: F22 does not ask for one, and counting the whole inbox on every page is the query a cursor exists
+// to avoid (ADR-0036, regla 7).
 type Page struct {
 	Items []Summary
 
-	// Nil when the page reached the end, so "there is no more" is told apart from "the next page happens to be empty".
+	// Nil when the page reached the end, so "there is no more" is told apart from "the next page happens to be empty" (ADR-0036, regla 6).
 	Next *Cursor
 }

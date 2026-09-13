@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -142,7 +145,7 @@ func TestSendPassesMetasStatusUp(t *testing.T) {
 			if got := httpclient.Retryable(err); got != tc.wantRetryable {
 				t.Fatalf("Retryable() = %v, want %v", got, tc.wantRetryable)
 			}
-			// The reason Meta gave travels in the error, because it is what the operator reads to know what to fix (ADR-0020).
+			// The reason Meta gave travels in the error, so the log keeps what the code on the row cannot say (ADR-0020).
 			if tc.status == http.StatusBadRequest && !strings.Contains(err.Error(), "131047") {
 				t.Fatalf("error = %v, want Meta's reason in it", err)
 			}
@@ -211,4 +214,61 @@ func TestDoubleSenderRefusesAnEmptyMessageToo(t *testing.T) {
 func TestBothSendersSatisfyTheSamePort(t *testing.T) {
 	var _ Sender = NewClient(ClientOptions{})
 	var _ Sender = NewDoubleSender(nil)
+}
+
+// sendThrough returns the error the real client builds, so the code is read from what Send hands the turn and the inbox, not from
+// an error written to look like it.
+func sendThrough(t *testing.T, baseURL string) error {
+	t.Helper()
+	_, err := NewClient(ClientOptions{GraphBaseURL: baseURL, APIVersion: "v21.0"}).
+		Send(context.Background(), connected(), "5493510000000", "hola")
+	if err == nil {
+		t.Fatal("Send() error = nil, want the failure to classify")
+	}
+	return err
+}
+
+// TestFailureCodeKeepsACodeAndNotTheCause is what messages.error_code holds: the operator reads it in the inbox, so it is Meta's code
+// or one fixed word, never a sentence with a response body inside (ADR-0020).
+func TestFailureCodeKeepsACodeAndNotTheCause(t *testing.T) {
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"(#131047) Re-engagement message","type":"OAuthException","code":131047}}`))
+	}))
+	defer refusing.Close()
+
+	gone := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	gone.Close()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"Meta refusing keeps Meta's own code, the one its documentation explains", sendThrough(t, refusing.URL), "131047"},
+		{"a status with no envelope keeps the status, because there is no code of Meta's to keep",
+			&httpclient.StatusError{Status: http.StatusBadGateway, Body: "<html>bad gateway</html>"}, "http_502"},
+		{"an envelope with no code is the same as no envelope",
+			&httpclient.StatusError{Status: http.StatusUnauthorized, Body: `{"error":{"message":"expired"}}`}, "http_401"},
+		{"a number that does not exist never reached Meta", fmt.Errorf("turn: %w", ErrInboxNotFound), "inbox_not_found"},
+		{"a number nobody connected never reached Meta either", fmt.Errorf("turn: %w", ErrInboxNotConfigured), "inbox_not_configured"},
+		{"an empty message is refused before the call", ErrEmptyMessage, "empty_message"},
+		{"a 200 that is not the contract", fmt.Errorf("whatsapp: send: %w", httpclient.ErrMalformedResponse), "malformed_response"},
+		{"a deadline the transport wraps is a timeout and not a lost network",
+			&url.Error{Op: "Post", URL: "https://graph", Err: context.DeadlineExceeded}, "timeout"},
+		{"a cancellation the transport wraps is somebody giving up, not the network",
+			&url.Error{Op: "Post", URL: "https://graph", Err: context.Canceled}, "canceled"},
+		{"a network timeout without a context is still a timeout", &net.DNSError{Err: "i/o timeout", IsTimeout: true}, "timeout"},
+		{"nobody listening is a network that could not be reached", sendThrough(t, gone.URL), "unreachable"},
+		{"anything else says so, and the cause is in the log",
+			errors.New("whatsapp: decrypt the access token: cipher: message authentication failed"), "unclassified"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FailureCode(tc.err); got != tc.want {
+				t.Fatalf("FailureCode(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
 }

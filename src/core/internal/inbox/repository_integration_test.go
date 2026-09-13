@@ -13,6 +13,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
@@ -361,7 +362,9 @@ func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
 func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
-		service := sendingDesk(exec, &stubSender{err: errors.New("httpclient: status 400: recipient not in allowed list")})
+		service := sendingDesk(exec, &stubSender{err: &httpclient.StatusError{
+			Status: 400, Body: `{"error":{"message":"(#131030) Recipient not in allowed list","code":131030}}`,
+		}})
 
 		message, err := service.Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola")
 		if err != nil {
@@ -372,8 +375,8 @@ func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
 		if err := exec.QueryRow(ctx, `SELECT status, error_code FROM messages WHERE id = $1`, message.ID).Scan(&status, &code); err != nil {
 			t.Fatalf("read the message: %v", err)
 		}
-		if status == nil || *status != string(enums.MessageStatusFailed) || code == nil {
-			t.Fatalf("the row reads status %v code %v, want failed with its cause", status, code)
+		if status == nil || *status != string(enums.MessageStatusFailed) || code == nil || *code != "131030" {
+			t.Fatalf("the row reads status %v code %v, want failed with Meta's code", status, code)
 		}
 
 		var owner *uuid.UUID

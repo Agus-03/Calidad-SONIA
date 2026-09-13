@@ -2,9 +2,12 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
@@ -20,6 +23,56 @@ var ErrEmptyMessage = errors.New("whatsapp: refusing to send an empty message")
 // Declared here because whatsapp/ is the only package that knows what sending means, and it never retries (ADR-0020).
 type Sender interface {
 	Send(ctx context.Context, inbox Inbox, to, text string) (string, error)
+}
+
+// FailureCode is what messages.error_code keeps of a send that did not leave: Meta's own code when Meta refused it, and a fixed word
+// of ours when the failure happened before or around the call. The whole cause belongs in the log and not on the row, because the
+// inbox shows the row to the operator and the body Meta answers with is neither short nor written for them.
+//
+// The two families cannot collide: Meta's codes are digits and ours are words.
+func FailureCode(err error) string {
+	var status *httpclient.StatusError
+	var network net.Error
+	switch {
+	case errors.As(err, &status):
+		if code := metaCode(status.Body); code != "" {
+			return code
+		}
+		return "http_" + strconv.Itoa(status.Status)
+	case errors.Is(err, ErrInboxNotFound):
+		return "inbox_not_found"
+	case errors.Is(err, ErrInboxNotConfigured):
+		return "inbox_not_configured"
+	case errors.Is(err, ErrEmptyMessage):
+		return "empty_message"
+	case errors.Is(err, httpclient.ErrMalformedResponse):
+		return "malformed_response"
+	// Before the network case: both context errors satisfy net.Error once the transport wraps them, and would read as unreachable.
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.As(err, &network):
+		if network.Timeout() {
+			return "timeout"
+		}
+		return "unreachable"
+	default:
+		return "unclassified"
+	}
+}
+
+// metaCode reads the one field of Meta's error envelope the row keeps: {"error": {"code": 131047, ...}}.
+func metaCode(body string) string {
+	var envelope struct {
+		Error struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(body), &envelope) != nil || envelope.Error.Code == 0 {
+		return ""
+	}
+	return strconv.Itoa(envelope.Error.Code)
 }
 
 type ClientOptions struct {

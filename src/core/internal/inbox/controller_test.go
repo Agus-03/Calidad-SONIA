@@ -18,6 +18,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
@@ -335,15 +336,19 @@ func TestEveryRoleCanAnswerThePool(t *testing.T) {
 // TestAFailedSendAnswers201WithTheFailure is the choice of the handler: the row exists, and its status is what the operator reads.
 func TestAFailedSendAnswers201WithTheFailure(t *testing.T) {
 	d := newDesk(&stubStore{})
-	d.sender.err = errors.New("httpclient: status 400: recipient not in allowed list")
+	d.sender.err = &httpclient.StatusError{Status: 400, Body: `{"error":{"message":"(#131030) Recipient not in allowed list","code":131030}}`}
 	target := d.open(nil)
 
 	rec := post(mountDesk(enums.OperatorRoleOperator, d), target.ConversationID.String(), `{"text":"hola"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("got %d, want 201 - body %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(rec.Body.String(), `"status":"failed"`) || !strings.Contains(rec.Body.String(), "recipient not in allowed list") {
+	if !strings.Contains(rec.Body.String(), `"status":"failed"`) || !strings.Contains(rec.Body.String(), `"error_code":"131030"`) {
 		t.Fatalf("the failure did not travel with the row - body %s", rec.Body)
+	}
+	// Meta's code and never the body Meta answered with: that belongs in the log, not in front of the operator.
+	if strings.Contains(rec.Body.String(), "Recipient not in allowed list") {
+		t.Fatalf("the cause leaked into the answer - body %s", rec.Body)
 	}
 }
 

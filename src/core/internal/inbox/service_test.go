@@ -10,7 +10,9 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
 
 // rowsAt builds n conversations one minute apart, newest first, all in the pool so every role reaches them.
@@ -212,14 +214,16 @@ func TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten(t *testing.T) {
 // TestAFailedSendIsTheRowSaidFailedAndNeverRetried is ADR-0020 from the operator's side: one attempt, the failure on the row and in
 // the answer, and the conversation still taken, because the failure needs an owner to decide about it.
 func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
-	refused := errors.New("httpclient: status 400: recipient not in allowed list")
+	refused := &httpclient.StatusError{Status: 400, Body: `{"error":{"message":"(#131030) Recipient not in allowed list","code":131030}}`}
 
 	for _, tc := range []struct {
 		name  string
 		shape func(*desk)
+		// The code and not the cause: the operator reads it in the inbox, and the body Meta answered with goes to the log.
+		code string
 	}{
-		{"Meta refuses the send", func(d *desk) { d.sender.err = refused }},
-		{"the number cannot be read before sending", func(d *desk) { d.channel.err = refused }},
+		{"Meta refuses the send", func(d *desk) { d.sender.err = refused }, "131030"},
+		{"the number cannot be read before sending", func(d *desk) { d.channel.err = whatsapp.ErrInboxNotFound }, "inbox_not_found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDesk(&stubStore{})
@@ -234,11 +238,11 @@ func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
 			if message.Status == nil || *message.Status != enums.MessageStatusFailed {
 				t.Fatalf("status %v, want failed", message.Status)
 			}
-			if message.ErrorCode == nil || *message.ErrorCode != refused.Error() {
-				t.Fatalf("error_code %v, want the cause", message.ErrorCode)
+			if message.ErrorCode == nil || *message.ErrorCode != tc.code {
+				t.Fatalf("error_code %v, want %q", message.ErrorCode, tc.code)
 			}
-			if d.aggregate.failed[message.ID] != refused.Error() {
-				t.Fatalf("the row was not marked failed: %v", d.aggregate.failed)
+			if d.aggregate.failed[message.ID] != tc.code {
+				t.Fatalf("the row was marked %v, want %q", d.aggregate.failed, tc.code)
 			}
 			if d.sender.calls > 1 {
 				t.Fatalf("sent %d times, want at most once", d.sender.calls)

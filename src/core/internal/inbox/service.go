@@ -313,7 +313,7 @@ func (s *Service) undelivered(ctx context.Context, message conversations.Message
 	writeCtx, cancel := context.WithTimeout(ctx, writeGrace)
 	defer cancel()
 
-	code := cause.Error()
+	code := whatsapp.FailureCode(cause)
 	status := enums.MessageStatusFailed
 	if err := s.opts.Aggregate.MarkFailed(writeCtx, message.ID, code); err != nil {
 		// The row stays with no status, which the inbox draws as not sent: the failure is still visible, only less precise.
@@ -325,7 +325,8 @@ func (s *Service) undelivered(ctx context.Context, message conversations.Message
 	s.opts.Logger.Warn("operator answer not delivered",
 		slog.String("conversation_id", message.ConversationID.String()),
 		slog.String("message_id", message.ID.String()),
-		slog.String("cause", code),
+		slog.String("error_code", code),
+		slog.String("cause", cause.Error()),
 	)
 	return asDrawn(message, &status, &code, message.SentAt)
 }

@@ -72,7 +72,7 @@ func reach(s Scope) (where string, args []any) {
 func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error) {
 	where, args := reach(scope)
 	if after != nil {
-		args = append(args, after.LastActivityAt, after.ID)
+		args = append(args, after.At, after.ID)
 		where += fmt.Sprintf(" AND (c.last_activity_at, c.id) < ($%d, $%d)", len(args)-1, len(args))
 	}
 	args = append(args, limit)
@@ -117,6 +117,53 @@ func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.
 		return Target{}, fmt.Errorf("inbox: scan target: %w", err)
 	}
 	return t, nil
+}
+
+// The same two exclusions as the listing, for the same reasons: hidden messages are not shown in the inbox (C09), and the order is
+// our clock and not the channel's (C06). The operator is joined so a thread a reassignment passed through says who wrote what.
+const threadSelect = `
+SELECT m.id, m.direction, m.sender_type, m.content_text, m.content_type, m.status, m.error_code, m.sent_at, m.created_at,
+       op.id, op.name, op.lastname
+FROM   messages m
+LEFT   JOIN operators op ON op.id = m.sender_operator_id
+WHERE  m.conversation_id = $1 AND m.hidden_at IS NULL`
+
+// Thread answers up to limit messages before the cursor, newest first. Whether the caller may read the conversation at all was
+// decided before this is asked, which is why it takes no scope.
+func (r *Repository) Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error) {
+	args := []any{conversationID}
+	where := ""
+	if after != nil {
+		args = append(args, after.At, after.ID)
+		where = fmt.Sprintf(" AND (m.created_at, m.id) < ($%d, $%d)", len(args)-1, len(args))
+	}
+	args = append(args, limit)
+	query := threadSelect + where + fmt.Sprintf(" ORDER BY m.created_at DESC, m.id DESC LIMIT $%d", len(args))
+
+	rows, err := r.exec.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("inbox: read thread: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ThreadMessage{}
+	for rows.Next() {
+		var m ThreadMessage
+		var operatorID *uuid.UUID
+		var operatorName, operatorLastname *string
+		if err := rows.Scan(&m.ID, &m.Direction, &m.SenderType, &m.ContentText, &m.ContentType, &m.Status, &m.ErrorCode, &m.SentAt,
+			&m.CreatedAt, &operatorID, &operatorName, &operatorLastname); err != nil {
+			return nil, fmt.Errorf("inbox: scan message: %w", err)
+		}
+		if operatorID != nil && operatorName != nil && operatorLastname != nil {
+			m.SenderOperator = &Operator{ID: *operatorID, Name: *operatorName, Lastname: *operatorLastname}
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("inbox: read thread: %w", err)
+	}
+	return out, nil
 }
 
 const assignmentInsert = `

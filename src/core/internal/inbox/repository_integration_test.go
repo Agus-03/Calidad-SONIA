@@ -462,3 +462,64 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 		}
 	})
 }
+
+// TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock, the failed answer in
+// its place with its cause and its author, the hidden message left out, and the reach of the listing applied to one conversation.
+func TestTheThreadIsReadNewestFirstWithItsFailures(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		service := NewService(Options{Repo: NewRepository(exec)})
+		mine := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+
+		page, err := service.Thread(ctx, mine, w.mineConv, nil, 20)
+		if err != nil {
+			t.Fatalf("Thread: %v", err)
+		}
+		if len(page.Items) != 2 || page.Next != nil {
+			t.Fatalf("got %d messages and next %v, want the two seeded and no cursor", len(page.Items), page.Next)
+		}
+		answer, question := page.Items[0], page.Items[1]
+		if answer.Direction != enums.MessageDirectionOutbound || question.Direction != enums.MessageDirectionInbound {
+			t.Fatalf("the thread reads %s then %s, want the answer first: newest first", answer.Direction, question.Direction)
+		}
+		if answer.Status == nil || *answer.Status != enums.MessageStatusFailed || answer.ErrorCode == nil || *answer.ErrorCode != "131047" {
+			t.Fatalf("the failed answer lost its status or its cause: %+v", answer.Message)
+		}
+		if answer.SenderOperator == nil || answer.SenderOperator.ID != w.mine || answer.SenderOperator.Name != "Prueba" {
+			t.Fatalf("the answer does not say who wrote it: %+v", answer.SenderOperator)
+		}
+		if question.SenderOperator != nil {
+			t.Fatalf("the customer's message carries an operator: %+v", question.SenderOperator)
+		}
+
+		// One message per page: the cursor made of our clock and the id goes back strictly past the row it named.
+		first, err := service.Thread(ctx, mine, w.mineConv, nil, 1)
+		if err != nil || len(first.Items) != 1 || first.Next == nil {
+			t.Fatalf("first page: %d messages, next %v, err %v", len(first.Items), first.Next, err)
+		}
+		second, err := service.Thread(ctx, mine, w.mineConv, first.Next, 1)
+		if err != nil || len(second.Items) != 1 || second.Items[0].ID != question.ID || second.Next != nil {
+			t.Fatalf("second page: %v, next %v, err %v, want the question and the end", idsOfThread(second.Items), second.Next, err)
+		}
+
+		if _, err := service.Thread(ctx, mine, w.theirsConv, nil, 20); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("an operator reading another's thread: got %v, want ErrNotFound", err)
+		}
+		supervisor := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleSupervisor}
+		hidden, err := service.Thread(ctx, supervisor, w.theirsConv, nil, 20)
+		if err != nil {
+			t.Fatalf("a supervisor reading another's thread: %v", err)
+		}
+		if len(hidden.Items) != 0 {
+			t.Fatalf("a hidden message reached the thread: %v", idsOfThread(hidden.Items))
+		}
+	})
+}
+
+func idsOfThread(items []ThreadMessage) []uuid.UUID {
+	out := []uuid.UUID{}
+	for _, m := range items {
+		out = append(out, m.ID)
+	}
+	return out
+}

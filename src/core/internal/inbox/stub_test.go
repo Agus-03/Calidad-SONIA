@@ -27,6 +27,39 @@ type stubStore struct {
 	targets     map[uuid.UUID]Target
 	assignments []Assignment
 	assignErr   error
+
+	threads   map[uuid.UUID][]ThreadMessage
+	threadErr error
+}
+
+// newer is the ORDER BY of the thread: the latest recorded first, and the id when two share the instant.
+func newer(a, b ThreadMessage) bool {
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.After(b.CreatedAt)
+	}
+	return bytes.Compare(a.ID[:], b.ID[:]) > 0
+}
+
+func (s *stubStore) Thread(_ context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error) {
+	s.lastLimit = limit
+	if s.threadErr != nil {
+		return nil, s.threadErr
+	}
+
+	ordered := append([]ThreadMessage{}, s.threads[conversationID]...)
+	sort.Slice(ordered, func(i, j int) bool { return newer(ordered[i], ordered[j]) })
+
+	out := []ThreadMessage{}
+	for _, m := range ordered {
+		if after != nil && !newer(ThreadMessage{CreatedAt: after.At, Message: Message{ID: after.ID}}, m) {
+			continue
+		}
+		if len(out) == limit {
+			break
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 func (s *stubStore) reaches(scope Scope, row Summary) bool {
@@ -60,7 +93,7 @@ func (s *stubStore) List(_ context.Context, scope Scope, after *Cursor, limit in
 
 	out := []Summary{}
 	for _, row := range reached {
-		if after != nil && !before(Summary{LastActivityAt: after.LastActivityAt, ID: after.ID}, row) {
+		if after != nil && !before(Summary{LastActivityAt: after.At, ID: after.ID}, row) {
 			continue
 		}
 		if len(out) == limit {
@@ -213,6 +246,29 @@ func newDesk(store *stubStore) *desk {
 		Logger:  slog.New(slog.DiscardHandler),
 	})
 	return d
+}
+
+// write adds n messages to a conversation one minute apart, oldest first, and returns them newest first: the order the thread answers.
+func (d *desk) write(conversationID uuid.UUID, n int) []ThreadMessage {
+	if d.store.threads == nil {
+		d.store.threads = map[uuid.UUID][]ThreadMessage{}
+	}
+	start := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		d.store.threads[conversationID] = append(d.store.threads[conversationID], ThreadMessage{
+			Message: Message{
+				ID: id.New(), Direction: enums.MessageDirectionInbound, SenderType: enums.SenderTypeContact,
+				ContentText: "mensaje", ContentType: enums.MessageContentTypeText, SentAt: start.Add(time.Duration(i) * time.Minute),
+			},
+			CreatedAt: start.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	written := d.store.threads[conversationID]
+	out := make([]ThreadMessage, 0, len(written))
+	for i := len(written) - 1; i >= 0; i-- {
+		out = append(out, written[i])
+	}
+	return out
 }
 
 // open adds a conversation the window still admits, held by holder or in the pool when holder is nil.

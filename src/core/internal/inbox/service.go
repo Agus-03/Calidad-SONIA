@@ -50,10 +50,11 @@ const autoAssignReason = "auto_assigned_on_first_reply"
 // A timeout is the most likely cause of the write after a failed send, so it cannot run on the context that just expired.
 const writeGrace = 5 * time.Second
 
-// store is the pool-bound slice of the repository: the two reads, which need no transaction of their own.
+// store is the pool-bound slice of the repository: the reads, which need no transaction of their own.
 type store interface {
 	List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error)
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
+	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 }
 
 // Store is what this package writes inside the transaction it conducts. Exported because internal/app/deps.go binds it to that
@@ -112,13 +113,49 @@ func (s *Service) List(ctx context.Context, scope Scope, after *Cursor, limit in
 		return Page{}, err
 	}
 
-	page := Page{Items: rows}
-	if len(rows) > limit {
-		page.Items = rows[:limit]
-		last := page.Items[limit-1]
-		page.Next = &Cursor{LastActivityAt: last.LastActivityAt, ID: last.ID}
+	items, next := paginate(rows, limit, func(row Summary) Cursor { return Cursor{At: row.LastActivityAt, ID: row.ID} })
+	return Page{Items: items, Next: next}, nil
+}
+
+// Thread reads one conversation newest first, with the same reach as the listing: what the operator could not see in the inbox it
+// cannot read by guessing the id either, and it is told the conversation does not exist (ADR-0032, regla 2).
+func (s *Service) Thread(ctx context.Context, scope Scope, conversationID uuid.UUID, after *Cursor, limit int) (ThreadPage, error) {
+	if limit < 1 {
+		limit = 1
 	}
-	return page, nil
+
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return ThreadPage{}, err
+	}
+	if !mayRead(scope, target) {
+		return ThreadPage{}, ErrNotFound
+	}
+
+	rows, err := s.opts.Repo.Thread(ctx, conversationID, after, limit+1)
+	if err != nil {
+		return ThreadPage{}, err
+	}
+
+	items, next := paginate(rows, limit, func(m ThreadMessage) Cursor { return Cursor{At: m.CreatedAt, ID: m.ID} })
+	return ThreadPage{Items: items, Next: next}, nil
+}
+
+// paginate takes the one row read past the limit away and names the last row shown as the cursor: the same rule for the inbox and
+// for a thread, so the two can never disagree on when a page is the last one.
+func paginate[T any](rows []T, limit int, cursorOf func(T) Cursor) ([]T, *Cursor) {
+	if len(rows) <= limit {
+		return rows, nil
+	}
+	rows = rows[:limit]
+	next := cursorOf(rows[limit-1])
+	return rows, &next
+}
+
+// mayRead is the reach of the listing applied to one conversation: the operator reads its own and the pool, and the two roles above
+// it read the whole team (Anexo B).
+func mayRead(scope Scope, t Target) bool {
+	return scope.seesTheWholeTeam() || t.OperatorID == nil || *t.OperatorID == scope.OperatorID
 }
 
 // Send writes the operator's answer before it leaves and sends it at most once (ADR-0020). Taking the conversation out of the pool

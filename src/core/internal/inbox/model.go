@@ -77,11 +77,26 @@ type Message struct {
 	SentAt      time.Time
 }
 
-// Cursor is the row a page ended on. The listing continues after it instead of skipping a count of rows, because the inbox reorders
-// every time a message arrives and an offset would then show one conversation twice and skip another.
+// Cursor is the row a page ended on: its instant in the column the page is ordered by — last_activity_at for the inbox, created_at
+// for a thread — and its id to break the tie. A page continues after it instead of skipping a count of rows, because rows keep
+// arriving at the top of both and an offset would then show one twice and skip another.
 type Cursor struct {
-	LastActivityAt time.Time
-	ID             uuid.UUID
+	At time.Time
+	ID uuid.UUID
+}
+
+// ThreadMessage is a message as the thread of one conversation shows it: the message the listing draws, plus who wrote it when a
+// person did, and the instant it was recorded, which is what orders the thread (C06).
+type ThreadMessage struct {
+	Message
+	SenderOperator *Operator
+	CreatedAt      time.Time
+}
+
+// ThreadPage is newest first, so the first page is what the operator reads before answering and the cursor loads what came before.
+type ThreadPage struct {
+	Items []ThreadMessage
+	Next  *Cursor
 }
 
 // Target is what acting on a conversation needs and its id does not carry: where an answer goes, who holds it, whether Meta still

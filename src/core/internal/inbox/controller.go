@@ -163,6 +163,62 @@ func (c *Controller) list(gc *gin.Context) {
 	soniahttp.OK(gc, body)
 }
 
+// threadMessageResponse is the message every endpoint draws plus who wrote it, embedded so the base shape stays the one presentMessage
+// builds: the thread adds a field, it never redefines one.
+type threadMessageResponse struct {
+	messageResponse
+	SenderOperator *operatorResponse `json:"sender_operator"`
+}
+
+type threadPageResponse struct {
+	Items      []threadMessageResponse `json:"items"`
+	NextCursor *string                 `json:"next_cursor"`
+}
+
+// thread takes the same limit and the same opaque cursor as the listing, and refuses a malformed one the same way.
+func (c *Controller) thread(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+	limit, err := limitFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	after, err := cursorFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+
+	page, err := c.service.Thread(gc.Request.Context(), scope, conversationID, after, limit)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+
+	items := make([]threadMessageResponse, 0, len(page.Items))
+	for _, m := range page.Items {
+		drawn := threadMessageResponse{messageResponse: presentMessage(m.Message)}
+		if m.SenderOperator != nil {
+			drawn.SenderOperator = &operatorResponse{ID: m.SenderOperator.ID.String(), Name: m.SenderOperator.Name, Lastname: m.SenderOperator.Lastname}
+		}
+		items = append(items, drawn)
+	}
+	body := threadPageResponse{Items: items}
+	if page.Next != nil {
+		next := encodeCursor(*page.Next)
+		body.NextCursor = &next
+	}
+	soniahttp.OK(gc, body)
+}
+
 type sendRequest struct {
 	Text string `json:"text" binding:"required"`
 }
@@ -298,7 +354,7 @@ var errMalformedCursor = errors.New("inbox: malformed cursor")
 // The cursor is opaque to the frontend on purpose: what it carries is how the query continues, and a client that learned to build one
 // would break the day the ordering changes. Nanoseconds so the instant survives the round trip exactly and the comparison stays strict.
 func encodeCursor(c Cursor) string {
-	raw := c.LastActivityAt.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
+	raw := c.At.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
@@ -307,17 +363,17 @@ func decodeCursor(token string) (Cursor, error) {
 	if err != nil {
 		return Cursor{}, err
 	}
-	at, rowID, found := strings.Cut(string(raw), "|")
+	rawAt, rawID, found := strings.Cut(string(raw), "|")
 	if !found {
 		return Cursor{}, errMalformedCursor
 	}
-	lastActivity, err := time.Parse(time.RFC3339Nano, at)
+	at, err := time.Parse(time.RFC3339Nano, rawAt)
 	if err != nil {
 		return Cursor{}, err
 	}
-	conversationID, err := uuid.Parse(rowID)
+	rowID, err := uuid.Parse(rawID)
 	if err != nil {
 		return Cursor{}, err
 	}
-	return Cursor{LastActivityAt: lastActivity, ID: conversationID}, nil
+	return Cursor{At: at, ID: rowID}, nil
 }

@@ -428,6 +428,166 @@ func TestTheSendHandlerRefusesWithoutAnActor(t *testing.T) {
 	}
 }
 
+func getThread(engine http.Handler, conversationID string, query url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/messages?"+query.Encode(), nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestTheThreadShowsEachFailureWhereItHappened is ADR-0020 completed: the failed answer is in its place in the thread with its cause,
+// and who wrote each message is said, which is what the operator reads before deciding to send it again.
+func TestTheThreadShowsEachFailureWhereItHappened(t *testing.T) {
+	for _, role := range enums.OperatorRoleValues {
+		t.Run(string(role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(nil)
+			written := d.write(target.ConversationID, 1)
+
+			failed, code := enums.MessageStatusFailed, "131047"
+			answer := ThreadMessage{
+				Message: Message{
+					ID: id.New(), Direction: enums.MessageDirectionOutbound, SenderType: enums.SenderTypeOperator,
+					ContentText: "te respondo", ContentType: enums.MessageContentTypeText, Status: &failed, ErrorCode: &code,
+					SentAt: written[0].SentAt.Add(time.Minute),
+				},
+				SenderOperator: &Operator{ID: testOperator, Name: "Ana", Lastname: "Propia"},
+				CreatedAt:      written[0].CreatedAt.Add(time.Minute),
+			}
+			d.store.threads[target.ConversationID] = append(d.store.threads[target.ConversationID], answer)
+
+			rec := getThread(mountDesk(role, d), target.ConversationID.String(), nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET the thread as %s: got %d, want 200 - body %s", role, rec.Code, rec.Body)
+			}
+			var page struct {
+				Items []struct {
+					ID             string  `json:"id"`
+					Status         *string `json:"status"`
+					ErrorCode      *string `json:"error_code"`
+					SenderType     string  `json:"sender_type"`
+					SenderOperator *struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"sender_operator"`
+				} `json:"items"`
+				NextCursor *string `json:"next_cursor"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Items) != 2 {
+				t.Fatalf("want two messages, got %v - body %s", err, rec.Body)
+			}
+
+			first := page.Items[0]
+			if first.ID != answer.ID.String() || first.Status == nil || *first.Status != "failed" || first.ErrorCode == nil || *first.ErrorCode != code {
+				t.Fatalf("the newest message should be the failed answer with its cause - body %s", rec.Body)
+			}
+			if first.SenderOperator == nil || first.SenderOperator.Name != "Ana" {
+				t.Fatalf("the operator's answer does not say who wrote it - body %s", rec.Body)
+			}
+			if page.Items[1].SenderType != "contact" || page.Items[1].SenderOperator != nil {
+				t.Fatalf("the customer's message carries an operator - body %s", rec.Body)
+			}
+			if page.NextCursor != nil {
+				t.Fatalf("a thread that fits in one page handed out a cursor")
+			}
+		})
+	}
+}
+
+// TestWalkingTheThreadShowsEveryMessageOnce is the cursor of the listing on a thread, end to end through the router.
+func TestWalkingTheThreadShowsEveryMessageOnce(t *testing.T) {
+	d := newDesk(&stubStore{})
+	target := d.open(nil)
+	want := d.write(target.ConversationID, 3)
+	engine := mountDesk(enums.OperatorRoleOperator, d)
+
+	seen := []string{}
+	query := url.Values{"limit": {"1"}}
+	for pages := 0; ; pages++ {
+		if pages > 3 {
+			t.Fatalf("still walking after %d pages", pages)
+		}
+		rec := getThread(engine, target.ConversationID.String(), query)
+		var page struct {
+			Items      []struct{ ID string } `json:"items"`
+			NextCursor *string               `json:"next_cursor"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatalf("the page is not json: %v - body %s", err, rec.Body)
+		}
+		for _, m := range page.Items {
+			seen = append(seen, m.ID)
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		query.Set("cursor", *page.NextCursor)
+	}
+
+	if len(seen) != len(want) {
+		t.Fatalf("walked %v, want %d messages", seen, len(want))
+	}
+	for i := range want {
+		if seen[i] != want[i].ID.String() {
+			t.Fatalf("walked %v, want newest first", seen)
+		}
+	}
+}
+
+// TestEachThreadRefusalHasItsOwnCode is what the frontend switches on when a thread cannot be drawn.
+func TestEachThreadRefusalHasItsOwnCode(t *testing.T) {
+	other := id.New()
+
+	for _, tc := range []struct {
+		name     string
+		shape    func(*desk) string
+		query    url.Values
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", func(*desk) string { return "no-es-un-id" }, nil, http.StatusBadRequest, "invalid_conversation_id"},
+		{"a cursor it never handed out", func(d *desk) string { return d.open(nil).ConversationID.String() },
+			url.Values{"cursor": {"no es base64!"}}, http.StatusBadRequest, "invalid_cursor"},
+		{"a limit of zero", func(d *desk) string { return d.open(nil).ConversationID.String() },
+			url.Values{"limit": {"0"}}, http.StatusBadRequest, "invalid_limit"},
+		{"another operator's conversation", func(d *desk) string { return d.open(&other).ConversationID.String() },
+			nil, http.StatusNotFound, "conversation_not_found"},
+		{"the database did not answer", func(d *desk) string {
+			d.store.threadErr = errors.New("connection refused")
+			return d.open(nil).ConversationID.String()
+		}, nil, http.StatusInternalServerError, "internal_error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			conversationID := tc.shape(d)
+
+			rec := getThread(mountDesk(enums.OperatorRoleOperator, d), conversationID, tc.query)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheThreadHandlerRefusesWithoutAnActor guards the wiring the same way the other handlers do.
+func TestTheThreadHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodGet, "/conversations/x/messages", nil)
+
+	NewController(newDesk(&stubStore{}).service, nil).thread(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
 func patchMode(engine http.Handler, conversationID, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/conversations/"+conversationID+"/mode", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

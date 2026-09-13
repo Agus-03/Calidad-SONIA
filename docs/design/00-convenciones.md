@@ -185,7 +185,7 @@ Las FK se declaran en la base y no solo en la aplicación porque son la única g
 **Reglas:**
 
 - `ON DELETE RESTRICT` por defecto.
-- Cuando una FK es opcional se documenta **por qué** puede ser nula. Ejemplo: una conversación en modo autónomo no tiene operador asignado, lo que hace que `operator_id` sea legítimamente nulo.
+- Cuando una FK es opcional se documenta **por qué** puede ser nula. Ejemplo: una conversación que llega cuando no hay ningún vendedor activo queda en el pool sin operador asignado ([ADR-0037](02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), regla 3), lo que hace que `operator_id` sea legítimamente nulo.
 - Cuando dos FK apuntan a la misma tabla desde una misma entidad, el nombre lleva el rol: `from_operator_id` / `to_operator_id`.
 - Una relación se modela **en un solo lugar**. Si la entidad A tiene `b_id` y la entidad B tiene `a_id` para expresar el mismo vínculo, eso no es redundancia: es una inconsistencia esperando ocurrir.
 

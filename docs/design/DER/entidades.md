@@ -99,7 +99,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `contact_id` | uuid | FK |
 | `inbox_id` | uuid | FK. **Por qué bandeja —y por lo tanto por qué número— entró** (ADR-0012) |
 | `ai_agent_id` | uuid | **Nullable** — en modo `off` no hay agente. Se inicializa con `inboxes.default_ai_agent_id` (ADR-0012) |
-| `operator_id` | uuid | **Nullable** — pool sin asignar, o modo autónomo (ADR-0004) |
+| `operator_id` | uuid | **Nullable** — pool sin asignar (ADR-0004). Desde ADR-0037 toda conversación recibe vendedor cuando el cliente escribe, así que es nulo sólo si llegó cuando no había ningún vendedor activo; el modo autónomo ya no lo deja nulo |
 | `status` | `ConversationStatus` | |
 | `mode` | `AgentMode` | Modo efectivo de esta conversación (F27) |
 | `starred` | boolean | F25 |
@@ -496,16 +496,16 @@ Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con un
 
 ### `conversation_assignments`
 
-> **Origen:** F26 (*"reasignación con historial completo"*) · ADR-0004 · H-15
+> **Origen:** F26 (*"reasignación con historial completo"*) · ADR-0004 · H-15 · ADR-0037
 
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
 | `conversation_id` | uuid | FK |
-| `from_operator_id` | uuid | Nullable — nulo en la primera asignación desde el pool |
+| `from_operator_id` | uuid | Nullable — nulo en la primera asignación de una conversación, sea por el reparto o desde el pool |
 | `to_operator_id` | uuid | FK |
-| `assigned_by_operator_id` | uuid | Nullable. Igual a `to_operator_id` en la autoasignación |
-| `reason` | text | Nullable. **Donde entra "lo pidió el cliente"** (ADR-0004) |
+| `assigned_by_operator_id` | uuid | Nullable. Igual a `to_operator_id` cuando un operador toma el pool respondiendo (ADR-0035, regla 7); **nulo cuando asigna el reparto**, porque no la asignó nadie (ADR-0037, regla 5) |
+| `reason` | text | Nullable. **Donde entra "lo pidió el cliente"** (ADR-0004). Los motivos del sistema son tokens fijos: `auto_assigned_on_first_reply` (toma del pool), `auto_assigned_to_previous_operator` y `auto_assigned_by_turn` (reparto de ADR-0037) |
 | `created_at` | timestamptz | Inmutable |
 
 ### `internal_notes`

@@ -31,7 +31,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 | `contacts` | 1 — 0..* | `conversations` | `conversations.contact_id` | Un contacto puede existir sin conversaciones: F30 permite el alta manual |
 | `inboxes` | 1 — 0..* | `conversations` | `conversations.inbox_id` | **Por qué bandeja —y por lo tanto por qué número de WhatsApp— entró** (ADR-0012) |
 | `conversations` | 1 — 0..* | `messages` | `messages.conversation_id` | |
-| `operators` | 0..1 — 0..* | `conversations` | `conversations.operator_id` | **Nullable.** Pool sin asignar (ADR-0004) o modo autónomo (F02) |
+| `operators` | 0..1 — 0..* | `conversations` | `conversations.operator_id` | **Nullable.** Pool sin asignar (ADR-0004): desde ADR-0037, sólo lo que llegó sin ningún vendedor activo. El modo autónomo ya no la deja nula |
 | `ai_agents` | 0..1 — 0..* | `conversations` | `conversations.ai_agent_id` | **Nullable.** En modo `off` no hay agente asignado |
 | `operators` | 0..1 — 0..* | `conversations` | `conversations.scored_by_operator_id` | **Nullable.** Sólo las conversaciones calificadas (F13) |
 | `operators` | 0..1 — 0..* | `conversations` | `conversations.resolved_by_operator_id` | **Nullable.** El cierre es manual (ADR-0002): sólo las resueltas |
@@ -99,9 +99,9 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 |---|---|---|---|---|
 | `accounts` | 1 — 0..* | `contacts` · `ai_agents` · `operators` · `labels` · `quick_replies` · `inboxes` | `.account_id` en cada una | **Las seis entidades raíz** (ADR-0012). El resto del modelo hereda la pertenencia por su padre — ver la nota de abajo |
 | `conversations` | 1 — 0..* | `conversation_assignments` | `conversation_assignments.conversation_id` | `0..*`: una conversación en el pool todavía no fue asignada |
-| `operators` | 0..1 — 0..* | `conversation_assignments` | `.from_operator_id` | **Nullable.** Nulo en la primera asignación desde el pool (ADR-0004) |
+| `operators` | 0..1 — 0..* | `conversation_assignments` | `.from_operator_id` | **Nullable.** Nulo en la primera asignación de una conversación, sea por el reparto (ADR-0037) o desde el pool (ADR-0004) |
 | `operators` | 1 — 0..* | `conversation_assignments` | `.to_operator_id` | Siempre hay destinatario |
-| `operators` | 0..1 — 0..* | `conversation_assignments` | `.assigned_by_operator_id` | **Nullable.** En la autoasignación coincide con el destinatario |
+| `operators` | 0..1 — 0..* | `conversation_assignments` | `.assigned_by_operator_id` | **Nullable.** Coincide con el destinatario cuando un operador toma el pool respondiendo (ADR-0035, regla 7); nulo cuando asigna el reparto, porque no la asignó nadie (ADR-0037, regla 5) |
 | `conversations` | 1 — 0..* | `internal_notes` | `internal_notes.conversation_id` | F26 — notas preservadas en la reasignación |
 | `operators` | 1 — 0..* | `internal_notes` | `internal_notes.operator_id` | |
 | `contacts` | 1 — 0..* | `contact_labels` | `contact_labels.contact_id` | F33 |
@@ -208,7 +208,7 @@ Seis puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad e
 
 | # | Relación | Lectura ingenua | Correcta | Motivo |
 |---|---|---|---|---|
-| 1 | `conversations` — `operators` | `1` — toda conversación tiene operador | **`0..1`** | Contradiría F02: una conversación en modo autónomo no tiene operador humano. Y ADR-0004 define un pool sin asignar |
+| 1 | `conversations` — `operators` | `1` — toda conversación tiene operador | **`0..1`** | Una conversación que llega cuando no hay ningún vendedor activo queda en el pool sin asignar (ADR-0004; ADR-0037, regla 3). El motivo original —*"una conversación en modo autónomo no tiene operador humano"*— ya no vale: desde ADR-0037 la conversación autónoma también tiene vendedor, y la cardinalidad se sostiene sólo por el pool |
 | 2 | `conversations` — `ai_agents` | `1` | **`0..1`** | En modo `off` no hay agente |
 | 3 | `ai_agents` — `knowledge_bases` | Bidireccional (como en el Anexo C) | **Una sola dirección**, desde `knowledge_bases` | C05. La duplicación del Anexo C es una garantía de inconsistencia |
 | 4 | `knowledge_bases` — `documents` | `1 — 1` (un archivo) | **`1 — 0..*`** | H-06: F06 habla de documentos en plural, con límite **por agente** |

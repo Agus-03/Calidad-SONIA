@@ -549,11 +549,21 @@ ORDER  BY conversaciones DESC;
 --    distribución por canal de origen."
 
 -- F34.a — estados.
+--
+-- SUPUESTO: una conversación sin resolver de un contacto dado de baja NO cuenta.
+--   Queda `active` u oculta para siempre (ADR-0035, regla 1 y §4): nadie la ve
+--   ni la cierra, así que contarla haría crecer "activas" y "en espera" sin
+--   límite con carga que nadie puede atender. Las resueltas sí cuentan: son
+--   historial, y un contacto dado de baja no se lleva sus métricas (C05).
+--   CAMBIO DE DEFINICIÓN, decidido por el equipo el 2026-09-13: hasta entonces
+--   la consulta contaba toda conversación no borrada.
 
 SELECT c.status,
        count(*) AS conversaciones
 FROM   conversations c
+JOIN   contacts ct ON ct.id = c.contact_id
 WHERE  c.deleted_at IS NULL
+  AND  (ct.deleted_at IS NULL OR c.status = 'resolved')
 GROUP  BY c.status
 ORDER  BY conversaciones DESC;
 
@@ -859,7 +869,8 @@ GROUP  BY ps_grounding.outcome;
 --       Defecto: el cierre es manual (ADR-0002), así que acredita al que sólo
 --       apretó "resolver" en un chat que atendió la IA.
 --   R2  conversations.operator_id              → último asignado.
---       Defecto: se sobrescribe; F26 lo vuelve arbitrario; nulo en autónomo.
+--       Defecto: se sobrescribe; F26 lo vuelve arbitrario; y desde ADR-0037
+--       toda conversación tiene vendedor, así que acredita lo que atendió la IA.
 --   R3  conversation_assignments.to_operator_id → todos los que intervinieron.
 --       Defecto: los porcentajes suman más de 100 %.
 --   R4  messages.sender_operator_id            → quién efectivamente respondió.

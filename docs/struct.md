@@ -142,10 +142,10 @@ sonia/
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja y tiempo real · F05, F13, F21–F27
 │   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
-│   │   │   │   ├── routes.go           los tres roles en todas · el modo, el operator sólo de lo suyo (ADR-0035, ADR-0037)
+│   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020)
+│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037)
 │   │   │   │   ├── repository.go       la bandeja con su último mensaje y sus fallidos · escribe conversation_assignments
 │   │   │   │   └── model.go
 │   │   │   │

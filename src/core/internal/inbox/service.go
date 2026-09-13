@@ -52,7 +52,7 @@ var (
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
-// F26 can tell the automatic assignment from the ones somebody asked for.
+// F26 can tell taking the pool by answering from the two assignments of the dispatcher (dispatch.go) and from the ones somebody asked for.
 const autoAssignReason = "auto_assigned_on_first_reply"
 
 // A timeout is the most likely cause of the write after a failed send, so it cannot run on the context that just expired.
@@ -251,11 +251,16 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	if err != nil {
 		return "", err
 	}
-	if err := maySwitch(scope, target); err != nil {
-		return "", err
+	// Reach first, so a closed conversation of another vendor is still one that does not exist; then closed before not held, because
+	// telling the vendor to take a resolved one first sends it to answer and be refused again (ADR-0035, regla 14).
+	if !mayRead(scope, target) {
+		return "", ErrNotFound
 	}
 	if target.Status == enums.ConversationStatusResolved {
 		return "", ErrResolved
+	}
+	if err := maySwitch(scope, target); err != nil {
+		return "", err
 	}
 	// Asking for the mode it already has is the state the caller wants, so it is answered and not written twice.
 	if target.Mode == mode {
@@ -277,16 +282,13 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	}
 }
 
-// maySwitch is ADR-0037, regla 4: the vendor answers for the bot of the conversations it holds, and nothing else. What it cannot see
-// it is told does not exist, as everywhere in the inbox; the pool it can see, and is told it has to take it first.
+// maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of
+// the conversations it holds, and the pool, which it can see, it is told it has to take first.
 func maySwitch(scope Scope, t Target) error {
-	if scope.seesTheWholeTeam() || (t.OperatorID != nil && *t.OperatorID == scope.OperatorID) {
+	if scope.seesTheWholeTeam() || t.OperatorID != nil {
 		return nil
 	}
-	if t.OperatorID == nil {
-		return ErrNotHeld
-	}
-	return ErrNotFound
+	return ErrNotHeld
 }
 
 // mayAnswer is ADR-0035, reglas 5 y 6: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole

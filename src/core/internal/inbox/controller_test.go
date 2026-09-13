@@ -616,7 +616,7 @@ func patchMode(engine http.Handler, conversationID, body string) *httptest.Respo
 
 // TestTheVendorSwitchesTheBotOfWhatItHolds is ADR-0037, regla 4, through the real router: the operator switches the bot of its own
 // conversations, as F27 and Anexo B give it, and supervisor and admin the bot of any. What the operator cannot see does not exist,
-// and the pool, which it can see, it has to take first.
+// and the pool, which it can see, it has to take first; unless it is resolved, which taking it would not change.
 func TestTheVendorSwitchesTheBotOfWhatItHolds(t *testing.T) {
 	someoneElse := id.New()
 
@@ -624,18 +624,25 @@ func TestTheVendorSwitchesTheBotOfWhatItHolds(t *testing.T) {
 		name     string
 		role     enums.OperatorRole
 		holder   *uuid.UUID
+		resolved bool
 		wantCode int
 		want     string
 	}{
-		{"an operator switches the bot of its own conversation", enums.OperatorRoleOperator, &testOperator, http.StatusOK, ""},
-		{"an operator is told to take the pool before switching its bot", enums.OperatorRoleOperator, nil, http.StatusConflict, "conversation_not_assigned"},
-		{"an operator is told another's conversation does not exist", enums.OperatorRoleOperator, &someoneElse, http.StatusNotFound, "conversation_not_found"},
-		{"a supervisor switches any conversation of the team", enums.OperatorRoleSupervisor, &someoneElse, http.StatusOK, ""},
-		{"an admin switches one of the pool too", enums.OperatorRoleAdmin, nil, http.StatusOK, ""},
+		{"an operator switches the bot of its own conversation", enums.OperatorRoleOperator, &testOperator, false, http.StatusOK, ""},
+		{"an operator is told to take the pool before switching its bot", enums.OperatorRoleOperator, nil, false, http.StatusConflict, "conversation_not_assigned"},
+		{"an operator is told another's conversation does not exist", enums.OperatorRoleOperator, &someoneElse, false, http.StatusNotFound, "conversation_not_found"},
+		{"a resolved one of the pool is told resolved, not sent to answer it and be refused again", enums.OperatorRoleOperator, nil, true, http.StatusConflict, "conversation_resolved"},
+		{"another's resolved conversation still does not exist", enums.OperatorRoleOperator, &someoneElse, true, http.StatusNotFound, "conversation_not_found"},
+		{"a supervisor switches any conversation of the team", enums.OperatorRoleSupervisor, &someoneElse, false, http.StatusOK, ""},
+		{"an admin switches one of the pool too", enums.OperatorRoleAdmin, nil, false, http.StatusOK, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDesk(&stubStore{})
 			target := d.open(tc.holder)
+			if tc.resolved {
+				target.Status = enums.ConversationStatusResolved
+				d.store.targets[target.ConversationID] = target
+			}
 
 			rec := patchMode(mountDesk(tc.role, d), target.ConversationID.String(), `{"mode":"off"}`)
 			if rec.Code != tc.wantCode {

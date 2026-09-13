@@ -58,3 +58,5 @@ El motivo de escribirlo acá y no confiar en la memoria: es una regla con fecha 
 ## Lo que el esquema no trae, a propósito
 
 **Índices de rendimiento.** Salvo los que el diseño declara como invariantes —los únicos parciales de `relaciones.md` §9—, no hay índices. PostgreSQL no indexa las claves foráneas solo, así que van a hacer falta; se agregan **cuando haya una consulta real y lenta que los justifique**, no antes. Adivinar índices sobre un esquema sin datos produce índices que nadie usa y que igual hay que mantener.
+
+**Excepción declarada: el orden de la bandeja** ([ADR-0036](../../../docs/design/02-decisiones/0036-paginacion-por-cursor-en-la-bandeja.md) §4.1). `conversations_inbox_order` y `messages_thread_order` entraron antes de tener una consulta lenta, porque la consulta existe y corre en cada carga de la bandeja, y porque después de congelar `0001` no se pueden construir con `CONCURRENTLY`.

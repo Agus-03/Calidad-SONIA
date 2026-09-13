@@ -123,6 +123,9 @@ CREATE TABLE conversations (
 -- ADR-0002: an inbound message on a resolved conversation opens a new one, so at most one is unresolved at a time.
 CREATE UNIQUE INDEX conversations_one_open_per_contact ON conversations (contact_id) WHERE status <> 'resolved' AND deleted_at IS NULL;
 
+-- ADR-0036: the inbox pages by (last_activity_at, id) on every load; a declared exception to waiting for a slow query (migrations/README.md).
+CREATE INDEX conversations_inbox_order ON conversations (last_activity_at, id) WHERE deleted_at IS NULL;
+
 -- Bloque 3 - the turn lives here (ADR-0022); immutable, so opened_at plays the part of created_at.
 CREATE TABLE message_batches (
     id              uuid        PRIMARY KEY,
@@ -173,6 +176,9 @@ CREATE TABLE messages (
         OR (sender_type IN ('contact', 'system') AND sender_operator_id IS NULL AND sender_ai_agent_id IS NULL)
     )
 );
+
+-- ADR-0036: the thread and the last message of each inbox row read one conversation newest first; the same declared exception.
+CREATE INDEX messages_thread_order ON messages (conversation_id, created_at, id);
 
 -- Bloque 2 - the six components of F01; the admin edits them and they are not in rules/ (regla 9).
 CREATE TABLE prompt_components (

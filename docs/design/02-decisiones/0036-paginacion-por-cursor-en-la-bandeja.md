@@ -54,7 +54,7 @@ La pregunta llegó en la Fase 5 porque es la primera vez que un listado del núc
 
 - La bandeja se puede recorrer mientras entran mensajes sin repetir ni perder conversaciones que no se movieron.
 - El hilo de una conversación larga se recorre hacia atrás sin que un mensaje nuevo corra las páginas.
-- No hay un `OFFSET` que recorra y descarte filas: con los índices del orden (ver *Lo que queda abierto*), la página N cuesta lo mismo que la 1.
+- No hay un `OFFSET` que recorra y descarte filas: con los dos índices del orden (§4.1), la página N cuesta lo mismo que la 1.
 - La regla de paginación es una sola función para los dos listados, así que no pueden discrepar sobre cuándo una página es la última.
 
 ### Negativas / costos asumidos
@@ -63,13 +63,27 @@ La pregunta llegó en la Fase 5 porque es la primera vez que un listado del núc
 - **Una conversación que se mueve durante el recorrido no aparece en las páginas que faltan.** Queda arriba, y el operador la ve sólo si vuelve a pedir la primera página. Hasta la Fase 10, sin WebSockets, **la bandeja no avisa que algo se movió**: depende de que el frontend refresque.
 - **El núcleo tiene dos formas de paginar.** El frontend tiene que manejar las dos, y quien escriba un listado nuevo tiene que elegir. La regla 9 da el criterio, pero es una decisión más para cada listado.
 - **Cambiar el orden invalida los cursores en circulación.** Si la bandeja pasa a ordenarse por otra columna, un cursor viejo se va a leer con el orden nuevo y va a continuar desde un lugar sin sentido. No se versiona el cursor: con una sola pantalla que lo consume, se asume que el frontend vuelve a la primera página después de un despliegue.
-- **El orden necesita índices que el esquema no tiene.** No hay índice sobre `conversations(last_activity_at)` ni sobre `messages(conversation_id, created_at)`. Con los datos de demo no se nota. Con volumen real, cada página ordena todas las conversaciones de la cuenta, o todos los mensajes de la conversación, antes de cortar.
+- **Los dos índices del orden se agregan antes de tener una consulta lenta que los pida** (§4.1). Es una excepción a la regla de [`migrations/README.md`](../../../src/core/migrations/README.md), y cada mensaje que entra o sale paga una escritura de índice más.
+
+### 4.1. Los índices del orden
+
+El 2026-09-13 el equipo decidió agregarlos ya, editando `0001` ([ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md), regla 4):
+
+| Índice | Sirve a |
+|---|---|
+| `conversations_inbox_order` — `conversations (last_activity_at, id)`, de las no borradas | El orden y el cursor de la bandeja |
+| `messages_thread_order` — `messages (conversation_id, created_at, id)` | El hilo y el último mensaje de cada fila de la bandeja |
+
+Van ascendentes porque PostgreSQL los recorre hacia atrás para el orden descendente, y la comparación de filas del cursor entra como condición del índice, sin paso de ordenamiento. Se verificó con `EXPLAIN` sobre la base sembrada.
+
+**Por qué no se esperó a una consulta lenta**, que es lo que pide `migrations/README.md`:
+- **No es adivinar.** La consulta existe y corre en cada carga de la bandeja.
+- **Congelado `0001`, agregarlos es más caro.** El corredor aplica cada archivo dentro de una transacción, así que el índice no se puede construir con `CONCURRENTLY`, y `messages` quedaría bloqueada para escritura mientras se construye.
 
 ### Lo que queda abierto
 
 | Qué | Por qué no se resuelve acá |
 |---|---|
-| **Los dos índices del orden** | Es un cambio de esquema. Mientras no se conecte la primera WABA real, entra editando `0001` ([ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md), regla 4); después, en una migración nueva. Se decide aparte, con el resto del esquema |
 | **Cómo convive el cursor con los filtros de F23** | Un filtro que no cambia el orden no afecta al cursor. Uno que lo cambie —ordenar *"en espera"* por tiempo de espera— necesita su propio cursor. Es de la **Fase 10** |
 
 ## 5. Alternativas descartadas

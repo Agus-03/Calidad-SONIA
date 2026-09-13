@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/agents"
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
@@ -117,12 +118,34 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:  log,
 	})
 
+	// A second client of the brain and not the turn's: an administrator is waiting on this one, so it gets the short timeout of
+	// the admin panel and not the ten seconds a turn may take.
+	adminBrain := brainclient.New(brainclient.Options{
+		BaseURL: cfg.BrainBaseURL,
+		Token:   cfg.BrainInternalToken,
+		Timeout: cfg.PreviewTimeout,
+		Logger:  log,
+	})
+	agentRepo := agents.NewRepository(pool)
+	identity := agents.NewService(agents.Options{
+		Repo: agentRepo,
+		// Binds the agent and the inboxes to one transaction: removing an agent and clearing the defaults that name it commit together (regla 5).
+		Tx: func(ctx context.Context, fn func(agents.Store, agents.Inboxes) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(agentRepo.WithExecutor(exec), channelRepo.WithExecutor(exec))
+			})
+		},
+		Catalogue: adminBrain,
+		Logger:    log,
+	})
+
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
+			agents.NewController(identity, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

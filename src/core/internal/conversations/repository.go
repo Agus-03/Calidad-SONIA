@@ -25,7 +25,7 @@ func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec
 func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
 const conversationSelect = `
-SELECT id, contact_id, inbox_id, ai_agent_id, status, mode, last_inbound_at, window_expires_at
+SELECT id, contact_id, inbox_id, ai_agent_id, operator_id, status, mode, last_inbound_at, window_expires_at
 FROM   conversations
 WHERE  deleted_at IS NULL`
 
@@ -34,7 +34,7 @@ func (r *Repository) OpenByContact(ctx context.Context, contactID uuid.UUID) (Co
 	row := r.exec.QueryRow(ctx, conversationSelect+" AND contact_id = $1 AND status <> 'resolved'", contactID)
 
 	var c Conversation
-	err := row.Scan(&c.ID, &c.ContactID, &c.InboxID, &c.AIAgentID, &c.Status, &c.Mode, &c.LastInboundAt, &c.WindowExpiresAt)
+	err := row.Scan(&c.ID, &c.ContactID, &c.InboxID, &c.AIAgentID, &c.OperatorID, &c.Status, &c.Mode, &c.LastInboundAt, &c.WindowExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Conversation{}, ErrNotFound
 	}

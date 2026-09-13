@@ -50,8 +50,20 @@ func insertContact(ctx context.Context, exec db.Executor, account uuid.UUID) (uu
 	_, err := exec.Exec(ctx,
 		`INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
 		 VALUES ($1, $2, $3, 'Prueba', 'Integracion', 'client', 'direct', now())`,
-		contact, account, "549351"+contact.String()[:7])
+		contact, account, "549351"+digitsOf(contact.String()))
 	return contact, err
+}
+
+// digitsOf keeps every digit of the id and not a prefix: the head of a UUID v7 is its timestamp, so two contacts built in the same
+// case would share it and collide on the unique index of the phone.
+func digitsOf(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			out = append(out, s[i])
+		}
+	}
+	return string(out)
 }
 
 // TestTheIndexAndNotTheReadDecidesWhoOpens proves ADR-0002 against real DDL: two racing inbound messages cannot open two conversations.
@@ -309,6 +321,72 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 		}
 		if err := repo.TouchOutbound(ctx, id.New()); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("TouchOutbound on a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheBotIsTurnedOffWithoutLosingItsAgent is F27 against real DDL: off keeps ai_agent_id so the bot can come back, and a
+// conversation born without an agent cannot be turned on, because the predicate and not a read decides it.
+func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		mode := func(conversationID uuid.UUID) (enums.AgentMode, *uuid.UUID) {
+			t.Helper()
+			var m enums.AgentMode
+			var a *uuid.UUID
+			if err := exec.QueryRow(ctx, `SELECT mode, ai_agent_id FROM conversations WHERE id = $1`, conversationID).Scan(&m, &a); err != nil {
+				t.Fatalf("read the mode: %v", err)
+			}
+			return m, a
+		}
+
+		withAgent, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		answered, err := service.EnsureOpen(ctx, withAgent, inbox, &agent, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		if err := service.SetMode(ctx, answered.ID, enums.AgentModeOff); err != nil {
+			t.Fatalf("turning the bot off: %v", err)
+		}
+		if m, a := mode(answered.ID); m != enums.AgentModeOff || a == nil || *a != agent {
+			t.Fatalf("after turning it off: mode %q agent %v, want off and the agent kept", m, a)
+		}
+		if err := service.SetMode(ctx, answered.ID, enums.AgentModeAutonomous); err != nil {
+			t.Fatalf("turning the bot back on: %v", err)
+		}
+		if m, _ := mode(answered.ID); m != enums.AgentModeAutonomous {
+			t.Fatalf("after turning it on: mode %q, want autonomous", m)
+		}
+
+		withoutAgent, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		silent, err := service.EnsureOpen(ctx, withoutAgent, inbox, nil, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		if err := service.SetMode(ctx, silent.ID, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAgent) {
+			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAgent", err)
+		}
+		if m, _ := mode(silent.ID); m != enums.AgentModeOff {
+			t.Fatalf("the refused change still wrote %q", m)
+		}
+
+		if err := service.SetMode(ctx, id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("turning off a conversation that does not exist: got %v, want ErrNotFound", err)
 		}
 		return rollback
 	})

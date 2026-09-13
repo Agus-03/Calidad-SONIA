@@ -31,6 +31,15 @@ type fakeStore struct {
 	touchedOut  int
 	claimErr    error
 	claimedBy   map[uuid.UUID]uuid.UUID
+	modes       map[uuid.UUID]enums.AgentMode
+}
+
+func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	if f.modes == nil {
+		f.modes = map[uuid.UUID]enums.AgentMode{}
+	}
+	f.modes[conversationID] = mode
+	return nil
 }
 
 func (f *fakeStore) TouchOutbound(context.Context, uuid.UUID) error {
@@ -343,5 +352,18 @@ func TestClaimReportsTheRaceLost(t *testing.T) {
 	lost := &fakeStore{claimErr: ErrTaken}
 	if err := NewService(lost, slog.Default()).Claim(context.Background(), conversation, operator); !errors.Is(err, ErrTaken) {
 		t.Fatalf("Claim on a taken conversation: got %v, want ErrTaken", err)
+	}
+}
+
+// TestSetModeReachesTheStore is the passthrough F27 needs: the inbox never writes the mode column with SQL of its own (regla 1).
+func TestSetModeReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).SetMode(context.Background(), conversation, enums.AgentModeOff); err != nil {
+		t.Fatalf("SetMode: %v", err)
+	}
+	if store.modes[conversation] != enums.AgentModeOff {
+		t.Fatalf("the mode did not reach the store: %v", store.modes)
 	}
 }

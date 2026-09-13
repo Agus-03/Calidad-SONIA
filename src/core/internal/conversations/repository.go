@@ -187,6 +187,29 @@ func (r *Repository) Claim(ctx context.Context, conversationID, operatorID uuid.
 	return nil
 }
 
+// Any mode but off needs an agent, and that is in the predicate and not in an earlier read, the same as the invariant EnsureOpen
+// keeps when it opens a conversation with none: a mode naming a bot that does not exist would read as one that is silent.
+const conversationSetMode = `
+UPDATE conversations
+SET    mode = $2, updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL AND ($2 = 'off' OR ai_agent_id IS NOT NULL)`
+
+// SetMode answers ErrNoAgent when nothing matched a mode that needs one: the caller read the conversation first, so a missing row
+// here is the rarer case, and turning off can only miss for that reason.
+func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	tag, err := r.exec.Exec(ctx, conversationSetMode, conversationID, mode)
+	if err != nil {
+		return fmt.Errorf("conversations: set mode: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+	if mode == enums.AgentModeOff {
+		return ErrNotFound
+	}
+	return ErrNoAgent
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation

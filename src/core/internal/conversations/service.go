@@ -21,6 +21,9 @@ var (
 
 	// ErrTaken is the pool race lost: somebody else answered first and the conversation is theirs (ADR-0004).
 	ErrTaken = errors.New("conversations: the conversation is already assigned to an operator")
+
+	// ErrNoAgent refuses to turn on a bot that does not exist: a conversation born without an agent has nobody to answer it.
+	ErrNoAgent = errors.New("conversations: the conversation has no agent to turn on")
 )
 
 // ServiceWindow is Meta's, not ours: outside it a free form answer is refused and only a template may be sent.
@@ -34,6 +37,7 @@ type store interface {
 	TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error
 	TouchOutbound(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
+	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
@@ -161,6 +165,12 @@ func (s *Service) appendOutbound(ctx context.Context, message Message) (Message,
 // did, and the caller is expected to hold it in the transaction that writes the answer, so losing the race writes nothing.
 func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error {
 	return s.repo.Claim(ctx, conversationID, operatorID)
+}
+
+// SetMode changes how the agent answers one conversation and leaves ai_agent_id alone: turning the bot off is a mode and not the
+// loss of the agent, or it could never be turned back on (F27). Which modes a caller may ask for is the caller's rule.
+func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	return s.repo.SetMode(ctx, conversationID, mode)
 }
 
 // LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.

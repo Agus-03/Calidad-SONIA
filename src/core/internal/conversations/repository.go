@@ -94,15 +94,31 @@ func (r *Repository) LinkToBatch(ctx context.Context, messageID, batchID uuid.UU
 	return nil
 }
 
+// The first send of a conversation is also its first response, and both land in one statement so neither can exist without the
+// other. first_response_at does not tell the agent from the operator on purpose (05-consultas-de-metricas, supuesto S1): F34
+// separates them from messages. A failed send is not a response, which is why this is here and not where the row is written.
+//
+// The count is of the messages updated, so a missing message still reads as one; the second statement runs whether or not the
+// select names it, as every data-modifying WITH does.
+const messageMarkSent = `
+WITH sent AS (
+       UPDATE messages SET wamid = $2, sent_at = $3, status = $4 WHERE id = $1
+       RETURNING conversation_id
+), first AS (
+       UPDATE conversations c
+       SET    first_response_at = $3, updated_at = now()
+       FROM   sent
+       WHERE  c.id = sent.conversation_id AND c.first_response_at IS NULL
+)
+SELECT count(*) FROM sent`
+
 // MarkSent writes what only Meta knows, which is why the row was written without it (07-secuencia, hallazgo 3).
 func (r *Repository) MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error {
-	tag, err := r.exec.Exec(ctx,
-		`UPDATE messages SET wamid = $2, sent_at = $3, status = $4 WHERE id = $1`,
-		messageID, wamid, sentAt, enums.MessageStatusSent)
-	if err != nil {
+	var updated int
+	if err := r.exec.QueryRow(ctx, messageMarkSent, messageID, wamid, sentAt, enums.MessageStatusSent).Scan(&updated); err != nil {
 		return fmt.Errorf("conversations: mark message sent: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if updated == 0 {
 		return ErrNotFound
 	}
 	return nil
@@ -134,6 +150,39 @@ func (r *Repository) TouchInbound(ctx context.Context, conversationID uuid.UUID,
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// TouchOutbound takes the database clock and not the caller's, because it is the one clock every writer of this column shares
+// (migrations/README.md).
+func (r *Repository) TouchOutbound(ctx context.Context, conversationID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx,
+		`UPDATE conversations SET last_activity_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+		conversationID)
+	if err != nil {
+		return fmt.Errorf("conversations: touch outbound: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// The pool is in the predicate and not in an earlier read: two operators answering at once both reach this UPDATE, the second
+// waits on the row lock of the first, re-reads operator_id once it commits, and matches nothing (ADR-0004).
+const conversationClaim = `
+UPDATE conversations
+SET    operator_id = $2, updated_at = now()
+WHERE  id = $1 AND operator_id IS NULL AND deleted_at IS NULL`
+
+func (r *Repository) Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationClaim, conversationID, operatorID)
+	if err != nil {
+		return fmt.Errorf("conversations: claim conversation: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaken
 	}
 	return nil
 }

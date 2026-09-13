@@ -18,6 +18,9 @@ var (
 	ErrNotFound       = errors.New("conversations: conversation not found")
 	ErrAlreadyOpen    = errors.New("conversations: the contact already has an open conversation")
 	ErrDuplicateWAMID = errors.New("conversations: the channel id is already stored")
+
+	// ErrTaken is the pool race lost: somebody else answered first and the conversation is theirs (ADR-0004).
+	ErrTaken = errors.New("conversations: the conversation is already assigned to an operator")
 )
 
 // ServiceWindow is Meta's, not ours: outside it a free form answer is refused and only a template may be sent.
@@ -29,6 +32,8 @@ type store interface {
 	Create(ctx context.Context, c Conversation) error
 	AppendMessage(ctx context.Context, m Message) error
 	TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error
+	TouchOutbound(ctx context.Context, conversationID uuid.UUID) error
+	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
@@ -122,11 +127,40 @@ func (s *Service) DraftOutbound(conversationID, aiAgentID uuid.UUID, text string
 
 // RecordOutbound writes the answer before it leaves, so a send that fails leaves a visible row and never a hole (07-secuencia).
 func (s *Service) RecordOutbound(ctx context.Context, conversationID, aiAgentID uuid.UUID, text string, at time.Time) (Message, error) {
-	message := s.DraftOutbound(conversationID, aiAgentID, text, at)
+	return s.appendOutbound(ctx, s.DraftOutbound(conversationID, aiAgentID, text, at))
+}
+
+// RecordOperatorOutbound is the same write-before-send for an answer a person typed: the sender check of messages wants the
+// operator's id and no agent's, so the row names who wrote it and nothing else (H-09, ADR-0020).
+func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, operatorID uuid.UUID, text string, at time.Time) (Message, error) {
+	return s.appendOutbound(ctx, Message{
+		ID:               id.New(),
+		ConversationID:   conversationID,
+		Direction:        enums.MessageDirectionOutbound,
+		SenderType:       enums.SenderTypeOperator,
+		SenderOperatorID: &operatorID,
+		ContentText:      text,
+		ContentType:      enums.MessageContentTypeText,
+		SentAt:           at,
+	})
+}
+
+// appendOutbound moves last_activity_at with the row, for the agent and the operator alike: the inbox orders by that column, and
+// a conversation somebody just answered would otherwise sink below the ones nobody touched since their last inbound message.
+func (s *Service) appendOutbound(ctx context.Context, message Message) (Message, error) {
 	if err := s.repo.AppendMessage(ctx, message); err != nil {
 		return Message{}, fmt.Errorf("conversations: record outbound: %w", err)
 	}
+	if err := s.repo.TouchOutbound(ctx, message.ConversationID); err != nil {
+		return Message{}, fmt.Errorf("conversations: record outbound: %w", err)
+	}
 	return message, nil
+}
+
+// Claim takes a conversation out of the pool for whoever answers it first (ADR-0004). It returns ErrTaken when somebody already
+// did, and the caller is expected to hold it in the transaction that writes the answer, so losing the race writes nothing.
+func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error {
+	return s.repo.Claim(ctx, conversationID, operatorID)
 }
 
 // LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.

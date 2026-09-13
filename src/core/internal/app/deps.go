@@ -11,6 +11,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
@@ -95,12 +96,14 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A second repository over the same pool, and not the one the catalogue service holds: a repository keeps no state past its
 	// executor, and sharing the instance would tie two contexts together for a reason that is not a reason of the domain.
 	book := contacts.NewService(contacts.NewRepository(pool, cipher), labels.NewRepository(pool), log)
+	desk := inbox.NewService(inbox.NewRepository(pool), log)
 
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
+			inbox.NewController(desk, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

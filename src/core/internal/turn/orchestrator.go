@@ -143,6 +143,14 @@ func (o *Orchestrator) run(ctx context.Context, conversationID, messageID, aiAge
 		)
 		return nil
 	}
+	// Skipped like a conversation that is off, before any batch exists: a pause is a decision and not a failure to record (ADR-0038).
+	if !target.AgentAvailable {
+		o.opts.Logger.Info("turn not answered",
+			slog.String("conversation_id", conversationID.String()),
+			slog.String("reason", "the agent is paused or removed"),
+		)
+		return nil
+	}
 
 	batch, err := o.openBatch(ctx, conversationID, messageID, time.Now().UTC())
 	if err != nil {

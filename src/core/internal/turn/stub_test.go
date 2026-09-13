@@ -252,6 +252,7 @@ func conductor() *harness {
 			InboxID:        uuid.New(),
 			ContactPhone:   "5493510000000",
 			Mode:           enums.AgentModeAutonomous,
+			AgentAvailable: true,
 		},
 		steps: steps,
 	}

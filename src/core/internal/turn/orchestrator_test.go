@@ -97,6 +97,20 @@ func TestOnlyTheAutonomousModeAnswersOnItsOwn(t *testing.T) {
 	}
 }
 
+// A paused or removed agent answers nothing, and like a conversation that is off it leaves no batch behind: a pause is a decision
+// of the administrator and not a failure to record (ADR-0038).
+func TestAnAgentThatIsPausedOrRemovedDoesNotAnswer(t *testing.T) {
+	h := conductor()
+	h.store.target.AgentAvailable = false
+
+	h.turn()
+
+	if len(*h.steps) != 0 || h.brain.calls != 0 || h.sender.calls != 0 {
+		t.Fatalf("an agent that cannot answer still did work: steps %v, brain %d, sender %d",
+			*h.steps, h.brain.calls, h.sender.calls)
+	}
+}
+
 // The mode travels to the brain because section 1 makes it explicit and never deduced.
 func TestTheModeTravelsToTheBrain(t *testing.T) {
 	h := conductor()

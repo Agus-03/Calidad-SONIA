@@ -23,4 +23,6 @@ type Target struct {
 	InboxID        uuid.UUID
 	ContactPhone   string
 	Mode           enums.AgentMode
+	// False for an agent paused (active) or removed (deleted_at): either way nobody answers for it (ADR-0038).
+	AgentAvailable bool
 }

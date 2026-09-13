@@ -190,7 +190,7 @@ func insertOperator(ctx context.Context, exec db.Executor, account uuid.UUID) (u
 }
 
 // TestOnlyTheFirstClaimTakesThePool is ADR-0004 against real DDL: the predicate decides, so the second operator gets ErrTaken and
-// the conversation keeps the first one.
+// the conversation keeps the first one (ADR-0035, regla 8).
 func TestOnlyTheFirstClaimTakesThePool(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
@@ -363,8 +363,15 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 			t.Fatalf("MarkSent: %v", err)
 		}
 		read()
-		if firstResponse == nil || !firstResponse.Equal(sentAt) {
-			t.Fatalf("first_response_at is %v, want the first send, %v", firstResponse, sentAt)
+		// The database clock and not the caller's sentAt: F34 subtracts created_at from it, which is that clock too (C06).
+		if firstResponse == nil || firstResponse.Equal(sentAt) || !firstResponse.After(opened) {
+			t.Fatalf("first_response_at is %v, want the database clock at the first send, not the caller's %v", firstResponse, sentAt)
+		}
+		// now() does not move inside one transaction, so a second send would write the same instant: pinned to another one, the
+		// comparison below can tell a kept value from a rewritten one.
+		first := opened.Add(time.Second)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET first_response_at = $2 WHERE id = $1`, conversation.ID, first); err != nil {
+			t.Fatalf("pin the first response: %v", err)
 		}
 
 		later, err := service.RecordOperatorOutbound(ctx, conversation.ID, operator, "algo más", sentAt.Add(time.Hour))
@@ -375,8 +382,8 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 			t.Fatalf("MarkSent: %v", err)
 		}
 		read()
-		if !firstResponse.Equal(sentAt) {
-			t.Fatalf("a later send moved first_response_at to %v", *firstResponse)
+		if !firstResponse.Equal(first) {
+			t.Fatalf("a later send moved first_response_at from %v to %v", first, *firstResponse)
 		}
 
 		if err := service.MarkSent(ctx, id.New(), "wamid.nobody", sentAt); !errors.Is(err, ErrNotFound) {
@@ -393,7 +400,7 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 }
 
 // TestTheBotIsTurnedOffWithoutLosingItsAgent is F27 against real DDL: off keeps ai_agent_id so the bot can come back, and a
-// conversation born without an agent cannot be turned on, because the predicate and not a read decides it.
+// conversation born without an agent cannot be turned on, because the predicate and not a read decides it (ADR-0035, regla 12).
 func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)

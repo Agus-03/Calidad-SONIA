@@ -95,18 +95,21 @@ func (r *Repository) LinkToBatch(ctx context.Context, messageID, batchID uuid.UU
 }
 
 // The first send of a conversation is also its first response, and both land in one statement so neither can exist without the
-// other. first_response_at does not tell the agent from the operator on purpose (05-consultas-de-metricas, supuesto S1): F34
-// separates them from messages. A failed send is not a response, which is why this is here and not where the row is written.
+// other. first_response_at does not tell the agent from the operator on purpose: F34 separates them from messages
+// (05-consultas-de-metricas, F34.b supuesto S1). A failed send is not a response, which is why this is here and not where the row
+// is written: the first response is the first answer the customer received, while taking the pool is the first one sent
+// (ADR-0035, regla 7; F34.b supuesto S3).
 //
-// The count is of the messages updated, so a missing message still reads as one; the second statement runs whether or not the
-// select names it, as every data-modifying WITH does.
+// It takes the database clock and not the caller's, because F34 subtracts created_at from it and both have to be one clock (C06).
+//
+// Counting sent is what tells a missing message apart; first runs although the SELECT never names it, as every data-modifying WITH does.
 const messageMarkSent = `
 WITH sent AS (
        UPDATE messages SET wamid = $2, sent_at = $3, status = $4 WHERE id = $1
        RETURNING conversation_id
 ), first AS (
        UPDATE conversations c
-       SET    first_response_at = $3, updated_at = now()
+       SET    first_response_at = now(), updated_at = now()
        FROM   sent
        WHERE  c.id = sent.conversation_id AND c.first_response_at IS NULL
 )
@@ -177,7 +180,7 @@ func (r *Repository) TouchOutbound(ctx context.Context, conversationID uuid.UUID
 }
 
 // The pool is in the predicate and not in an earlier read: two operators answering at once both reach this UPDATE, the second
-// waits on the row lock of the first, re-reads operator_id once it commits, and matches nothing (ADR-0004).
+// waits on the row lock of the first, re-reads operator_id once it commits, and matches nothing (ADR-0004, ADR-0035 regla 8).
 const conversationClaim = `
 UPDATE conversations
 SET    operator_id = $2, updated_at = now()
@@ -195,16 +198,17 @@ func (r *Repository) Claim(ctx context.Context, conversationID, operatorID uuid.
 }
 
 // Any mode but off needs an agent, and that is in the predicate and not in an earlier read, the same as the invariant EnsureOpen
-// keeps when it opens a conversation with none: a mode naming a bot that does not exist would read as one that is silent.
+// keeps when it opens a conversation with none: a mode naming a bot that does not exist would read as one that is silent. The off
+// value travels as $3 and is not written, so a renamed value in enums.yaml cannot silently stop matching (C07).
 const conversationSetMode = `
 UPDATE conversations
 SET    mode = $2, updated_at = now()
-WHERE  id = $1 AND deleted_at IS NULL AND ($2 = 'off' OR ai_agent_id IS NOT NULL)`
+WHERE  id = $1 AND deleted_at IS NULL AND ($2 = $3 OR ai_agent_id IS NOT NULL)`
 
 // SetMode answers ErrNoAgent when nothing matched a mode that needs one: the caller read the conversation first, so a missing row
 // here is the rarer case, and turning off can only miss for that reason.
 func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
-	tag, err := r.exec.Exec(ctx, conversationSetMode, conversationID, mode)
+	tag, err := r.exec.Exec(ctx, conversationSetMode, conversationID, mode, enums.AgentModeOff)
 	if err != nil {
 		return fmt.Errorf("conversations: set mode: %w", err)
 	}

@@ -189,7 +189,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `content` | text | Contenido vigente |
 | `position` | smallint | Orden de ensamblado |
 | `active` | boolean | OE1 exige el concepto de componente **activo**; habilita ablación. **Distinto de `deleted_at`**: `active = false` es ablación —el componente existe y se puede volver a encender—, `deleted_at` es baja definitiva |
-| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Lo exige el índice único parcial** de [relaciones.md §9](relaciones.md), que filtra por `deleted_at IS NULL` |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Lo exige el índice único parcial** de [relaciones.md §9](relaciones.md), que filtra por `active AND deleted_at IS NULL` |
 
 ### `prompt_component_versions`
 

@@ -6,7 +6,7 @@
 | **Autoridad** | Detalla [`08-structure-rules.md`](design/08-structure-rules.md) (las 12 reglas) y el resumen de *Estructura del código* en [`CLAUDE.md`](../CLAUDE.md), que son la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-12 |
+| **Última revisión** | 2026-09-13 |
 
 ---
 
@@ -65,7 +65,7 @@ sonia/
 │   │   │   └── vectorstore/            base · qdrant
 │   │   │
 │   │   ├── api/                        el contrato interno que consume el núcleo
-│   │   │   ├── routes/                 turns · prompts · ingest · health
+│   │   │   ├── routes/                 turns · prompts · models · ingest · health
 │   │   │   └── schemas/                Pydantic = el contrato
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
@@ -111,7 +111,11 @@ sonia/
 │   │   ├── internal/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
-│   │   │   │   └── controller · routes · service · repository · model
+│   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y lo de la Fase 9 se rechaza por nombre (ADR-0038)
+│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038)
+│   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas
+│   │   │   │   ├── repository.go       ai_agents y audit_logs · la baja es deleted_at y active es la pausa
+│   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
 │   │   │   │   ├── app.go              Run(ctx): config, pool, router, apagado ordenado
@@ -199,7 +203,7 @@ sonia/
 │   │   │       ├── controller.go       entrada del webhook · lee la firma y responde a Meta antes del turno
 │   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador
 │   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja
-│   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031)
+│   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031) · vacía el default de un agente IA dado de baja (ADR-0038)
 │   │   │       ├── model.go
 │   │   │       ├── payload.go          la forma que manda Meta, reducida a lo que se lee
 │   │   │       └── client.go           envío a Meta

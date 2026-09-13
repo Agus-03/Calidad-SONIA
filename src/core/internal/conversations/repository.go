@@ -8,14 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
-
-// Postgres says 23505 when a unique index rejects the row, which is how the open conversation race announces itself.
-const uniqueViolation = "23505"
 
 type Repository struct{ exec db.Executor }
 
@@ -63,21 +59,25 @@ func (r *Repository) Create(ctx context.Context, c Conversation) error {
 	return nil
 }
 
+// ON CONFLICT for the same reason as conversationInsert: a redelivery is routine, and a rescued unique violation would leave the
+// webhook's transaction aborted, losing the event row and every other message of the payload (SQLSTATE 25P02). A draft has no
+// wamid yet, and NULLs never conflict.
 const messageInsert = `
 INSERT INTO messages (id, conversation_id, message_batch_id, wamid, direction, sender_type,
                       sender_ai_agent_id, sender_operator_id, content_text, content_type, status, sent_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (wamid) DO NOTHING`
 
 // AppendMessage is the only way into messages: the table admits no update of content and no delete at all (F29, C09).
 func (r *Repository) AppendMessage(ctx context.Context, m Message) error {
-	_, err := r.exec.Exec(ctx, messageInsert,
+	tag, err := r.exec.Exec(ctx, messageInsert,
 		m.ID, m.ConversationID, m.MessageBatchID, m.WAMID, m.Direction, m.SenderType,
 		m.SenderAIAgentID, m.SenderOperatorID, m.ContentText, m.ContentType, m.Status, m.SentAt)
-	if isUniqueViolation(err) {
-		return ErrDuplicateWAMID
-	}
 	if err != nil {
 		return fmt.Errorf("conversations: insert message: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDuplicateWAMID
 	}
 	return nil
 }
@@ -219,9 +219,4 @@ func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode
 		return ErrNotFound
 	}
 	return ErrNoAgent
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
 }

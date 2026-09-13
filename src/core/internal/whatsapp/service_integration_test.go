@@ -94,3 +94,75 @@ func TestReceiveCreatesTheContactTheConversationAndTheMessageInOneTransaction(t 
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
 	}
 }
+
+// TestARedeliveryLeavesTheTransactionAliveForTheRestOfThePayload is the failure a stub cannot see: PostgreSQL aborts a transaction
+// on the first failed statement, so a redelivered wamid that reached the unique index used to take the event row and the new message
+// beside it down with it, and Meta retried the payload forever. The second delivery here carries the old message and a new one.
+func TestARedeliveryLeavesTheTransactionAliveForTheRestOfThePayload(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+	const secret = "secreto-de-integracion"
+
+	phone := fmt.Sprintf("549351%010d", time.Now().UnixNano()%10_000_000_000)
+	first, second := "wamid.it.first."+id.New().String(), "wamid.it.second."+id.New().String()
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		seeded := insertInbox(ctx, t, exec, account, nil, encrypt(t, cipher, secret))
+
+		payloadOf := func(messages string) string {
+			return fmt.Sprintf(`{
+				"object": "whatsapp_business_account",
+				"entry": [{"id": "1", "changes": [{"field": "messages", "value": {
+					"metadata": {"display_phone_number": "0", "phone_number_id": %q},
+					"contacts": [{"profile": {"name": "Integracion"}, "wa_id": %q}],
+					"messages": [%s]
+				}}]}]
+			}`, seeded.phoneNumberID, phone, messages)
+		}
+		messageOf := func(wamid string) string {
+			return fmt.Sprintf(`{"from": %q, "id": %q, "timestamp": "1772841600", "type": "text", "text": {"body": "hola"}}`, phone, wamid)
+		}
+
+		channelRepo := NewRepository(exec, cipher)
+		conversationsRepo := conversations.NewService(conversations.NewRepository(exec), slog.New(slog.DiscardHandler))
+		svc := NewService(channelRepo, func(_ context.Context, fn func(Store, Aggregate, Contacts, Assigner) error) error {
+			return fn(channelRepo, conversationsRepo, contacts.NewRepository(exec, cipher), &stubAssigner{})
+		}, slog.New(slog.DiscardHandler))
+
+		original := payloadOf(messageOf(first))
+		if _, err := svc.Receive(ctx, []byte(original), sign(original, secret), time.Now().UTC()); err != nil {
+			t.Fatalf("the first delivery: %v", err)
+		}
+		again := payloadOf(messageOf(first) + "," + messageOf(second))
+		inbound, err := svc.Receive(ctx, []byte(again), sign(again, secret), time.Now().UTC())
+		if err != nil {
+			t.Fatalf("the redelivery: got %v, want no error, or Meta sends it again forever", err)
+		}
+		if len(inbound) != 1 {
+			t.Fatalf("the redelivery started %d turns, want 1: only the new message is the customer writing", len(inbound))
+		}
+
+		var stored int
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM messages WHERE wamid IN ($1, $2)`, first, second).Scan(&stored); err != nil {
+			t.Fatalf("count the stored messages: %v", err)
+		}
+		if stored != 2 {
+			t.Fatalf("stored %d messages, want 2: the old one once and the new one that came beside it", stored)
+		}
+		var processed int
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM webhook_events WHERE inbox_id = $1 AND processed_at IS NOT NULL`, seeded.id).
+			Scan(&processed); err != nil {
+			t.Fatalf("count the processed events: %v", err)
+		}
+		if processed != 2 {
+			t.Fatalf("%d events were processed, want 2: the redelivery is a delivery too, and F20 keeps its trace", processed)
+		}
+
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}

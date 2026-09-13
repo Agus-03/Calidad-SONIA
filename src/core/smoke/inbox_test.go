@@ -247,10 +247,12 @@ func TestTheVendorGivenTheConversationSwitchesItsBotThroughTheRealProcess(t *tes
 	waitForHealth(t, brain)
 
 	secret := signingSecret(ctx, t, pool)
-	// Seeded before any webhook, so the vendor is the one active to receive the conversation (ADR-0037, reglas 1 y 2).
 	switchers := seedSwitchers(ctx, t, core, pool)
 	conversation := demoConversation(ctx, t, core, pool, secret)
 	path := "/api/v1/conversations/" + conversation.String() + "/mode"
+	// The vendor is made the customer's previous one, so the rule that decides is the customer's and not the turn (ADR-0037, regla 1):
+	// the turn would go to any other active vendor the local database has, and this case would fail on rows it did not write.
+	makePrevious(ctx, t, pool, conversation, switchers.operatorID)
 
 	// Registered after seedSwitchers, so it runs before the vendors are deleted: their assignments would keep them alive otherwise.
 	release := func() {
@@ -345,6 +347,26 @@ func demoConversation(ctx context.Context, t *testing.T, core string, pool db.Po
 		}
 	})
 	return conversation
+}
+
+// makePrevious gives the contact of the conversation a resolved one that began after it, held by the vendor: the latest earlier
+// conversation PreviousOperator reads. It is deleted before the vendor is, since it would keep the vendor alive otherwise.
+func makePrevious(ctx context.Context, t *testing.T, pool db.Pool, conversation, vendor uuid.UUID) {
+	t.Helper()
+
+	previous := id.New()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO conversations (id, contact_id, inbox_id, operator_id, status, mode, last_inbound_at, window_expires_at, resolved_at)
+		SELECT $1, contact_id, inbox_id, $3, 'resolved', 'autonomous', now(), now(), now()
+		FROM   conversations
+		WHERE  id = $2`, previous, conversation, vendor); err != nil {
+		t.Fatalf("seeding the customer's previous conversation: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM conversations WHERE id = $1`, previous); err != nil {
+			t.Errorf("cleaning up the previous conversation: %v", err)
+		}
+	})
 }
 
 // switchers are the two roles of the toggle: the supervisor, who switches any conversation, and the vendor, who switches its own.

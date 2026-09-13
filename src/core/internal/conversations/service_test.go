@@ -367,3 +367,12 @@ func TestSetModeReachesTheStore(t *testing.T) {
 		t.Fatalf("the mode did not reach the store: %v", store.modes)
 	}
 }
+
+// TestWithExecutorLeavesADoubledStoreAlone is the other half of the binding: a doubled store has no transaction to bind to, so the
+// service comes back as it was instead of failing every unit test of a package that conducts one.
+func TestWithExecutorLeavesADoubledStoreAlone(t *testing.T) {
+	service := NewService(&fakeStore{}, slog.Default())
+	if service.WithExecutor(nil) != service {
+		t.Fatal("binding a doubled store built a new service")
+	}
+}

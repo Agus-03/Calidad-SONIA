@@ -139,10 +139,17 @@ func (r *Repository) MarkFailed(ctx context.Context, messageID uuid.UUID, errorC
 }
 
 // TouchInbound moves the clocks an inbound message resets, so the 24 hour window is never read from a stale row.
+//
+// The window keeps Meta's clock, because Meta is the one that measures it (ADR-0008); the activity takes the database clock, the one
+// TouchOutbound writes too, so the inbox never orders by two clocks at once (C06). Both only move forward: Meta may deliver an older
+// message after a newer one, and that late webhook must not shorten the window or sink the conversation in the inbox.
 func (r *Repository) TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error {
 	tag, err := r.exec.Exec(ctx,
 		`UPDATE conversations
-		 SET    last_inbound_at = $2, window_expires_at = $3, last_activity_at = $2, updated_at = now()
+		 SET    last_inbound_at   = GREATEST(last_inbound_at, $2),
+		        window_expires_at = GREATEST(window_expires_at, $3),
+		        last_activity_at  = now(),
+		        updated_at        = now()
 		 WHERE  id = $1`,
 		conversationID, at, at.Add(ServiceWindow))
 	if err != nil {

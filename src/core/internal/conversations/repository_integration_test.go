@@ -237,6 +237,69 @@ func TestOnlyTheFirstClaimTakesThePool(t *testing.T) {
 	}
 }
 
+// TestALateInboundNeverMovesTheClocksBack is Meta delivering an older message after a newer one: the window keeps the newer one,
+// because shortening it would refuse answers Meta still accepts (ADR-0008), and the activity takes the database clock and not Meta's,
+// the same one the outbound side writes (C06).
+func TestALateInboundNeverMovesTheClocksBack(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		// Meta's instants, months before the database clock, so the activity cannot pass by coinciding with one of them.
+		newer := time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, newer)
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		var lastInbound, windowExpires, activity time.Time
+		receive := func(at time.Time) {
+			t.Helper()
+			if _, err := service.RecordInbound(ctx, conversation, "wamid."+id.New().String(), "hola", enums.MessageContentTypeText, at); err != nil {
+				t.Fatalf("RecordInbound: %v", err)
+			}
+			if err := exec.QueryRow(ctx,
+				`SELECT last_inbound_at, window_expires_at, last_activity_at FROM conversations WHERE id = $1`, conversation.ID).
+				Scan(&lastInbound, &windowExpires, &activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+		}
+
+		receive(newer)
+		if !activity.After(newer) {
+			t.Fatalf("last_activity_at = %v, want the database clock and not Meta's %v", activity, newer)
+		}
+		before := activity
+
+		receive(newer.Add(-10 * time.Minute))
+		if !lastInbound.Equal(newer) || !windowExpires.Equal(newer.Add(ServiceWindow)) {
+			t.Fatalf("a late webhook moved the window back: last_inbound_at %v, window_expires_at %v, want %v and %v",
+				lastInbound, windowExpires, newer, newer.Add(ServiceWindow))
+		}
+		if activity.Before(before) {
+			t.Fatalf("a late webhook sank the conversation: last_activity_at went from %v to %v", before, activity)
+		}
+
+		// And the ordinary case still moves forward, so the guard is not a window frozen at the first message.
+		latest := newer.Add(5 * time.Minute)
+		receive(latest)
+		if !lastInbound.Equal(latest) || !windowExpires.Equal(latest.Add(ServiceWindow)) {
+			t.Fatalf("a newer message did not reset the window: last_inbound_at %v, window_expires_at %v", lastInbound, windowExpires)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
 // TestTheFirstSendIsTheFirstResponse proves the three columns an answer moves: the operator's row passes the sender check, the
 // activity moves when it is written, and first_response_at takes the first send only — never a failed one, never a later one.
 func TestTheFirstSendIsTheFirstResponse(t *testing.T) {

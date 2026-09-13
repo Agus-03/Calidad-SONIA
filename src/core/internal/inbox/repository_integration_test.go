@@ -3,12 +3,14 @@ package inbox
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -211,7 +213,7 @@ func TestTheInboxOfEachRoleIsTheOneAnexoBDescribes(t *testing.T) {
 func TestTheCursorContinuesStrictlyAfterTheRowItNamed(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
-		service := NewService(NewRepository(exec), nil)
+		service := NewService(Options{Repo: NewRepository(exec)})
 		scope := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}
 
 		var after *Cursor
@@ -269,6 +271,149 @@ func TestAFailedSendStaysVisibleInTheInbox(t *testing.T) {
 
 		if theirs.LastMessage != nil || theirs.FailedCount != 0 {
 			t.Fatalf("a hidden message reached the inbox: %+v, %d failed", theirs.LastMessage, theirs.FailedCount)
+		}
+	})
+}
+
+// sendingDesk is the real repository and the real aggregate bound to the case's transaction, with only the channel doubled: the
+// writes and their order are what these cases prove, and Meta is the one collaborator that must never be called from a test.
+func sendingDesk(exec db.Executor, sender *stubSender) *Service {
+	repo := NewRepository(exec)
+	aggregate := conversations.NewService(conversations.NewRepository(exec), nil)
+	return NewService(Options{
+		Repo:      repo,
+		Aggregate: aggregate,
+		Tx: func(_ context.Context, fn func(Store, Aggregate) error) error {
+			return fn(repo, aggregate)
+		},
+		Channel: &stubChannel{},
+		Sender:  sender,
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+}
+
+// TestTheFirstOperatorToAnswerThePoolKeepsIt is ADR-0004 end to end against real DDL: the answer, the owner, the history row and
+// the first response land together, and from then on the conversation is out of the other operator's reach.
+func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		service := sendingDesk(exec, &stubSender{wamid: "wamid.integration." + id.New().String()})
+		mine := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+
+		message, err := service.Send(ctx, mine, w.pooledConv, "buenas, te ayudo")
+		if err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		if message.Status == nil || *message.Status != enums.MessageStatusSent {
+			t.Fatalf("status %v, want sent", message.Status)
+		}
+
+		var owner *uuid.UUID
+		var firstResponse *time.Time
+		if err := exec.QueryRow(ctx, `SELECT operator_id, first_response_at FROM conversations WHERE id = $1`, w.pooledConv).
+			Scan(&owner, &firstResponse); err != nil {
+			t.Fatalf("read the conversation: %v", err)
+		}
+		if owner == nil || *owner != w.mine {
+			t.Fatalf("the conversation belongs to %v, want the operator who answered, %v", owner, w.mine)
+		}
+		if firstResponse == nil {
+			t.Fatalf("first_response_at is still empty after the first answer went out")
+		}
+
+		var from, by *uuid.UUID
+		var to uuid.UUID
+		var reason *string
+		if err := exec.QueryRow(ctx, `
+			SELECT from_operator_id, to_operator_id, assigned_by_operator_id, reason
+			FROM   conversation_assignments WHERE conversation_id = $1`, w.pooledConv).Scan(&from, &to, &by, &reason); err != nil {
+			t.Fatalf("read the assignment: %v", err)
+		}
+		if from != nil || to != w.mine || by == nil || *by != w.mine || reason == nil || *reason != autoAssignReason {
+			t.Fatalf("assignment from %v to %v by %v reason %v, want from nobody to me, by me", from, to, by, reason)
+		}
+
+		var senderType string
+		var senderOperator *uuid.UUID
+		var wamid *string
+		if err := exec.QueryRow(ctx, `SELECT sender_type, sender_operator_id, wamid FROM messages WHERE id = $1`, message.ID).
+			Scan(&senderType, &senderOperator, &wamid); err != nil {
+			t.Fatalf("read the message: %v", err)
+		}
+		if senderType != "operator" || senderOperator == nil || *senderOperator != w.mine || wamid == nil {
+			t.Fatalf("message sender %q %v wamid %v, want the operator and Meta's id", senderType, senderOperator, wamid)
+		}
+
+		// Taken now: the other operator no longer reaches it, and a supervisor is told who holds it.
+		theirs := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleOperator}
+		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("the other operator answering: got %v, want ErrNotFound", err)
+		}
+		theirs.Role = enums.OperatorRoleSupervisor
+		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también"); !errors.Is(err, ErrTaken) {
+			t.Fatalf("a supervisor answering: got %v, want ErrTaken", err)
+		}
+	})
+}
+
+// TestAFailedManualSendStaysOnTheRowWithAnOwner is ADR-0020 against real DDL: the row says failed with its cause, nothing counts it
+// as a response, and the conversation keeps the operator who has to decide whether to send it again.
+func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		service := sendingDesk(exec, &stubSender{err: errors.New("httpclient: status 400: recipient not in allowed list")})
+
+		message, err := service.Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola")
+		if err != nil {
+			t.Fatalf("Send: got %v, want the failed row", err)
+		}
+
+		var status, code *string
+		if err := exec.QueryRow(ctx, `SELECT status, error_code FROM messages WHERE id = $1`, message.ID).Scan(&status, &code); err != nil {
+			t.Fatalf("read the message: %v", err)
+		}
+		if status == nil || *status != string(enums.MessageStatusFailed) || code == nil {
+			t.Fatalf("the row reads status %v code %v, want failed with its cause", status, code)
+		}
+
+		var owner *uuid.UUID
+		var firstResponse *time.Time
+		if err := exec.QueryRow(ctx, `SELECT operator_id, first_response_at FROM conversations WHERE id = $1`, w.pooledConv).
+			Scan(&owner, &firstResponse); err != nil {
+			t.Fatalf("read the conversation: %v", err)
+		}
+		if owner == nil || *owner != w.mine {
+			t.Fatalf("the failed answer left the conversation with %v, want its author", owner)
+		}
+		if firstResponse != nil {
+			t.Fatalf("a failed send was counted as the first response")
+		}
+	})
+}
+
+// TestAClosedWindowWritesNothing refuses before the transaction, so not even the claim survives (ADR-0008).
+func TestAClosedWindowWritesNothing(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET window_expires_at = now() - interval '1 minute' WHERE id = $1`, w.pooledConv); err != nil {
+			t.Fatalf("close the window: %v", err)
+		}
+		sender := &stubSender{wamid: "wamid.never"}
+
+		_, err := sendingDesk(exec, sender).Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola")
+		if !errors.Is(err, ErrWindowClosed) {
+			t.Fatalf("Send: got %v, want ErrWindowClosed", err)
+		}
+
+		var owner *uuid.UUID
+		var assignments int
+		if err := exec.QueryRow(ctx, `
+			SELECT c.operator_id, (SELECT count(*) FROM conversation_assignments a WHERE a.conversation_id = c.id)
+			FROM   conversations c WHERE c.id = $1`, w.pooledConv).Scan(&owner, &assignments); err != nil {
+			t.Fatalf("read the conversation: %v", err)
+		}
+		if owner != nil || assignments != 0 || sender.calls != 0 {
+			t.Fatalf("a refused answer claimed %v, wrote %d assignments and sent %d times", owner, assignments, sender.calls)
 		}
 	})
 }

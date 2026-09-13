@@ -62,6 +62,10 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		})
 	}
 
+	// One sender for the agent and the operator alike: the two answer the same customers through the same number, and a doubled
+	// stack has to double both or the smoke would send a real message.
+	send := sender(cfg, log)
+
 	turnRepo := turn.NewRepository(pool)
 
 	turns := turn.New(turn.Options{
@@ -80,7 +84,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			Logger:  log,
 		}),
 		Channel:      channelRepo,
-		Sender:       sender(cfg, log),
+		Sender:       send,
 		Budget:       cfg.TurnBudget,
 		MaxRetries:   cfg.TurnMaxRetries,
 		RetryBackoff: cfg.TurnRetryBackoff,
@@ -96,7 +100,20 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A second repository over the same pool, and not the one the catalogue service holds: a repository keeps no state past its
 	// executor, and sharing the instance would tie two contexts together for a reason that is not a reason of the domain.
 	book := contacts.NewService(contacts.NewRepository(pool, cipher), labels.NewRepository(pool), log)
-	desk := inbox.NewService(inbox.NewRepository(pool), log)
+	deskRepo := inbox.NewRepository(pool)
+	desk := inbox.NewService(inbox.Options{
+		Repo:      deskRepo,
+		Aggregate: aggregate,
+		// Binds the assignment and the aggregate to one transaction: taking the pool and writing the answer commit together (regla 5).
+		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(deskRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+			})
+		},
+		Channel: channelRepo,
+		Sender:  send,
+		Logger:  log,
+	})
 
 	return wiring{
 		controllers: []soniahttp.Controller{

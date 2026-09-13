@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -27,8 +29,12 @@ var (
 
 // mount builds the real router, because what these cases assert is the roles declared in routes.go and those only exist there.
 func mount(role enums.OperatorRole, store *stubStore) http.Handler {
+	return mountDesk(role, newDesk(store))
+}
+
+func mountDesk(role enums.OperatorRole, d *desk) http.Handler {
 	return soniahttp.NewRouter(soniahttp.RouterOptions{
-		Controllers:   []soniahttp.Controller{NewController(NewService(store, nil), nil)},
+		Controllers:   []soniahttp.Controller{NewController(d.service, nil)},
 		TokenVerifier: func(string) (uuid.UUID, error) { return testOperator, nil },
 		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
 			return soniahttp.Actor{OperatorID: testOperator, AccountID: testAccount, Role: role}, nil
@@ -156,13 +162,13 @@ func TestAFailedSendIsVisibleWithoutOpeningTheConversation(t *testing.T) {
 
 	lastFailed := Summary{
 		ID: id.New(), LastActivityAt: failedAt.Add(time.Hour),
-		LastMessage: &LastMessage{ID: id.New(), Direction: enums.MessageDirectionOutbound, SenderType: enums.SenderTypeAiAgent,
+		LastMessage: &Message{ID: id.New(), Direction: enums.MessageDirectionOutbound, SenderType: enums.SenderTypeAiAgent,
 			ContentText: "buenas", ContentType: enums.MessageContentTypeText, Status: &failed, ErrorCode: &code, SentAt: failedAt},
 		FailedCount: 1, LastFailedAt: &failedAt,
 	}
 	buried := Summary{
 		ID: id.New(), LastActivityAt: failedAt,
-		LastMessage: &LastMessage{ID: id.New(), Direction: enums.MessageDirectionInbound, SenderType: enums.SenderTypeContact,
+		LastMessage: &Message{ID: id.New(), Direction: enums.MessageDirectionInbound, SenderType: enums.SenderTypeContact,
 			ContentText: "hola?", ContentType: enums.MessageContentTypeText, SentAt: failedAt},
 		FailedCount: 1, LastFailedAt: &failedAt,
 	}
@@ -271,7 +277,151 @@ func TestAHandlerMountedWithoutAnActorRefuses(t *testing.T) {
 	gc, _ := gin.CreateTestContext(rec)
 	gc.Request = httptest.NewRequest(http.MethodGet, "/conversations", nil)
 
-	NewController(NewService(&stubStore{}, nil), nil).list(gc)
+	NewController(newDesk(&stubStore{}).service, nil).list(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
+func post(engine http.Handler, conversationID, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/conversations/"+conversationID+"/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		Error struct{ Code string } `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the error is not json: %v - body %s", err, rec.Body)
+	}
+	return body.Error.Code
+}
+
+// TestEveryRoleCanAnswerThePool walks the route with the three roles, because a wrong Roles list compiles: an operator refused here
+// could never take the pool, and ADR-0004 would assign nothing.
+func TestEveryRoleCanAnswerThePool(t *testing.T) {
+	for _, role := range enums.OperatorRoleValues {
+		t.Run(string(role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(nil)
+
+			rec := post(mountDesk(role, d), target.ConversationID.String(), `{"text":"buenas, te ayudo"}`)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("POST as %s: got %d, want 201 - body %s", role, rec.Code, rec.Body)
+			}
+			var body struct {
+				ID         string  `json:"id"`
+				SenderType string  `json:"sender_type"`
+				Status     *string `json:"status"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("the answer is not json: %v", err)
+			}
+			if body.SenderType != "operator" || body.Status == nil || *body.Status != "sent" {
+				t.Fatalf("got sender %q and status %v, want operator and sent - body %s", body.SenderType, body.Status, rec.Body)
+			}
+		})
+	}
+}
+
+// TestAFailedSendAnswers201WithTheFailure is the choice of the handler: the row exists, and its status is what the operator reads.
+func TestAFailedSendAnswers201WithTheFailure(t *testing.T) {
+	d := newDesk(&stubStore{})
+	d.sender.err = errors.New("httpclient: status 400: recipient not in allowed list")
+	target := d.open(nil)
+
+	rec := post(mountDesk(enums.OperatorRoleOperator, d), target.ConversationID.String(), `{"text":"hola"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("got %d, want 201 - body %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"failed"`) || !strings.Contains(rec.Body.String(), "recipient not in allowed list") {
+		t.Fatalf("the failure did not travel with the row - body %s", rec.Body)
+	}
+}
+
+// TestEachRefusalHasItsOwnCode is what the frontend switches on: a code per reason, and never a 500 for something the caller can fix.
+func TestEachRefusalHasItsOwnCode(t *testing.T) {
+	other := id.New()
+
+	for _, tc := range []struct {
+		name     string
+		role     enums.OperatorRole
+		shape    func(*desk) string
+		body     string
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", enums.OperatorRoleOperator,
+			func(*desk) string { return "no-es-un-id" }, `{"text":"hola"}`, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the body has no text", enums.OperatorRoleOperator,
+			func(d *desk) string { return d.open(nil).ConversationID.String() }, `{}`, http.StatusBadRequest, "invalid_body"},
+		{"the text is only blanks", enums.OperatorRoleOperator,
+			func(d *desk) string { return d.open(nil).ConversationID.String() }, `{"text":"   "}`, http.StatusBadRequest, "invalid_text"},
+		{"the conversation does not exist", enums.OperatorRoleOperator,
+			func(*desk) string { return id.New().String() }, `{"text":"hola"}`, http.StatusNotFound, "conversation_not_found"},
+		{"another operator's conversation, asked by an operator", enums.OperatorRoleOperator,
+			func(d *desk) string { return d.open(&other).ConversationID.String() }, `{"text":"hola"}`, http.StatusNotFound, "conversation_not_found"},
+		{"another operator's conversation, asked by a supervisor", enums.OperatorRoleSupervisor,
+			func(d *desk) string { return d.open(&other).ConversationID.String() }, `{"text":"hola"}`, http.StatusConflict, "conversation_taken"},
+		{"the pool race lost", enums.OperatorRoleOperator,
+			func(d *desk) string {
+				d.aggregate.claimErr = conversations.ErrTaken
+				return d.open(nil).ConversationID.String()
+			}, `{"text":"hola"}`, http.StatusConflict, "conversation_taken"},
+		{"the conversation is resolved", enums.OperatorRoleOperator,
+			func(d *desk) string {
+				target := d.open(nil)
+				target.Status = enums.ConversationStatusResolved
+				d.store.targets[target.ConversationID] = target
+				return target.ConversationID.String()
+			}, `{"text":"hola"}`, http.StatusConflict, "conversation_resolved"},
+		{"the window closed", enums.OperatorRoleOperator,
+			func(d *desk) string {
+				target := d.open(nil)
+				target.WindowExpiresAt = time.Now().Add(-time.Minute)
+				d.store.targets[target.ConversationID] = target
+				return target.ConversationID.String()
+			}, `{"text":"hola"}`, http.StatusConflict, "window_expired"},
+		{"the database did not answer", enums.OperatorRoleOperator,
+			func(d *desk) string {
+				d.store.err = errors.New("connection refused")
+				return id.New().String()
+			}, `{"text":"hola"}`, http.StatusInternalServerError, "internal_error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			conversationID := tc.shape(d)
+
+			rec := post(mountDesk(tc.role, d), conversationID, tc.body)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+			if d.sender.calls != 0 {
+				t.Fatalf("a refused answer reached the customer")
+			}
+		})
+	}
+}
+
+// TestTheSendHandlerRefusesWithoutAnActor guards the wiring the same way the listing's does.
+func TestTheSendHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPost, "/conversations/x/messages", strings.NewReader(`{"text":"hola"}`))
+
+	NewController(newDesk(&stubStore{}).service, nil).send(gc)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)

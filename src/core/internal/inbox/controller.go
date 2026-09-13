@@ -39,18 +39,18 @@ type pageResponse struct {
 }
 
 type summaryResponse struct {
-	ID              string               `json:"id"`
-	Status          string               `json:"status"`
-	Mode            string               `json:"mode"`
-	AIAgentID       *string              `json:"ai_agent_id"`
-	Contact         contactResponse      `json:"contact"`
-	Operator        *operatorResponse    `json:"operator"`
-	LastMessage     *lastMessageResponse `json:"last_message"`
-	FailedCount     int                  `json:"failed_count"`
-	LastFailedAt    *string              `json:"last_failed_at"`
-	LastInboundAt   string               `json:"last_inbound_at"`
-	WindowExpiresAt string               `json:"window_expires_at"`
-	LastActivityAt  string               `json:"last_activity_at"`
+	ID              string            `json:"id"`
+	Status          string            `json:"status"`
+	Mode            string            `json:"mode"`
+	AIAgentID       *string           `json:"ai_agent_id"`
+	Contact         contactResponse   `json:"contact"`
+	Operator        *operatorResponse `json:"operator"`
+	LastMessage     *messageResponse  `json:"last_message"`
+	FailedCount     int               `json:"failed_count"`
+	LastFailedAt    *string           `json:"last_failed_at"`
+	LastInboundAt   string            `json:"last_inbound_at"`
+	WindowExpiresAt string            `json:"window_expires_at"`
+	LastActivityAt  string            `json:"last_activity_at"`
 }
 
 type contactResponse struct {
@@ -66,7 +66,7 @@ type operatorResponse struct {
 	Lastname string `json:"lastname"`
 }
 
-type lastMessageResponse struct {
+type messageResponse struct {
 	ID          string  `json:"id"`
 	Direction   string  `json:"direction"`
 	SenderType  string  `json:"sender_type"`
@@ -98,16 +98,23 @@ func present(s Summary) summaryResponse {
 	if s.Operator != nil {
 		out.Operator = &operatorResponse{ID: s.Operator.ID.String(), Name: s.Operator.Name, Lastname: s.Operator.Lastname}
 	}
-	if m := s.LastMessage; m != nil {
-		out.LastMessage = &lastMessageResponse{
-			ID: m.ID.String(), Direction: string(m.Direction), SenderType: string(m.SenderType),
-			ContentText: m.ContentText, ContentType: string(m.ContentType),
-			ErrorCode: m.ErrorCode, SentAt: m.SentAt.UTC().Format(time.RFC3339),
-		}
-		if m.Status != nil {
-			status := string(*m.Status)
-			out.LastMessage.Status = &status
-		}
+	if s.LastMessage != nil {
+		drawn := presentMessage(*s.LastMessage)
+		out.LastMessage = &drawn
+	}
+	return out
+}
+
+// presentMessage is the one place a message becomes JSON, so the listing and the answer just sent can never disagree on its shape.
+func presentMessage(m Message) messageResponse {
+	out := messageResponse{
+		ID: m.ID.String(), Direction: string(m.Direction), SenderType: string(m.SenderType),
+		ContentText: m.ContentText, ContentType: string(m.ContentType),
+		ErrorCode: m.ErrorCode, SentAt: m.SentAt.UTC().Format(time.RFC3339),
+	}
+	if m.Status != nil {
+		status := string(*m.Status)
+		out.Status = &status
 	}
 	return out
 }
@@ -153,6 +160,55 @@ func (c *Controller) list(gc *gin.Context) {
 		body.NextCursor = &next
 	}
 	soniahttp.OK(gc, body)
+}
+
+type sendRequest struct {
+	Text string `json:"text" binding:"required"`
+}
+
+// send answers 201 with the row whether Meta took it or not: the row exists either way, and its status is what the operator has to
+// read. A failed send is ADR-0020 working as decided, not an error of the request.
+func (c *Controller) send(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req sendRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "a text is required").WithCause(err))
+		return
+	}
+
+	message, err := c.service.Send(gc.Request.Context(), scope, conversationID, req.Text)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.Created(gc, presentMessage(message))
+}
+
+// translate turns what the package knows into what the frontend switches on, and lets anything else fall through as a 500.
+func translate(err error) error {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
+	case errors.Is(err, ErrTaken):
+		return soniahttp.Conflict("conversation_taken", "another operator is attending this conversation").WithCause(err)
+	case errors.Is(err, ErrResolved):
+		return soniahttp.Conflict("conversation_resolved", "the conversation is resolved").WithCause(err)
+	case errors.Is(err, ErrWindowClosed):
+		return soniahttp.Conflict("window_expired", "the 24 hour window closed: only a template can reach the contact now").WithCause(err)
+	case errors.Is(err, ErrEmptyText):
+		return soniahttp.BadRequest("invalid_text", "the answer cannot be empty").WithCause(err)
+	default:
+		return err
+	}
 }
 
 // scopeFrom builds what the listing narrows by, out of the actor and never out of the request.

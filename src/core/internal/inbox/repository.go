@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 type Repository struct{ exec db.Executor }
 
 func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }
+
+// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).
+func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
 // Reads four tables this package does not own: the ownership rule of regla 1 restricts writes and not reads, as turn/ already does.
 //
@@ -94,6 +98,40 @@ func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit
 	return out, nil
 }
 
+// Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists.
+const targetSelect = `
+SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at
+FROM   conversations c
+JOIN   contacts ct ON ct.id = c.contact_id
+WHERE  c.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
+
+// Target reads without the reach on purpose: whether this operator may send is a rule, and rules are the service's.
+func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error) {
+	var t Target
+	err := r.exec.QueryRow(ctx, targetSelect, accountID, conversationID).
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Target{}, ErrNotFound
+	}
+	if err != nil {
+		return Target{}, fmt.Errorf("inbox: scan target: %w", err)
+	}
+	return t, nil
+}
+
+const assignmentInsert = `
+INSERT INTO conversation_assignments (id, conversation_id, from_operator_id, to_operator_id, assigned_by_operator_id, reason)
+VALUES ($1, $2, $3, $4, $5, nullif($6, ''))`
+
+// RecordAssignment is only ever an INSERT: the table is the history F26 asks for, and history is not corrected (C09).
+func (r *Repository) RecordAssignment(ctx context.Context, a Assignment) error {
+	if _, err := r.exec.Exec(ctx, assignmentInsert,
+		a.ID, a.ConversationID, a.FromOperatorID, a.ToOperatorID, a.AssignedByOperatorID, a.Reason); err != nil {
+		return fmt.Errorf("inbox: record assignment: %w", err)
+	}
+	return nil
+}
+
 // The two LEFT JOINs arrive as nulls, so they are read into locals and moved to the model only when the group is there.
 func scanSummary(row pgx.Row) (Summary, error) {
 	var s Summary
@@ -124,7 +162,7 @@ func scanSummary(row pgx.Row) (Summary, error) {
 		s.Operator = &Operator{ID: *operatorID, Name: *operatorName, Lastname: *operatorLastname}
 	}
 	if messageID != nil && direction != nil && sender != nil && text != nil && contentType != nil && sentAt != nil {
-		s.LastMessage = &LastMessage{
+		s.LastMessage = &Message{
 			ID: *messageID, Direction: *direction, SenderType: *sender, ContentText: *text, ContentType: *contentType,
 			Status: status, ErrorCode: errorCode, SentAt: *sentAt,
 		}

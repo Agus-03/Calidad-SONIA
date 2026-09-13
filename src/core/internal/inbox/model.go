@@ -36,7 +36,7 @@ type Summary struct {
 	Operator *Operator
 
 	// Nil only for a conversation nobody wrote in, which the webhook never leaves behind but a seed can.
-	LastMessage *LastMessage
+	LastMessage *Message
 
 	// Counted apart from the last message, because an inbound one arriving after a failed send would otherwise bury the failure the
 	// operator has to decide about (ADR-0020).
@@ -64,8 +64,9 @@ type Operator struct {
 	Lastname string
 }
 
-// LastMessage carries its delivery status and error, because a failed send nobody sees is the loss ADR-0020 refuses to hide.
-type LastMessage struct {
+// Message is a message as the inbox draws it: the last one of a row, or the one an operator just sent. It carries its delivery
+// status and error, because a failed send nobody sees is the loss ADR-0020 refuses to hide.
+type Message struct {
 	ID          uuid.UUID
 	Direction   enums.MessageDirection
 	SenderType  enums.SenderType
@@ -81,6 +82,29 @@ type LastMessage struct {
 type Cursor struct {
 	LastActivityAt time.Time
 	ID             uuid.UUID
+}
+
+// Target is what sending needs and the conversation id does not carry: where it goes, who holds it, and whether Meta still
+// accepts a free form answer (ADR-0008).
+type Target struct {
+	ConversationID  uuid.UUID
+	InboxID         uuid.UUID
+	ContactPhone    string
+	OperatorID      *uuid.UUID
+	Status          enums.ConversationStatus
+	WindowExpiresAt time.Time
+}
+
+// Assignment is one row of conversation_assignments: immutable, because F26 asks for the history and a row that changes is not one.
+type Assignment struct {
+	ID             uuid.UUID
+	ConversationID uuid.UUID
+	// Nil when the conversation comes from the pool, which is the only kind this phase writes (ADR-0004).
+	FromOperatorID *uuid.UUID
+	ToOperatorID   uuid.UUID
+	// The same as ToOperatorID in an auto assignment: the operator who answered is the one who took it (DER, entidades).
+	AssignedByOperatorID *uuid.UUID
+	Reason               string
 }
 
 // Page has no total on purpose: F22 does not ask for one, and counting the whole inbox on every page is the query a cursor exists to avoid.

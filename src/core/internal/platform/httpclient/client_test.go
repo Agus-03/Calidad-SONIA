@@ -213,3 +213,49 @@ func TestPostJSONCallsOnceAndOnlyOnce(t *testing.T) {
 		t.Fatalf("calls = %d, want 1", calls)
 	}
 }
+
+// A read carries the shared secret like a write, and sends no Content-Type because it sends no body.
+func TestGetJSONSendsTheHeadersAndDecodesTheAnswer(t *testing.T) {
+	var gotMethod, gotPath, gotToken, gotType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotToken, gotType = r.Header.Get("X-Internal-Token"), r.Header.Get("Content-Type")
+		_, _ = w.Write([]byte(`{"name":"sonia"}`))
+	}))
+	defer server.Close()
+
+	client := New(Options{BaseURL: server.URL, Headers: map[string]string{"X-Internal-Token": "secreto"}})
+
+	var out payload
+	if err := client.GetJSON(context.Background(), "/models", &out); err != nil {
+		t.Fatalf("GetJSON() error = %v, want nil", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/models" {
+		t.Fatalf("request = %s %s, want GET /models", gotMethod, gotPath)
+	}
+	if gotToken != "secreto" {
+		t.Fatalf("token header = %q, want %q", gotToken, "secreto")
+	}
+	if gotType != "" {
+		t.Fatalf("content-type = %q, want none on a request with no body", gotType)
+	}
+	if out.Name != "sonia" {
+		t.Fatalf("out.Name = %q, want %q", out.Name, "sonia")
+	}
+}
+
+// The status travels as a type on a read too, because the caller decides between a refusal and an outage the same way.
+func TestGetJSONReturnsTheStatusItGotBack(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	err := New(Options{BaseURL: server.URL}).GetJSON(context.Background(), "/models", &payload{})
+
+	var status *StatusError
+	if !errors.As(err, &status) || status.Status != http.StatusServiceUnavailable {
+		t.Fatalf("GetJSON() error = %v, want a StatusError with 503", err)
+	}
+}

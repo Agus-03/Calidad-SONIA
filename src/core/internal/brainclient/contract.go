@@ -9,6 +9,9 @@ import (
 // The path of the single synchronous hop (ADR-0017 (e)); it is the brain's route and not a resource of the operator API.
 const turnPath = "/turns"
 
+// What a turn can run on, which the core checks before saving an agent (ADR-0038).
+const modelsPath = "/models"
+
 // The outcome is a wire value of this hop and not a column, so it is not one of the 22 enumerations of contracts/enums.yaml.
 const (
 	OutcomeGenerated = "generated"
@@ -36,6 +39,18 @@ type TurnResponse struct {
 	GenerationID   *uuid.UUID        `json:"generation_id"`
 	CompletionText *string           `json:"completion_text"`
 	Transfer       *TransferProposal `json:"transfer"`
+}
+
+// PricedModel mirrors api/schemas/models.py: a provider and a model the tariff file of the brain can price.
+type PricedModel struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// ModelsResponse carries the tariff version so a refusal can name the file that decided it (regla 9).
+type ModelsResponse struct {
+	PricingVersion int           `json:"pricing_version"`
+	Models         []PricedModel `json:"models"`
 }
 
 // Text is the answer to send, empty when the brain generated nothing; the caller decides what an empty answer means.

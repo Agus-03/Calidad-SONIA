@@ -179,3 +179,38 @@ func TestTurnCallsTheBrainOnce(t *testing.T) {
 		t.Fatalf("calls = %d, want 1", calls)
 	}
 }
+
+// The list the core validates an agent against comes back whole, signed with the secret like every call of this hop (ADR-0038).
+func TestModelsReadsThePricedList(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotToken = r.Method, r.URL.Path, r.Header.Get(tokenHeader)
+		_, _ = w.Write([]byte(`{"pricing_version":3,"models":[{"provider":"cohere","model":"command-a-03-2025"}]}`))
+	}))
+	defer server.Close()
+
+	res, err := New(Options{BaseURL: server.URL, Token: "secreto"}).Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models() error = %v, want nil", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != modelsPath || gotToken != "secreto" {
+		t.Fatalf("request = %s %s with token %q, want GET %s signed", gotMethod, gotPath, gotToken, modelsPath)
+	}
+	want := PricedModel{Provider: "cohere", Model: "command-a-03-2025"}
+	if res.PricingVersion != 3 || len(res.Models) != 1 || res.Models[0] != want {
+		t.Fatalf("Models() = %+v, want version 3 with %+v", res, want)
+	}
+}
+
+// A brain that cannot answer is an error to the caller, which turns it into a 503 and never into an agent saved unchecked.
+func TestModelsPassesTheFailureUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	if _, err := New(Options{BaseURL: server.URL}).Models(context.Background()); err == nil {
+		t.Fatal("Models() error = nil, want the brain's failure")
+	}
+}

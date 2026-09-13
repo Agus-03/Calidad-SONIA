@@ -72,3 +72,13 @@ func (c *Client) Turn(ctx context.Context, req TurnRequest) (TurnResponse, error
 	)
 	return res, nil
 }
+
+// Models reads the priced models. Asked on every save and never cached: pricing.yaml changes with a deploy of the brain, not of the core.
+func (c *Client) Models(ctx context.Context) (ModelsResponse, error) {
+	var res ModelsResponse
+	if err := c.http.GetJSON(ctx, modelsPath, &res); err != nil {
+		c.log.Error("brain models call failed", slog.String("cause", err.Error()))
+		return ModelsResponse{}, err
+	}
+	return res, nil
+}

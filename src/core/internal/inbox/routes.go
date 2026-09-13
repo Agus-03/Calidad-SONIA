@@ -16,10 +16,10 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodGet, Path: "/conversations", Roles: enums.OperatorRoleValues, Handler: c.list},
 		// The reach of the listing, one conversation at a time: what the operator could not see there it cannot read here.
 		{Method: http.MethodGet, Path: "/conversations/:id/messages", Roles: enums.OperatorRoleValues, Handler: c.thread},
-		// The same rule for every role, applied by the service: the conversation is the caller's or the pool's (Anexo B, decision 5).
+		// The same rule for every role, applied by the service: the conversation is the caller's or the pool's (ADR-0035, regla 5).
 		{Method: http.MethodPost, Path: "/conversations/:id/messages", Roles: enums.OperatorRoleValues, Handler: c.send},
-		// The two roles above the vendors, by decision of the team in Fase 5, and over every conversation of the account because both
-		// see the whole team. It departs from Anexo B, which gives the basic operator "activa o desactiva el agente IA en un chat".
+		// The two roles above the vendors, over every conversation of the account because both see the whole team (ADR-0035, regla 10).
+		// It departs from F27 and Anexo B, which give the basic operator "activa o desactiva el agente IA en un chat".
 		{Method: http.MethodPatch, Path: "/conversations/:id/mode", Roles: aboveOperator, Handler: c.setMode},
 	}
 }

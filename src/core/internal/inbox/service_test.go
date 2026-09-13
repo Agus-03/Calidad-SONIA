@@ -95,7 +95,7 @@ func scopeOf(operatorID uuid.UUID, role enums.OperatorRole) Scope {
 	return Scope{AccountID: id.New(), OperatorID: operatorID, Role: role}
 }
 
-// TestWhoMayAnswerIsTheHolderOrThePool is decision 5 of the phase as a table: the conversation is the caller's or nobody's, for
+// TestWhoMayAnswerIsTheHolderOrThePool is ADR-0035, regla 5, as a table: the conversation is the caller's or nobody's, for
 // every role. The pool is taken by whoever answers (ADR-0004); a conversation held by another is refused before anything is written.
 func TestWhoMayAnswerIsTheHolderOrThePool(t *testing.T) {
 	me, other := id.New(), id.New()

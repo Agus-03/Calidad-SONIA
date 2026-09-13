@@ -250,7 +250,7 @@ func TestTheBotTurnedOffStaysSilentThroughTheRealProcess(t *testing.T) {
 	supervisor, operator := seedSwitchers(ctx, t, core, pool)
 	path := "/api/v1/conversations/" + conversation.String() + "/mode"
 
-	// The decision of the team, through the real router: the vendor cannot touch the toggle (it departs from Anexo B).
+	// ADR-0035, regla 10, through the real router: the vendor cannot touch the toggle (it departs from F27 and Anexo B).
 	if status, body := call(t, core, http.MethodPatch, path, operator, `{"mode":"off"}`); status != http.StatusForbidden {
 		t.Fatalf("an operator turning the bot off: got %d, want 403 - %s", status, body)
 	}

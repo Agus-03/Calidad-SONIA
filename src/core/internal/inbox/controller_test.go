@@ -603,7 +603,7 @@ func patchMode(engine http.Handler, conversationID, body string) *httptest.Respo
 	return rec
 }
 
-// TestOnlyTheRolesAboveTheVendorsChangeTheMode is the decision of the team written as a test, and a departure from Anexo B that
+// TestOnlyTheRolesAboveTheVendorsChangeTheMode is ADR-0035, regla 10, written as a test, and a departure from F27 and Anexo B that
 // has to stay visible: the basic operator is refused by the router, before the service is asked anything.
 func TestOnlyTheRolesAboveTheVendorsChangeTheMode(t *testing.T) {
 	for _, tc := range []struct {

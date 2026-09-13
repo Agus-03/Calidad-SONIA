@@ -244,7 +244,7 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	}
 }
 
-// mayAnswer is decision 5 of the phase: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole
+// mayAnswer is ADR-0035, reglas 5 and 6: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole
 // team (Anexo B) and is told who holds a conversation; the operator cannot see it, and is told it does not exist.
 func mayAnswer(scope Scope, t Target) error {
 	if t.OperatorID == nil || *t.OperatorID == scope.OperatorID {

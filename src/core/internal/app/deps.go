@@ -53,12 +53,15 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
 	// the instance would tie two contexts together for a reason that is not a reason of the domain.
 	channelContacts := contacts.NewRepository(pool, cipher)
+	deskRepo := inbox.NewRepository(pool)
 
-	// Binds the three collaborators to one transaction, the same pattern turn/ uses below: the webhook event, the contact it
-	// may create and the conversation it opens commit together or not at all (regla 5).
-	channelTx := func(ctx context.Context, fn func(whatsapp.Store, whatsapp.Aggregate, whatsapp.Contacts) error) error {
+	// Binds the four collaborators to one transaction, the same pattern turn/ uses below: the webhook event, the contact it may
+	// create, the conversation it opens and the vendor it gives it commit together or not at all (regla 5, ADR-0037).
+	channelTx := func(ctx context.Context, fn func(whatsapp.Store, whatsapp.Aggregate, whatsapp.Contacts, whatsapp.Assigner) error) error {
 		return db.InTx(ctx, pool, func(exec db.Executor) error {
-			return fn(channelRepo.WithExecutor(exec), aggregate.WithExecutor(exec), channelContacts.WithExecutor(exec))
+			bound := aggregate.WithExecutor(exec)
+			return fn(channelRepo.WithExecutor(exec), bound, channelContacts.WithExecutor(exec),
+				inbox.NewDispatcher(deskRepo.WithExecutor(exec), bound, log))
 		})
 	}
 
@@ -100,7 +103,6 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A second repository over the same pool, and not the one the catalogue service holds: a repository keeps no state past its
 	// executor, and sharing the instance would tie two contexts together for a reason that is not a reason of the domain.
 	book := contacts.NewService(contacts.NewRepository(pool, cipher), labels.NewRepository(pool), log)
-	deskRepo := inbox.NewRepository(pool)
 	desk := inbox.NewService(inbox.Options{
 		Repo:      deskRepo,
 		Aggregate: aggregate,

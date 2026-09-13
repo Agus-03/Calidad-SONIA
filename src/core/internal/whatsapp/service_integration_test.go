@@ -45,9 +45,10 @@ func TestReceiveCreatesTheContactTheConversationAndTheMessageInOneTransaction(t 
 		contactsRepo := contacts.NewRepository(exec, cipher)
 		conversationsRepo := conversations.NewService(conversations.NewRepository(exec), slog.New(slog.DiscardHandler))
 
-		// The transaction is a plain call here: exec is already inside db.InTx, and binding the three to it is deps.go's job in production.
-		svc := NewService(channelRepo, func(_ context.Context, fn func(Store, Aggregate, Contacts) error) error {
-			return fn(channelRepo, conversationsRepo, contactsRepo)
+		// The transaction is a plain call here: exec is already inside db.InTx, and binding the four to it is deps.go's job in production.
+		// The dispatcher is doubled because inbox/ imports this package; the real one is proven by inbox/'s integration cases and the smoke.
+		svc := NewService(channelRepo, func(_ context.Context, fn func(Store, Aggregate, Contacts, Assigner) error) error {
+			return fn(channelRepo, conversationsRepo, contactsRepo, &stubAssigner{})
 		}, slog.New(slog.DiscardHandler))
 
 		inbound, err := svc.Receive(ctx, []byte(payload), sign(payload, secret), time.Now().UTC())

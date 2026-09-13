@@ -30,6 +30,21 @@ type stubStore struct {
 
 	threads   map[uuid.UUID][]ThreadMessage
 	threadErr error
+
+	// The two answers of the dispatcher's reads (ADR-0037): nil is "nobody", which is a real answer and not a failure.
+	previous, next           *uuid.UUID
+	previousErr, nextErr     error
+	previousAsked, nextAsked int
+}
+
+func (s *stubStore) PreviousOperator(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
+	s.previousAsked++
+	return s.previous, s.previousErr
+}
+
+func (s *stubStore) NextInTurn(context.Context, uuid.UUID) (*uuid.UUID, error) {
+	s.nextAsked++
+	return s.next, s.nextErr
 }
 
 // newer is the ORDER BY of the thread: the latest recorded first, and the id when two share the instant.

@@ -178,6 +178,57 @@ func (r *Repository) RecordAssignment(ctx context.Context, a Assignment) error {
 	return nil
 }
 
+// The vendor of the contact's latest earlier conversation, if it still is one: a person who is active, not taken down and of the
+// operator role (ADR-0037, reglas 1 y 2). An earlier conversation nobody held says nothing, so it is skipped; but the latest vendor
+// being gone means the turn decides, and not a vendor from further back.
+const previousOperatorSelect = `
+SELECT o.id
+FROM   (
+       SELECT c.operator_id
+       FROM   conversations c
+       WHERE  c.contact_id = $1 AND c.id <> $2 AND c.deleted_at IS NULL AND c.operator_id IS NOT NULL
+       ORDER  BY c.created_at DESC, c.id DESC
+       LIMIT  1
+) latest
+JOIN   operators o ON o.id = latest.operator_id
+WHERE  o.account_id = $3 AND o.role = $4 AND o.active AND o.deleted_at IS NULL`
+
+// PreviousOperator answers nil when the contact has no earlier vendor who can still receive it.
+func (r *Repository) PreviousOperator(ctx context.Context, accountID, contactID, conversationID uuid.UUID) (*uuid.UUID, error) {
+	return r.oneOperator(ctx, "previous operator", previousOperatorSelect, contactID, conversationID, accountID, enums.OperatorRoleOperator)
+}
+
+// The vendor who has gone longest without receiving a conversation, and first of all one who never received any. The id settles two
+// who received their last one in the same instant, so the turn is the same whoever asks (ADR-0037, regla 1).
+const nextInTurnSelect = `
+SELECT o.id
+FROM   operators o
+LEFT   JOIN LATERAL (
+       SELECT max(a.created_at) AS received_at
+       FROM   conversation_assignments a
+       WHERE  a.to_operator_id = o.id
+) last ON true
+WHERE  o.account_id = $1 AND o.role = $2 AND o.active AND o.deleted_at IS NULL
+ORDER  BY last.received_at ASC NULLS FIRST, o.id
+LIMIT  1`
+
+// NextInTurn answers nil when no vendor is active, which leaves the conversation in the pool (ADR-0037, regla 3).
+func (r *Repository) NextInTurn(ctx context.Context, accountID uuid.UUID) (*uuid.UUID, error) {
+	return r.oneOperator(ctx, "next operator in turn", nextInTurnSelect, accountID, enums.OperatorRoleOperator)
+}
+
+func (r *Repository) oneOperator(ctx context.Context, what, query string, args ...any) (*uuid.UUID, error) {
+	var operatorID uuid.UUID
+	err := r.exec.QueryRow(ctx, query, args...).Scan(&operatorID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inbox: read the %s: %w", what, err)
+	}
+	return &operatorID, nil
+}
+
 // The two LEFT JOINs arrive as nulls, so they are read into locals and moved to the model only when the group is there.
 func scanSummary(row pgx.Row) (Summary, error) {
 	var s Summary

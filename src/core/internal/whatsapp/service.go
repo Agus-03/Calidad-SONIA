@@ -55,9 +55,15 @@ type Contacts interface {
 	Create(ctx context.Context, c contacts.Contact) error
 }
 
-// TxFunc runs fn in one transaction with the three collaborators bound to it (regla 5): the event, the contact it may create
-// and the conversation it opens commit together or not at all.
-type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Contacts) error) error
+// Assigner is what inbox/ exposes to the channel: a conversation nobody holds gets its vendor here, never through SQL of our own,
+// because conversation_assignments is inbox's (regla 1, ADR-0037).
+type Assigner interface {
+	Assign(ctx context.Context, accountID, contactID, conversationID uuid.UUID) error
+}
+
+// TxFunc runs fn in one transaction with the four collaborators bound to it (regla 5): the event, the contact it may create, the
+// conversation it opens and the vendor it gives that conversation commit together or not at all.
+type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Contacts, Assigner) error) error
 
 type Service struct {
 	// Pool-bound: Verify and the inbox lookup that decides where a payload writes need no transaction of their own.
@@ -130,7 +136,7 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 	var started []Inbound
 	// One transaction for the whole change: the event, any contact it creates and every message it stores are one unit (regla 5).
 	// whatsapp/ is the one that conducts here, the same way turn/ conducts its own (07-secuencia).
-	err = s.tx(ctx, func(store Store, agg Aggregate, registrar Contacts) error {
+	err = s.tx(ctx, func(store Store, agg Aggregate, registrar Contacts, assigner Assigner) error {
 		if err := store.SaveWebhookEvent(ctx, event); err != nil {
 			return err
 		}
@@ -140,7 +146,7 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 		}
 
 		for _, message := range value.Messages {
-			inbound, err := s.recordMessage(ctx, store, agg, registrar, inbox, value, message, at)
+			inbound, err := s.recordMessage(ctx, store, agg, registrar, assigner, inbox, value, message, at)
 			if errors.Is(err, conversations.ErrDuplicateWAMID) {
 				// Meta redelivers what it did not hear a 200 for, and skipping is right: the turn already ran the first time (07-secuencia).
 				s.log.Info("message already stored, redelivery ignored", slog.String("wamid", message.ID))
@@ -161,7 +167,8 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 }
 
 func (s *Service) recordMessage(
-	ctx context.Context, store Store, agg Aggregate, registrar Contacts, inbox Inbox, value Value, message MetaMessage, at time.Time,
+	ctx context.Context, store Store, agg Aggregate, registrar Contacts, assigner Assigner, inbox Inbox, value Value, message MetaMessage,
+	at time.Time,
 ) (Inbound, error) {
 	contact, err := s.contactFor(ctx, store, registrar, inbox, value, message)
 	if err != nil {
@@ -172,6 +179,13 @@ func (s *Service) recordMessage(
 	conversation, err := agg.EnsureOpen(ctx, contact.ID, inbox.ID, inbox.DefaultAIAgentID, sentAt)
 	if err != nil {
 		return Inbound{}, err
+	}
+	// Every conversation has a vendor from the start (ADR-0037). One that has none is new, or one that arrived when nobody could
+	// receive it: either way the customer writing is when it gets one, and one already held is never moved from here.
+	if conversation.OperatorID == nil {
+		if err := assigner.Assign(ctx, inbox.AccountID, contact.ID, conversation.ID); err != nil {
+			return Inbound{}, err
+		}
 	}
 
 	stored, err := agg.RecordInbound(ctx, conversation, message.ID, textOf(message), contentTypeOf(message), sentAt)

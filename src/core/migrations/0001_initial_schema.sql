@@ -127,6 +127,10 @@ CREATE UNIQUE INDEX uq_conversations_contact_id ON conversations (contact_id) WH
 -- ADR-0036, regla 10: the inbox pages by (last_activity_at, id) on every load; a declared exception to waiting for a slow query (migrations/README.md).
 CREATE INDEX idx_conversations_last_activity_at_id ON conversations (last_activity_at, id) WHERE deleted_at IS NULL;
 
+-- ADR-0037, regla 8: the dispatcher reads the contact's latest earlier conversation on every new one; the unique index above is
+-- partial over the open ones and cannot answer it.
+CREATE INDEX idx_conversations_contact_id_created_at_id ON conversations (contact_id, created_at, id) WHERE deleted_at IS NULL;
+
 -- Bloque 3 - the turn lives here (ADR-0022); immutable, so opened_at plays the part of created_at.
 CREATE TABLE message_batches (
     id              uuid        PRIMARY KEY,
@@ -365,6 +369,9 @@ CREATE TABLE conversation_assignments (
     reason                  text,
     created_at              timestamptz NOT NULL DEFAULT now()
 );
+
+-- ADR-0037, regla 8: the turn reads each vendor's last assignment on every new conversation, inside the webhook's transaction.
+CREATE INDEX idx_conversation_assignments_to_operator_id_created_at_id ON conversation_assignments (to_operator_id, created_at, id);
 
 CREATE TABLE internal_notes (
     id              uuid        PRIMARY KEY,

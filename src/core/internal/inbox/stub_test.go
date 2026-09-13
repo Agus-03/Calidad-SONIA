@@ -123,7 +123,7 @@ func (s *stubStore) RecordAssignment(_ context.Context, a Assignment) error {
 	return nil
 }
 
-// stubAggregate is conversations/ seen through the four calls the inbox makes, recording each so a case can assert what was
+// stubAggregate is conversations/ seen through the five calls the inbox makes, recording each so a case can assert what was
 // written and, as often, what was not.
 type stubAggregate struct {
 	claimErr      error
@@ -201,13 +201,16 @@ func (c *stubChannel) InboxByID(_ context.Context, inboxID uuid.UUID) (whatsapp.
 
 // stubSender records the context it was handed, because whether the request's cancellation reaches the send is a rule of its own.
 type stubSender struct {
-	wamid  string
-	err    error
-	calls  int
-	to     []string
-	texts  []string
-	ctxErr error
+	wamid    string
+	err      error
+	readyErr error
+	calls    int
+	to       []string
+	texts    []string
+	ctxErr   error
 }
+
+func (s *stubSender) Ready(whatsapp.Inbox) error { return s.readyErr }
 
 func (s *stubSender) Send(ctx context.Context, _ whatsapp.Inbox, to, text string) (string, error) {
 	s.calls++

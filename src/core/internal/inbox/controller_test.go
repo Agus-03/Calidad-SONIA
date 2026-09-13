@@ -20,6 +20,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
 
 var (
@@ -97,7 +98,7 @@ func team() (store *stubStore, theirs, mine, pooled Summary) {
 }
 
 // TestEachRoleSeesTheInboxAnexoBGivesIt is the reach written both ways: an operator that saw another's conversation would break
-// Anexo B, and one that did not see the pool could never answer first, which is the only way ADR-0004 assigns anything.
+// Anexo B, and one that did not see the pool could never answer first, which is the only way ADR-0004 assigns anything (ADR-0035, regla 1).
 func TestEachRoleSeesTheInboxAnexoBGivesIt(t *testing.T) {
 	store, theirs, mine, pooled := team()
 
@@ -124,7 +125,7 @@ func TestEachRoleSeesTheInboxAnexoBGivesIt(t *testing.T) {
 }
 
 // TestWalkingTheCursorShowsEveryConversationOnce is what the cursor was chosen for: page after page, nothing repeated, nothing skipped,
-// and the last page says so with a null instead of a token that leads nowhere.
+// and the last page says so with a null instead of a token that leads nowhere (ADR-0036, reglas 3 y 6).
 func TestWalkingTheCursorShowsEveryConversationOnce(t *testing.T) {
 	store, theirs, mine, pooled := team()
 	engine := mount(enums.OperatorRoleAdmin, store)
@@ -220,7 +221,7 @@ func TestThePoolAndAnEmptyConversationAreNullAndNotZero(t *testing.T) {
 }
 
 // TestAQueryTheListingCannotHonourIsRefused names each malformed input: guessing a cursor would answer the first page again and the
-// frontend would draw it as the next one.
+// frontend would draw it as the next one (ADR-0036, regla 5).
 func TestAQueryTheListingCannotHonourIsRefused(t *testing.T) {
 	encoded := func(raw string) string { return base64.RawURLEncoding.EncodeToString([]byte(raw)) }
 
@@ -253,7 +254,8 @@ func TestAQueryTheListingCannotHonourIsRefused(t *testing.T) {
 	}
 }
 
-// TestALimitAboveTheCeilingIsClampedNotRefused matches per_page in contacts/: asking for too many is not worth failing the page over.
+// TestALimitAboveTheCeilingIsClampedNotRefused matches per_page in contacts/: asking for too many is not worth failing the page over
+// (ADR-0036, regla 8).
 func TestALimitAboveTheCeilingIsClampedNotRefused(t *testing.T) {
 	store, _, _, _ := team()
 
@@ -352,7 +354,8 @@ func TestAFailedSendAnswers201WithTheFailure(t *testing.T) {
 	}
 }
 
-// TestEachRefusalHasItsOwnCode is what the frontend switches on: a code per reason, and never a 500 for something the caller can fix.
+// TestEachRefusalHasItsOwnCode is what the frontend switches on: a code per reason, and never a 500 for something the caller can fix
+// (ADR-0035, reglas 3, 6, 8 y 9).
 func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	other := id.New()
 
@@ -366,8 +369,11 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	}{
 		{"the id is not a uuid", enums.OperatorRoleOperator,
 			func(*desk) string { return "no-es-un-id" }, `{"text":"hola"}`, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the body is not json", enums.OperatorRoleOperator,
+			func(d *desk) string { return d.open(nil).ConversationID.String() }, `hola`, http.StatusBadRequest, "invalid_body"},
+		// An absent text and a blank one are one refusal with one code, so the frontend switches on one word for both.
 		{"the body has no text", enums.OperatorRoleOperator,
-			func(d *desk) string { return d.open(nil).ConversationID.String() }, `{}`, http.StatusBadRequest, "invalid_body"},
+			func(d *desk) string { return d.open(nil).ConversationID.String() }, `{}`, http.StatusBadRequest, "invalid_text"},
 		{"the text is only blanks", enums.OperatorRoleOperator,
 			func(d *desk) string { return d.open(nil).ConversationID.String() }, `{"text":"   "}`, http.StatusBadRequest, "invalid_text"},
 		{"the conversation does not exist", enums.OperatorRoleOperator,
@@ -395,6 +401,11 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 				d.store.targets[target.ConversationID] = target
 				return target.ConversationID.String()
 			}, `{"text":"hola"}`, http.StatusConflict, "window_expired"},
+		{"the number cannot send", enums.OperatorRoleOperator,
+			func(d *desk) string {
+				d.sender.readyErr = whatsapp.ErrInboxNotConfigured
+				return d.open(nil).ConversationID.String()
+			}, `{"text":"hola"}`, http.StatusConflict, "channel_unavailable"},
 		{"the database did not answer", enums.OperatorRoleOperator,
 			func(d *desk) string {
 				d.store.err = errors.New("connection refused")
@@ -442,7 +453,7 @@ func getThread(engine http.Handler, conversationID string, query url.Values) *ht
 	return rec
 }
 
-// TestTheThreadShowsEachFailureWhereItHappened is ADR-0020 completed: the failed answer is in its place in the thread with its cause,
+// TestTheThreadShowsEachFailureWhereItHappened is ADR-0020 completed: the failed answer is in its place in the thread with its code,
 // and who wrote each message is said, which is what the operator reads before deciding to send it again.
 func TestTheThreadShowsEachFailureWhereItHappened(t *testing.T) {
 	for _, role := range enums.OperatorRoleValues {
@@ -634,7 +645,7 @@ func TestOnlyTheRolesAboveTheVendorsChangeTheMode(t *testing.T) {
 	}
 }
 
-// TestEachModeRefusalHasItsOwnCode is what the frontend switches on when the toggle does not move.
+// TestEachModeRefusalHasItsOwnCode is what the frontend switches on when the toggle does not move (ADR-0035, reglas 11 y 12).
 func TestEachModeRefusalHasItsOwnCode(t *testing.T) {
 	onePooled := func(d *desk) string { return d.open(nil).ConversationID.String() }
 

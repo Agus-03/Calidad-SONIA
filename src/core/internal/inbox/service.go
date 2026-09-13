@@ -18,10 +18,11 @@ import (
 
 var (
 	// ErrNotFound covers a conversation that does not exist and one this operator cannot reach: telling them apart would confirm
-	// to an operator that another's conversation exists, the same reasoning contacts/ follows (ADR-0032, regla 2).
+	// to an operator that another's conversation exists, which is what contacts/ already answers too (ADR-0035, regla 3).
 	ErrNotFound = errors.New("inbox: conversation not found")
 
-	// ErrTaken is somebody else holding the conversation: the pool race lost, or a supervisor answering a chat that is not theirs.
+	// ErrTaken is somebody else holding the conversation: the pool race lost, or a supervisor answering a chat that is not theirs
+	// (ADR-0035, reglas 6 y 8).
 	ErrTaken = errors.New("inbox: the conversation is assigned to another operator")
 
 	// ErrResolved refuses to write into a closed unit of work: a new message from the customer is what opens the next one (ADR-0002).
@@ -36,11 +37,15 @@ var (
 	ErrUnknownMode = errors.New("inbox: the mode is not one of autonomous, suggestion, off")
 
 	// ErrModeNotAvailable is suggestion before Fase 9: accepting it would store a mode the orchestrator reads as silence, since the
-	// review cycle that makes it a mode does not exist yet.
+	// review cycle that makes it a mode does not exist yet (ADR-0035, regla 11).
 	ErrModeNotAvailable = errors.New("inbox: only autonomous and off are available until the suggestion cycle exists")
 
-	// ErrNoAgent refuses to turn on a bot the conversation was born without (conversations.ErrNoAgent, seen from here).
+	// ErrNoAgent refuses to turn on a bot the conversation was born without: conversations.ErrNoAgent, seen from here (ADR-0035, regla 12).
 	ErrNoAgent = errors.New("inbox: the conversation has no agent to turn on")
+
+	// ErrChannelUnavailable is a number that does not exist or that the sender can never send from: known before writing, so refused
+	// before writing, like the closed window (ADR-0035, regla 9).
+	ErrChannelUnavailable = errors.New("inbox: the number of the conversation cannot send")
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
@@ -101,7 +106,7 @@ func NewService(opts Options) *Service {
 }
 
 // List asks for one row more than it answers, because that row is the only honest way to know another page exists: a full page could
-// just as well be the last one, and a cursor handed out for nothing sends the frontend to ask for an empty page.
+// just as well be the last one, and a cursor handed out for nothing sends the frontend to ask for an empty page (ADR-0036, regla 7).
 func (s *Service) List(ctx context.Context, scope Scope, after *Cursor, limit int) (Page, error) {
 	// The controller never sends less than one, but a page of zero would index the row before the first one below.
 	if limit < 1 {
@@ -118,7 +123,7 @@ func (s *Service) List(ctx context.Context, scope Scope, after *Cursor, limit in
 }
 
 // Thread reads one conversation newest first, with the same reach as the listing: what the operator could not see in the inbox it
-// cannot read by guessing the id either, and it is told the conversation does not exist (ADR-0032, regla 2).
+// cannot read by guessing the id either, and it is told the conversation does not exist (ADR-0035, reglas 2 y 3).
 func (s *Service) Thread(ctx context.Context, scope Scope, conversationID uuid.UUID, after *Cursor, limit int) (ThreadPage, error) {
 	if limit < 1 {
 		limit = 1
@@ -153,13 +158,13 @@ func paginate[T any](rows []T, limit int, cursorOf func(T) Cursor) ([]T, *Cursor
 }
 
 // mayRead is the reach of the listing applied to one conversation: the operator reads its own and the pool, and the two roles above
-// it read the whole team (Anexo B).
+// it read the whole team (ADR-0035, reglas 1 y 2).
 func mayRead(scope Scope, t Target) bool {
 	return scope.seesTheWholeTeam() || t.OperatorID == nil || *t.OperatorID == scope.OperatorID
 }
 
 // Send writes the operator's answer before it leaves and sends it at most once (ADR-0020). Taking the conversation out of the pool
-// happens in the same transaction as the row, so losing the race writes nothing and sends nothing (ADR-0004).
+// happens in the same transaction as the row, so losing the race writes nothing and sends nothing (ADR-0035, reglas 7 y 8).
 //
 // A send that Meta refuses is not an error of this call: the row exists, it says failed, and the caller gets it back to show.
 func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUID, text string) (Message, error) {
@@ -178,10 +183,16 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 	if target.Status == enums.ConversationStatusResolved {
 		return Message{}, ErrResolved
 	}
-	// Refused before anything is written: a row Meta was always going to reject is a failure the operator did not cause.
+	// Refused before anything is written: a row Meta was always going to reject is a failure the operator did not cause (ADR-0035, regla 9).
 	now := time.Now().UTC()
 	if !now.Before(target.WindowExpiresAt) {
 		return Message{}, ErrWindowClosed
+	}
+	// The same reasoning for the number, read on the request's context so a stuck read ends with the request. A token revoked after
+	// this point still fails on the send, as before: no check made in advance can see that.
+	inbox, err := s.channelFor(ctx, target)
+	if err != nil {
+		return Message{}, err
 	}
 
 	var message conversations.Message
@@ -199,16 +210,31 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 		return Message{}, err
 	}
 
-	return s.deliver(ctx, target, message), nil
+	return s.deliver(ctx, target, inbox, message), nil
+}
+
+// channelFor answers the number the conversation sends from, or ErrChannelUnavailable when it is known now that no send can leave.
+func (s *Service) channelFor(ctx context.Context, target Target) (whatsapp.Inbox, error) {
+	inbox, err := s.opts.Channel.InboxByID(ctx, target.InboxID)
+	if errors.Is(err, whatsapp.ErrInboxNotFound) {
+		return whatsapp.Inbox{}, fmt.Errorf("%w: %w", ErrChannelUnavailable, err)
+	}
+	if err != nil {
+		return whatsapp.Inbox{}, err
+	}
+	if err := s.opts.Sender.Ready(inbox); err != nil {
+		return whatsapp.Inbox{}, fmt.Errorf("%w: %w", ErrChannelUnavailable, err)
+	}
+	return inbox, nil
 }
 
 // SetMode turns the agent of one conversation on or off without touching the others (F27, brought forward from Fase 10). Who may call it
-// is decided in routes.go and not here; what this decides is which changes make sense for the conversation.
+// is decided in routes.go and not here; what this decides is which changes make sense for the conversation (ADR-0035, reglas 11 a 14).
 //
-// It does not take the conversation out of the pool: answering is what assigns (ADR-0004), and turning the bot off is not an answer.
+// It does not take the conversation out of the pool: answering is what assigns, and turning the bot off is not an answer (ADR-0035, regla 13).
 //
 // The orchestrator reads the mode when a turn starts, so an answer the brain is already generating still goes out after the bot is
-// turned off. That gap is known and is closed in Fase 9, when the three modes branch the orchestrator.
+// turned off. The gap is a declared cost, closed in Fase 9 when the three modes branch the orchestrator (ADR-0035 §4).
 func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.UUID, mode enums.AgentMode) (enums.AgentMode, error) {
 	if !mode.IsValid() {
 		return "", ErrUnknownMode
@@ -244,7 +270,7 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	}
 }
 
-// mayAnswer is ADR-0035, reglas 5 and 6: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole
+// mayAnswer is ADR-0035, reglas 5 y 6: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole
 // team (Anexo B) and is told who holds a conversation; the operator cannot see it, and is told it does not exist.
 func mayAnswer(scope Scope, t Target) error {
 	if t.OperatorID == nil || *t.OperatorID == scope.OperatorID {
@@ -256,7 +282,7 @@ func mayAnswer(scope Scope, t Target) error {
 	return ErrNotFound
 }
 
-// claim writes the assignment F26 will need as history, next to the column the reach reads: the two together or neither.
+// claim writes the assignment F26 will need as history, next to the column the reach reads: the two together or neither (ADR-0035, regla 7).
 func claim(ctx context.Context, store Store, aggregate Aggregate, target Target, operatorID uuid.UUID) error {
 	if err := aggregate.Claim(ctx, target.ConversationID, operatorID); err != nil {
 		if errors.Is(err, conversations.ErrTaken) {
@@ -277,13 +303,8 @@ func claim(ctx context.Context, store Store, aggregate Aggregate, target Target,
 //
 // It is detached from the request: the operator pressed send, and closing the tab a moment later must not cut a call Meta may
 // already have accepted. The client's own timeout bounds the send, and writeGrace bounds the write after it.
-func (s *Service) deliver(ctx context.Context, target Target, message conversations.Message) Message {
+func (s *Service) deliver(ctx context.Context, target Target, inbox whatsapp.Inbox, message conversations.Message) Message {
 	ctx = context.WithoutCancel(ctx)
-
-	inbox, err := s.opts.Channel.InboxByID(ctx, target.InboxID)
-	if err != nil {
-		return s.undelivered(ctx, message, err)
-	}
 
 	// No retry of any kind: a duplicate answer to a customer cannot be taken back (ADR-0020).
 	wamid, err := s.opts.Sender.Send(ctx, inbox, target.ContactPhone, message.ContentText)

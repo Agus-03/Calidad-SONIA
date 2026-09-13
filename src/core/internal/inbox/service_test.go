@@ -28,7 +28,7 @@ func rowsAt(n int) []Summary {
 var adminScope = Scope{AccountID: id.New(), OperatorID: id.New(), Role: enums.OperatorRoleAdmin}
 
 // TestTheNextCursorIsHandedOutOnlyWhenAnotherPageExists protects the one row read past the page: without it a full last page
-// hands out a cursor to nothing, and the frontend asks for an empty page to learn that it is done.
+// hands out a cursor to nothing, and the frontend asks for an empty page to learn that it is done (ADR-0036, regla 7).
 func TestTheNextCursorIsHandedOutOnlyWhenAnotherPageExists(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -175,7 +175,7 @@ func TestLosingThePoolRaceWritesNothingAndSendsNothing(t *testing.T) {
 }
 
 // TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten covers the refusals that come from the conversation and not from the
-// caller: none of them leaves a row, because a row Meta was always going to reject is a failure nobody caused.
+// caller: none of them leaves a row, because a row Meta was always going to reject is a failure nobody caused (ADR-0035, regla 9).
 func TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -212,7 +212,7 @@ func TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten(t *testing.T) {
 }
 
 // TestAFailedSendIsTheRowSaidFailedAndNeverRetried is ADR-0020 from the operator's side: one attempt, the failure on the row and in
-// the answer, and the conversation still taken, because the failure needs an owner to decide about it.
+// the answer, and the conversation still taken, because the failure needs an owner to decide about it (ADR-0035, regla 7).
 func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
 	refused := &httpclient.StatusError{Status: 400, Body: `{"error":{"message":"(#131030) Recipient not in allowed list","code":131030}}`}
 
@@ -223,7 +223,9 @@ func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
 		code string
 	}{
 		{"Meta refuses the send", func(d *desk) { d.sender.err = refused }, "131030"},
-		{"the number cannot be read before sending", func(d *desk) { d.channel.err = whatsapp.ErrInboxNotFound }, "inbox_not_found"},
+		// Ready said yes and the send still failed: the token was revoked in between, which no check made in advance can see.
+		{"the number stopped being able to send after the check", func(d *desk) { d.sender.err = whatsapp.ErrInboxNotConfigured },
+			"inbox_not_configured"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDesk(&stubStore{})
@@ -249,6 +251,38 @@ func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
 			}
 			if d.aggregate.claimed[target.ConversationID] != me {
 				t.Fatalf("the failed answer left the conversation without an owner")
+			}
+		})
+	}
+}
+
+// TestANumberThatCannotSendIsRefusedBeforeWriting is ADR-0035, regla 9, for the number: a failure known in advance is refused like
+// the closed window, with no row, no claim and no send, instead of leaving the operator a failed answer it did not cause.
+func TestANumberThatCannotSendIsRefusedBeforeWriting(t *testing.T) {
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name  string
+		shape func(*desk)
+		want  error
+	}{
+		{"the number does not exist", func(d *desk) { d.channel.err = whatsapp.ErrInboxNotFound }, ErrChannelUnavailable},
+		{"the number was never connected", func(d *desk) { d.sender.readyErr = whatsapp.ErrInboxNotConfigured }, ErrChannelUnavailable},
+		// Not a refusal: the database failing says nothing about the number, so it surfaces as the failure it is.
+		{"the number could not be read", func(d *desk) { d.channel.err = boom }, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			tc.shape(d)
+			target := d.open(nil)
+
+			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("Send: got %v, want %v", err, tc.want)
+			}
+			if len(d.aggregate.recorded) != 0 || len(d.aggregate.claimed) != 0 || d.sender.calls != 0 || len(d.store.assignments) != 0 {
+				t.Fatalf("a refused answer still wrote, claimed or sent: %d rows, %d claims, %d sends, %d assignments",
+					len(d.aggregate.recorded), len(d.aggregate.claimed), d.sender.calls, len(d.store.assignments))
 			}
 		})
 	}
@@ -331,7 +365,7 @@ func TestAWriteThatFailsInsideTheTransactionSendsNothing(t *testing.T) {
 }
 
 // TestTheThreadHasTheReachOfTheListing is the listing's rule one conversation at a time: an operator reads its own and the pool, the
-// two roles above it read the whole team, and an id guessed past the listing is answered as missing (ADR-0032, regla 2).
+// two roles above it read the whole team, and an id guessed past the listing is answered as missing (ADR-0035, reglas 2 y 3).
 func TestTheThreadHasTheReachOfTheListing(t *testing.T) {
 	me, other := id.New(), id.New()
 
@@ -425,7 +459,7 @@ func TestTheThreadDoesNotSwallowAFailure(t *testing.T) {
 }
 
 // TestTheModeChangesOnlyWhenItMakesSense is F27 as this phase offers it: off and back on, never suggestion before its cycle exists,
-// never on for a conversation born without an agent, and nothing written for a change that changes nothing.
+// never on for a conversation born without an agent, and nothing written for a change that changes nothing (ADR-0035, reglas 11 a 14).
 func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -461,7 +495,7 @@ func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
 			if _, written := d.aggregate.modes[target.ConversationID]; written != tc.wantWrite {
 				t.Fatalf("written = %v, want %v", written, tc.wantWrite)
 			}
-			// Turning the bot off is not answering, so it never takes the pool (ADR-0004).
+			// Turning the bot off is not answering, so it never takes the pool (ADR-0035, regla 13).
 			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 {
 				t.Fatalf("changing the mode assigned the conversation")
 			}

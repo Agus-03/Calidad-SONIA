@@ -23,6 +23,9 @@ var ErrEmptyMessage = errors.New("whatsapp: refusing to send an empty message")
 // Declared here because whatsapp/ is the only package that knows what sending means, and it never retries (ADR-0020).
 type Sender interface {
 	Send(ctx context.Context, inbox Inbox, to, text string) (string, error)
+	// Ready answers before anything is written whether this sender can ever send from the inbox, so a failure known in advance
+	// never becomes a row (ADR-0035, regla 9). It is the sender's to say, because the double sends from a number nobody connected.
+	Ready(inbox Inbox) error
 }
 
 // FailureCode is what messages.error_code keeps of a send that did not leave: Meta's own code when Meta refused it, and a fixed word
@@ -125,10 +128,18 @@ type sendResponse struct {
 	} `json:"messages"`
 }
 
+// Ready refuses a number without a token: Meta authenticates every send with it, so without one no send can ever leave (ADR-0033).
+func (c *Client) Ready(inbox Inbox) error {
+	if inbox.AccessToken == "" {
+		return ErrInboxNotConfigured
+	}
+	return nil
+}
+
 // Send returns the wamid Meta assigns, which is what messages.wamid was left nullable to receive (07-secuencia, hallazgo 3).
 func (c *Client) Send(ctx context.Context, inbox Inbox, to, text string) (string, error) {
-	if inbox.AccessToken == "" {
-		return "", ErrInboxNotConfigured
+	if err := c.Ready(inbox); err != nil {
+		return "", err
 	}
 	if text == "" {
 		return "", ErrEmptyMessage
@@ -165,6 +176,10 @@ func NewDoubleSender(log *slog.Logger) *DoubleSender {
 	}
 	return &DoubleSender{log: log}
 }
+
+// Ready accepts any row: the double never reaches Meta, which is what lets development and the smoke run on the demo number, which
+// nobody connected.
+func (d *DoubleSender) Ready(Inbox) error { return nil }
 
 func (d *DoubleSender) Send(_ context.Context, inbox Inbox, to, text string) (string, error) {
 	if text == "" {

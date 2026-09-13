@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// The same page size and ceiling as contacts/, so the two listings differ in how they continue and in nothing else.
+	// The same page size and ceiling as contacts/, so the two listings differ in how they continue and in nothing else (ADR-0036, regla 8).
 	defaultLimit = 20
 	maxLimit     = 100
 )
@@ -35,7 +35,7 @@ func NewController(service *Service, log *slog.Logger) *Controller {
 
 type pageResponse struct {
 	Items []summaryResponse `json:"items"`
-	// Null at the end, and never an empty string: a frontend that sends "" back would be asking for the first page again.
+	// Null at the end, and never an empty string: a frontend that sends "" back would be asking for the first page again (ADR-0036, regla 6).
 	NextCursor *string `json:"next_cursor"`
 }
 
@@ -175,7 +175,7 @@ type threadPageResponse struct {
 	NextCursor *string                 `json:"next_cursor"`
 }
 
-// thread takes the same limit and the same opaque cursor as the listing, and refuses a malformed one the same way.
+// thread takes the same limit and the same opaque cursor as the listing, so the two cannot disagree on how a page continues (ADR-0036, regla 1).
 func (c *Controller) thread(gc *gin.Context) {
 	scope, ok := c.scopeFrom(gc)
 	if !ok {
@@ -219,8 +219,10 @@ func (c *Controller) thread(gc *gin.Context) {
 	soniahttp.OK(gc, body)
 }
 
+// Not required by the binding: an absent text and a blank one are the same refusal, and the service is the one that answers it, with
+// one code (ADR-0035, regla 9). The binding still refuses a body that is not json at all.
 type sendRequest struct {
-	Text string `json:"text" binding:"required"`
+	Text string `json:"text"`
 }
 
 // send answers 201 with the row whether Meta took it or not: the row exists either way, and its status is what the operator has to
@@ -238,7 +240,7 @@ func (c *Controller) send(gc *gin.Context) {
 
 	var req sendRequest
 	if err := gc.ShouldBindJSON(&req); err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "a text is required").WithCause(err))
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "the body is not a json object with a text").WithCause(err))
 		return
 	}
 
@@ -304,6 +306,8 @@ func translate(err error) error {
 		return soniahttp.BadRequest("mode_not_available", "only autonomous and off can be chosen for now").WithCause(err)
 	case errors.Is(err, ErrNoAgent):
 		return soniahttp.Conflict("no_ai_agent", "the conversation has no agent to turn on").WithCause(err)
+	case errors.Is(err, ErrChannelUnavailable):
+		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:
 		return err
 	}
@@ -328,7 +332,8 @@ func limitFrom(gc *gin.Context) (int, error) {
 	if err != nil || n < 1 {
 		return 0, soniahttp.BadRequest("invalid_limit", "limit must be a positive whole number").WithCause(err)
 	}
-	// Clamped and not refused, the same as per_page in contacts/: asking for too many is not a mistake worth failing the page over.
+	// Clamped and not refused, the same as per_page in contacts/: asking for too many is not a mistake worth failing the page over
+	// (ADR-0036, regla 8).
 	if n > maxLimit {
 		n = maxLimit
 	}
@@ -336,7 +341,7 @@ func limitFrom(gc *gin.Context) (int, error) {
 }
 
 // cursorFrom reads the token the previous page handed out. An absent one is the first page; a malformed one is refused, because
-// guessing would answer the first page again and the frontend would draw it as the next.
+// guessing would answer the first page again and the frontend would draw it as the next (ADR-0036, regla 5).
 func cursorFrom(gc *gin.Context) (*Cursor, error) {
 	raw := gc.Query("cursor")
 	if raw == "" {
@@ -352,7 +357,8 @@ func cursorFrom(gc *gin.Context) (*Cursor, error) {
 var errMalformedCursor = errors.New("inbox: malformed cursor")
 
 // The cursor is opaque to the frontend on purpose: what it carries is how the query continues, and a client that learned to build one
-// would break the day the ordering changes. Nanoseconds so the instant survives the round trip exactly and the comparison stays strict.
+// would break the day the ordering changes (ADR-0036, regla 4). Nanoseconds so the instant survives the round trip exactly and the
+// comparison stays strict.
 func encodeCursor(c Cursor) string {
 	raw := c.At.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))

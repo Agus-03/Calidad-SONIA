@@ -207,6 +207,9 @@ type stubSender struct {
 	texts []string
 }
 
+// The turn never asks: an answer the brain already generated is written and its failure kept, as ADR-0020 wants of the bot.
+func (s *stubSender) Ready(whatsapp.Inbox) error { return nil }
+
 func (s *stubSender) Send(_ context.Context, _ whatsapp.Inbox, _, text string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

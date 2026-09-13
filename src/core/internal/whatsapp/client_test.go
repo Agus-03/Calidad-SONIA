@@ -95,6 +95,24 @@ func TestSendRefusesAnInboxWithNoToken(t *testing.T) {
 	}
 }
 
+// Ready is the same refusal asked before anything is written, and the double does not share it: that difference is what lets the
+// smoke send from the demo number, which has no token, while production refuses it up front (ADR-0035, regla 9).
+func TestReadyIsTheSendersToSay(t *testing.T) {
+	unconnected := connected()
+	unconnected.AccessToken = ""
+	client := NewClient(ClientOptions{})
+
+	if err := client.Ready(unconnected); !errors.Is(err, ErrInboxNotConfigured) {
+		t.Fatalf("client.Ready(no token) = %v, want ErrInboxNotConfigured", err)
+	}
+	if err := client.Ready(connected()); err != nil {
+		t.Fatalf("client.Ready(token) = %v, want nil", err)
+	}
+	if err := NewDoubleSender(nil).Ready(unconnected); err != nil {
+		t.Fatalf("double.Ready(no token) = %v, want nil", err)
+	}
+}
+
 func TestSendRefusesAnEmptyMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("an empty message must not reach Meta")

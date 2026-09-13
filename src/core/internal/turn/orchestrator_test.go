@@ -300,6 +300,8 @@ type blockingSender struct {
 	once    sync.Once
 }
 
+func (b *blockingSender) Ready(whatsapp.Inbox) error { return nil }
+
 func (b *blockingSender) Send(context.Context, whatsapp.Inbox, string, string) (string, error) {
 	b.once.Do(func() { <-b.release })
 	return "wamid.HBg", nil

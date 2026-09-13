@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§4 enmendada por [ADR-0035](0035-reglas-de-la-bandeja-manual.md)** el 2026-09-13, en dos puntos: la reasignación propia del `operator` se decide en la Fase 11, no en la 5; y deja de valer la positiva de que el control es *"una sola consulta… derivada de la regla de la bandeja"*, porque la bandeja le suma al `operator` el pool y la agenda no |
 | **Fecha** | 2026-09-09 |
 | **Etapa** | Construcción — Fase 3 (contactos y etiquetas) |
 | **Resuelve** | Quién ve la agenda de contactos, quién ve los cuatro datos sensibles y quién puede editar qué · H-32 a H-37, H-39 |

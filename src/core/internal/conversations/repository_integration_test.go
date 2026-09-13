@@ -50,8 +50,20 @@ func insertContact(ctx context.Context, exec db.Executor, account uuid.UUID) (uu
 	_, err := exec.Exec(ctx,
 		`INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
 		 VALUES ($1, $2, $3, 'Prueba', 'Integracion', 'client', 'direct', now())`,
-		contact, account, "549351"+contact.String()[:7])
+		contact, account, "549351"+digitsOf(contact.String()))
 	return contact, err
+}
+
+// digitsOf keeps every digit of the id and not a prefix: the head of a UUID v7 is its timestamp, so two contacts built in the same
+// case would share it and collide on the unique index of the phone.
+func digitsOf(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			out = append(out, s[i])
+		}
+	}
+	return string(out)
 }
 
 // TestTheIndexAndNotTheReadDecidesWhoOpens proves ADR-0002 against real DDL: two racing inbound messages cannot open two conversations.
@@ -159,6 +171,292 @@ func TestTheOutboundMessageIsWrittenBeforeItIsSent(t *testing.T) {
 		}
 		if status == nil || *status != string(enums.MessageStatusFailed) || code == nil || *code != "131047" {
 			t.Fatalf("the failed send left no visible trace: status %v code %v", status, code)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// insertOperator writes a real operator, because conversations.operator_id and messages.sender_operator_id are foreign keys.
+func insertOperator(ctx context.Context, exec db.Executor, account uuid.UUID) (uuid.UUID, error) {
+	operator := id.New()
+	_, err := exec.Exec(ctx,
+		`INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+		 VALUES ($1, $2, 'Prueba', 'Agregado', $3, 'not-a-real-hash', 'operator', true)`,
+		operator, account, operator.String()+"@sonia.test")
+	return operator, err
+}
+
+// TestOnlyTheFirstClaimTakesThePool is ADR-0004 against real DDL: the predicate decides, so the second operator gets ErrTaken and
+// the conversation keeps the first one (ADR-0035, regla 8).
+func TestOnlyTheFirstClaimTakesThePool(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		first, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		second, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		if err := service.Claim(ctx, conversation.ID, first); err != nil {
+			t.Fatalf("the first claim on the pool: %v", err)
+		}
+		if err := service.Claim(ctx, conversation.ID, second); !errors.Is(err, ErrTaken) {
+			t.Fatalf("the second claim: got %v, want ErrTaken", err)
+		}
+
+		var owner uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT operator_id FROM conversations WHERE id = $1`, conversation.ID).Scan(&owner); err != nil {
+			t.Fatalf("read the owner: %v", err)
+		}
+		if owner != first {
+			t.Fatalf("the conversation belongs to %v, want the first to answer, %v", owner, first)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestALateInboundNeverMovesTheClocksBack is Meta delivering an older message after a newer one: the window keeps the newer one,
+// because shortening it would refuse answers Meta still accepts (ADR-0008), and the activity takes the database clock and not Meta's,
+// the same one the outbound side writes (C06).
+func TestALateInboundNeverMovesTheClocksBack(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		// Meta's instants, months before the database clock, so the activity cannot pass by coinciding with one of them.
+		newer := time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, newer)
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		var lastInbound, windowExpires, activity time.Time
+		receive := func(at time.Time) {
+			t.Helper()
+			if _, err := service.RecordInbound(ctx, conversation, "wamid."+id.New().String(), "hola", enums.MessageContentTypeText, at); err != nil {
+				t.Fatalf("RecordInbound: %v", err)
+			}
+			if err := exec.QueryRow(ctx,
+				`SELECT last_inbound_at, window_expires_at, last_activity_at FROM conversations WHERE id = $1`, conversation.ID).
+				Scan(&lastInbound, &windowExpires, &activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+		}
+
+		receive(newer)
+		if !activity.After(newer) {
+			t.Fatalf("last_activity_at = %v, want the database clock and not Meta's %v", activity, newer)
+		}
+		before := activity
+
+		receive(newer.Add(-10 * time.Minute))
+		if !lastInbound.Equal(newer) || !windowExpires.Equal(newer.Add(ServiceWindow)) {
+			t.Fatalf("a late webhook moved the window back: last_inbound_at %v, window_expires_at %v, want %v and %v",
+				lastInbound, windowExpires, newer, newer.Add(ServiceWindow))
+		}
+		if activity.Before(before) {
+			t.Fatalf("a late webhook sank the conversation: last_activity_at went from %v to %v", before, activity)
+		}
+
+		// And the ordinary case still moves forward, so the guard is not a window frozen at the first message.
+		latest := newer.Add(5 * time.Minute)
+		receive(latest)
+		if !lastInbound.Equal(latest) || !windowExpires.Equal(latest.Add(ServiceWindow)) {
+			t.Fatalf("a newer message did not reset the window: last_inbound_at %v, window_expires_at %v", lastInbound, windowExpires)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheFirstSendIsTheFirstResponse proves the three columns an answer moves: the operator's row passes the sender check, the
+// activity moves when it is written, and first_response_at takes the first send only — never a failed one, never a later one.
+func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec)
+		service := NewService(repo, nil)
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		operator, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		// Well before the database clock, so "the activity moved" cannot pass by the two instants happening to coincide.
+		opened := time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, opened)
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET last_activity_at = $2 WHERE id = $1`, conversation.ID, opened); err != nil {
+			t.Fatalf("pin the activity: %v", err)
+		}
+
+		failed, err := service.RecordOperatorOutbound(ctx, conversation.ID, operator, "esta no sale", opened)
+		if err != nil {
+			t.Fatalf("RecordOperatorOutbound: the sender check refused the operator's row: %v", err)
+		}
+		if err := service.MarkFailed(ctx, failed.ID, "131047"); err != nil {
+			t.Fatalf("MarkFailed: %v", err)
+		}
+
+		var activity time.Time
+		var firstResponse *time.Time
+		read := func() {
+			t.Helper()
+			if err := exec.QueryRow(ctx, `SELECT last_activity_at, first_response_at FROM conversations WHERE id = $1`, conversation.ID).
+				Scan(&activity, &firstResponse); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+		}
+		read()
+		if !activity.After(opened) {
+			t.Fatalf("writing the answer left last_activity_at at %v", activity)
+		}
+		if firstResponse != nil {
+			t.Fatalf("a failed send was taken as the first response: %v", *firstResponse)
+		}
+
+		sentAt := opened.Add(time.Minute)
+		answer, err := service.RecordOperatorOutbound(ctx, conversation.ID, operator, "ahora sí", sentAt)
+		if err != nil {
+			t.Fatalf("RecordOperatorOutbound: %v", err)
+		}
+		if err := service.MarkSent(ctx, answer.ID, "wamid.first", sentAt); err != nil {
+			t.Fatalf("MarkSent: %v", err)
+		}
+		read()
+		// The database clock and not the caller's sentAt: F34 subtracts created_at from it, which is that clock too (C06).
+		if firstResponse == nil || firstResponse.Equal(sentAt) || !firstResponse.After(opened) {
+			t.Fatalf("first_response_at is %v, want the database clock at the first send, not the caller's %v", firstResponse, sentAt)
+		}
+		// now() does not move inside one transaction, so a second send would write the same instant: pinned to another one, the
+		// comparison below can tell a kept value from a rewritten one.
+		first := opened.Add(time.Second)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET first_response_at = $2 WHERE id = $1`, conversation.ID, first); err != nil {
+			t.Fatalf("pin the first response: %v", err)
+		}
+
+		later, err := service.RecordOperatorOutbound(ctx, conversation.ID, operator, "algo más", sentAt.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("RecordOperatorOutbound: %v", err)
+		}
+		if err := service.MarkSent(ctx, later.ID, "wamid.second", sentAt.Add(time.Hour)); err != nil {
+			t.Fatalf("MarkSent: %v", err)
+		}
+		read()
+		if !firstResponse.Equal(first) {
+			t.Fatalf("a later send moved first_response_at from %v to %v", first, *firstResponse)
+		}
+
+		if err := service.MarkSent(ctx, id.New(), "wamid.nobody", sentAt); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("MarkSent on a message that does not exist: got %v, want ErrNotFound", err)
+		}
+		if err := repo.TouchOutbound(ctx, id.New()); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("TouchOutbound on a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheBotIsTurnedOffWithoutLosingItsAgent is F27 against real DDL: off keeps ai_agent_id so the bot can come back, and a
+// conversation born without an agent cannot be turned on, because the predicate and not a read decides it (ADR-0035, regla 12).
+func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		mode := func(conversationID uuid.UUID) (enums.AgentMode, *uuid.UUID) {
+			t.Helper()
+			var m enums.AgentMode
+			var a *uuid.UUID
+			if err := exec.QueryRow(ctx, `SELECT mode, ai_agent_id FROM conversations WHERE id = $1`, conversationID).Scan(&m, &a); err != nil {
+				t.Fatalf("read the mode: %v", err)
+			}
+			return m, a
+		}
+
+		withAgent, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		answered, err := service.EnsureOpen(ctx, withAgent, inbox, &agent, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		if err := service.SetMode(ctx, answered.ID, enums.AgentModeOff); err != nil {
+			t.Fatalf("turning the bot off: %v", err)
+		}
+		if m, a := mode(answered.ID); m != enums.AgentModeOff || a == nil || *a != agent {
+			t.Fatalf("after turning it off: mode %q agent %v, want off and the agent kept", m, a)
+		}
+		if err := service.SetMode(ctx, answered.ID, enums.AgentModeAutonomous); err != nil {
+			t.Fatalf("turning the bot back on: %v", err)
+		}
+		if m, _ := mode(answered.ID); m != enums.AgentModeAutonomous {
+			t.Fatalf("after turning it on: mode %q, want autonomous", m)
+		}
+
+		withoutAgent, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		silent, err := service.EnsureOpen(ctx, withoutAgent, inbox, nil, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		if err := service.SetMode(ctx, silent.ID, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAgent) {
+			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAgent", err)
+		}
+		if m, _ := mode(silent.ID); m != enums.AgentModeOff {
+			t.Fatalf("the refused change still wrote %q", m)
+		}
+
+		if err := service.SetMode(ctx, id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("turning off a conversation that does not exist: got %v, want ErrNotFound", err)
 		}
 		return rollback
 	})

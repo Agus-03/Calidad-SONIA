@@ -9,11 +9,14 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
+// Conversation carries its holder because the channel decides on it: a nil OperatorID is the pool, which since ADR-0037 only happens
+// when no vendor was active to receive the conversation.
 type Conversation struct {
 	ID              uuid.UUID
 	ContactID       uuid.UUID
 	InboxID         uuid.UUID
 	AIAgentID       *uuid.UUID
+	OperatorID      *uuid.UUID
 	Status          enums.ConversationStatus
 	Mode            enums.AgentMode
 	LastInboundAt   time.Time

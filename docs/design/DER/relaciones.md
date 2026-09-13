@@ -31,7 +31,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 | `contacts` | 1 — 0..* | `conversations` | `conversations.contact_id` | Un contacto puede existir sin conversaciones: F30 permite el alta manual |
 | `inboxes` | 1 — 0..* | `conversations` | `conversations.inbox_id` | **Por qué bandeja —y por lo tanto por qué número de WhatsApp— entró** (ADR-0012) |
 | `conversations` | 1 — 0..* | `messages` | `messages.conversation_id` | |
-| `operators` | 0..1 — 0..* | `conversations` | `conversations.operator_id` | **Nullable.** Pool sin asignar (ADR-0004) o modo autónomo (F02) |
+| `operators` | 0..1 — 0..* | `conversations` | `conversations.operator_id` | **Nullable.** Pool sin asignar (ADR-0004): desde ADR-0037, sólo lo que llegó sin ningún vendedor activo. El modo autónomo ya no la deja nula |
 | `ai_agents` | 0..1 — 0..* | `conversations` | `conversations.ai_agent_id` | **Nullable.** En modo `off` no hay agente asignado |
 | `operators` | 0..1 — 0..* | `conversations` | `conversations.scored_by_operator_id` | **Nullable.** Sólo las conversaciones calificadas (F13) |
 | `operators` | 0..1 — 0..* | `conversations` | `conversations.resolved_by_operator_id` | **Nullable.** El cierre es manual (ADR-0002): sólo las resueltas |
@@ -99,9 +99,9 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 |---|---|---|---|---|
 | `accounts` | 1 — 0..* | `contacts` · `ai_agents` · `operators` · `labels` · `quick_replies` · `inboxes` | `.account_id` en cada una | **Las seis entidades raíz** (ADR-0012). El resto del modelo hereda la pertenencia por su padre — ver la nota de abajo |
 | `conversations` | 1 — 0..* | `conversation_assignments` | `conversation_assignments.conversation_id` | `0..*`: una conversación en el pool todavía no fue asignada |
-| `operators` | 0..1 — 0..* | `conversation_assignments` | `.from_operator_id` | **Nullable.** Nulo en la primera asignación desde el pool (ADR-0004) |
+| `operators` | 0..1 — 0..* | `conversation_assignments` | `.from_operator_id` | **Nullable.** Nulo en la primera asignación de una conversación, sea por el reparto (ADR-0037) o desde el pool (ADR-0004) |
 | `operators` | 1 — 0..* | `conversation_assignments` | `.to_operator_id` | Siempre hay destinatario |
-| `operators` | 0..1 — 0..* | `conversation_assignments` | `.assigned_by_operator_id` | **Nullable.** En la autoasignación coincide con el destinatario |
+| `operators` | 0..1 — 0..* | `conversation_assignments` | `.assigned_by_operator_id` | **Nullable.** Coincide con el destinatario cuando un operador toma el pool respondiendo (ADR-0035, regla 7); nulo cuando asigna el reparto, porque no la asignó nadie (ADR-0037, regla 5) |
 | `conversations` | 1 — 0..* | `internal_notes` | `internal_notes.conversation_id` | F26 — notas preservadas en la reasignación |
 | `operators` | 1 — 0..* | `internal_notes` | `internal_notes.operator_id` | |
 | `contacts` | 1 — 0..* | `contact_labels` | `contact_labels.contact_id` | F33 |
@@ -178,10 +178,12 @@ Restricciones reales del sistema que **no se pueden expresar como cardinalidad**
 | Regla | Origen | Cómo se implementa |
 |---|---|---|
 | **`accounts` tiene exactamente una fila durante todo el proyecto.** La gestión multi-empresa —alta de cuentas, aislamiento entre cuentas, permisos por cuenta— **sigue fuera de alcance** (7.3) y no se implementa | ADR-0012 · sección 7.3 | Regla de aplicación + nota en el diagrama. **Es la regla que impide que la previsión estructural se lea como funcionalidad prometida** |
-| Toda conversación entra por una bandeja, y su agente inicial es el `default_ai_agent_id` de esa bandeja | ADR-0012 | Regla de aplicación. `conversations.ai_agent_id` puede cambiar después (F27 permite apagar el agente en un chat) |
+| Toda conversación entra por una bandeja, y su agente inicial es el `default_ai_agent_id` de esa bandeja | ADR-0012 | Regla de aplicación. `conversations.ai_agent_id` es mutable, pero **apagar el agente IA no lo desvincula**: el modo pasa a `off` y el agente se conserva para poder volver a prenderlo ([ADR-0035](../02-decisiones/0035-reglas-de-la-bandeja-manual.md), regla 12) |
 | Sólo un `admin` puede crear respuestas rápidas y etiquetas | F09, F19 · Anexo B | Regla de aplicación + nota en el diagrama. No es expresable como relación |
 | El módulo de contactos (F30, F32, F33) **lo alcanzan los tres roles**. El `operator` ve sólo los contactos de las conversaciones que tiene asignadas, y **DNI, CUIT, CUIL y CBU no le viajan** | ADR-0032 (reemplaza a ADR-0011) | Regla de aplicación. Los cuatro campos se arman en un DTO aparte que al `operator` no se le construye |
-| Un `operator` sólo alcanza las conversaciones que tiene asignadas | Anexo B · ADR-0032 | Regla de aplicación sobre `conversations.operator_id`, que es **la asignación actual y no el historial** de `conversation_assignments` |
+| En la bandeja, un `operator` alcanza **sus conversaciones asignadas y las del pool**; en la agenda de contactos, sólo los de sus asignadas. Ningún rol ve en la bandeja las conversaciones de un contacto dado de baja | Anexo B · ADR-0004 · ADR-0032 · [ADR-0035](../02-decisiones/0035-reglas-de-la-bandeja-manual.md), reglas 1 a 3 | Regla de aplicación sobre `conversations.operator_id`, que es **la asignación actual y no el historial** de `conversation_assignments`. Son dos alcances distintos, en dos consultas |
+| **Toda conversación tiene un vendedor desde que el cliente escribe**: su vendedor anterior si sigue activo, o el `operator` activo que hace más tiempo que no recibe una. Sin ninguno activo, queda en el pool | [ADR-0037](../02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), reglas 1 a 3 · enmienda ADR-0004 | Regla de aplicación en la transacción del webhook: `conversations.operator_id` más una fila de `conversation_assignments` sin `assigned_by_operator_id`, con el motivo de la regla que eligió |
+| El modo del agente IA de una conversación lo cambia **el `operator` que la tiene asignada**, y `supervisor` y `admin` el de cualquiera | F27 · Anexo B · [ADR-0037](../02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), regla 4 | Regla de aplicación en el servicio de la bandeja: del pool, 409; ajena, 404 |
 | `sender_operator_id` y `sender_ai_agent_id` son excluyentes y deben coincidir con `sender_type` | H-09 | `CHECK` sobre `messages` |
 | Un contacto tiene **como máximo una conversación no resuelta** a la vez | ADR-0002 — un mensaje entrante sobre una resuelta abre una nueva | Índice único parcial sobre `conversations (contact_id) WHERE status <> 'resolved' AND deleted_at IS NULL` |
 | `phone_whatsapp`, `email` de operador y `name` de etiqueta son únicos **entre los no borrados**. El de etiqueta, además, **ignora mayúsculas**: `Ventas` y `ventas` son la misma etiqueta | C09 · F19 | Índice único parcial `WHERE deleted_at IS NULL`, sobre `lower(name)` en el caso de `labels`. **No unifica acentos** —eso necesitaría la extensión `unaccent`—, así que `Ventás` sería una etiqueta distinta |
@@ -206,7 +208,7 @@ Seis puntos donde la lectura ingenua del anteproyecto lleva a una cardinalidad e
 
 | # | Relación | Lectura ingenua | Correcta | Motivo |
 |---|---|---|---|---|
-| 1 | `conversations` — `operators` | `1` — toda conversación tiene operador | **`0..1`** | Contradiría F02: una conversación en modo autónomo no tiene operador humano. Y ADR-0004 define un pool sin asignar |
+| 1 | `conversations` — `operators` | `1` — toda conversación tiene operador | **`0..1`** | Una conversación que llega cuando no hay ningún vendedor activo queda en el pool sin asignar (ADR-0004; ADR-0037, regla 3). El motivo original —*"una conversación en modo autónomo no tiene operador humano"*— ya no vale: desde ADR-0037 la conversación autónoma también tiene vendedor, y la cardinalidad se sostiene sólo por el pool |
 | 2 | `conversations` — `ai_agents` | `1` | **`0..1`** | En modo `off` no hay agente |
 | 3 | `ai_agents` — `knowledge_bases` | Bidireccional (como en el Anexo C) | **Una sola dirección**, desde `knowledge_bases` | C05. La duplicación del Anexo C es una garantía de inconsistencia |
 | 4 | `knowledge_bases` — `documents` | `1 — 1` (un archivo) | **`1 — 0..*`** | H-06: F06 habla de documentos en plural, con límite **por agente** |

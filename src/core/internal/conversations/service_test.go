@@ -25,6 +25,40 @@ type fakeStore struct {
 	linked      map[uuid.UUID]uuid.UUID
 	sent        map[uuid.UUID]string
 	failed      map[uuid.UUID]string
+
+	appendErr   error
+	touchOutErr error
+	touchedOut  int
+	claimErr    error
+	claimedBy   map[uuid.UUID]uuid.UUID
+	modes       map[uuid.UUID]enums.AgentMode
+}
+
+func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	if f.modes == nil {
+		f.modes = map[uuid.UUID]enums.AgentMode{}
+	}
+	f.modes[conversationID] = mode
+	return nil
+}
+
+func (f *fakeStore) TouchOutbound(context.Context, uuid.UUID) error {
+	if f.touchOutErr != nil {
+		return f.touchOutErr
+	}
+	f.touchedOut++
+	return nil
+}
+
+func (f *fakeStore) Claim(_ context.Context, conversationID, operatorID uuid.UUID) error {
+	if f.claimErr != nil {
+		return f.claimErr
+	}
+	if f.claimedBy == nil {
+		f.claimedBy = map[uuid.UUID]uuid.UUID{}
+	}
+	f.claimedBy[conversationID] = operatorID
+	return nil
 }
 
 func (f *fakeStore) LinkToBatch(_ context.Context, messageID, batchID uuid.UUID) error {
@@ -71,6 +105,9 @@ func (f *fakeStore) Create(_ context.Context, c Conversation) error {
 }
 
 func (f *fakeStore) AppendMessage(_ context.Context, m Message) error {
+	if f.appendErr != nil {
+		return f.appendErr
+	}
 	f.appended = append(f.appended, m)
 	return nil
 }
@@ -237,5 +274,105 @@ func TestTheAggregateExposesWhatTheTurnNeeds(t *testing.T) {
 
 	if store.linked[message] != batch || store.sent[message] != "wamid.HBg" || store.failed[message] != "131047" {
 		t.Fatalf("the aggregate did not reach the store: %+v %+v %+v", store.linked, store.sent, store.failed)
+	}
+}
+
+// TestAnOperatorAnswerNamesThePersonAndNoAgent is the sender check of messages seen from the service: a row naming both, or
+// neither, is refused by the database, and one naming the agent would credit the bot with a person's work (H-09, ADR-0025).
+func TestAnOperatorAnswerNamesThePersonAndNoAgent(t *testing.T) {
+	store := &fakeStore{}
+	operator, conversation := uuid.New(), uuid.New()
+
+	message, err := NewService(store, slog.Default()).
+		RecordOperatorOutbound(context.Background(), conversation, operator, "te paso la dirección", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RecordOperatorOutbound: got %v, want no error", err)
+	}
+
+	if message.SenderType != enums.SenderTypeOperator || message.SenderOperatorID == nil || *message.SenderOperatorID != operator {
+		t.Fatalf("sender %q %v, want the operator %v", message.SenderType, message.SenderOperatorID, operator)
+	}
+	if message.SenderAIAgentID != nil {
+		t.Fatalf("the operator's answer also names an agent: %v", *message.SenderAIAgentID)
+	}
+	if message.WAMID != nil || message.Status != nil {
+		t.Fatalf("the row was written as if Meta had already answered: %+v", message)
+	}
+	if len(store.appended) != 1 || store.touchedOut != 1 {
+		t.Fatalf("appended %d and moved the activity %d times, want 1 and 1", len(store.appended), store.touchedOut)
+	}
+}
+
+// TestAnAnswerMovesTheActivityWhoeverWroteIt keeps the inbox order honest: the agent's answers move the column the same as a person's.
+func TestAnAnswerMovesTheActivityWhoeverWroteIt(t *testing.T) {
+	store := &fakeStore{}
+
+	if _, err := NewService(store, slog.Default()).
+		RecordOutbound(context.Background(), uuid.New(), uuid.New(), "buenas", time.Now().UTC()); err != nil {
+		t.Fatalf("RecordOutbound: %v", err)
+	}
+	if store.touchedOut != 1 {
+		t.Fatalf("the agent's answer moved the activity %d times, want 1", store.touchedOut)
+	}
+}
+
+// TestAnOutboundWriteThatFailsSaysSo keeps a half-written answer from being reported as written.
+func TestAnOutboundWriteThatFailsSaysSo(t *testing.T) {
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name  string
+		store *fakeStore
+	}{
+		{"the row could not be written", &fakeStore{appendErr: boom}},
+		{"the activity could not be moved", &fakeStore{touchOutErr: boom}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewService(tc.store, slog.Default()).
+				RecordOperatorOutbound(context.Background(), uuid.New(), uuid.New(), "hola", time.Now().UTC())
+			if !errors.Is(err, boom) {
+				t.Fatalf("got %v, want the underlying failure", err)
+			}
+		})
+	}
+}
+
+// TestClaimReportsTheRaceLost passes ErrTaken through untouched, because it is what the inbox turns into "somebody answered first".
+func TestClaimReportsTheRaceLost(t *testing.T) {
+	store := &fakeStore{}
+	conversation, operator := uuid.New(), uuid.New()
+
+	if err := NewService(store, slog.Default()).Claim(context.Background(), conversation, operator); err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if store.claimedBy[conversation] != operator {
+		t.Fatalf("the claim did not reach the store: %v", store.claimedBy)
+	}
+
+	lost := &fakeStore{claimErr: ErrTaken}
+	if err := NewService(lost, slog.Default()).Claim(context.Background(), conversation, operator); !errors.Is(err, ErrTaken) {
+		t.Fatalf("Claim on a taken conversation: got %v, want ErrTaken", err)
+	}
+}
+
+// TestSetModeReachesTheStore is the passthrough F27 needs: the inbox never writes the mode column with SQL of its own (regla 1).
+func TestSetModeReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).SetMode(context.Background(), conversation, enums.AgentModeOff); err != nil {
+		t.Fatalf("SetMode: %v", err)
+	}
+	if store.modes[conversation] != enums.AgentModeOff {
+		t.Fatalf("the mode did not reach the store: %v", store.modes)
+	}
+}
+
+// TestWithExecutorLeavesADoubledStoreAlone is the other half of the binding: a doubled store has no transaction to bind to, so the
+// service comes back as it was instead of failing every unit test of a package that conducts one.
+func TestWithExecutorLeavesADoubledStoreAlone(t *testing.T) {
+	service := NewService(&fakeStore{}, slog.Default())
+	if service.WithExecutor(nil) != service {
+		t.Fatal("binding a doubled store built a new service")
 	}
 }

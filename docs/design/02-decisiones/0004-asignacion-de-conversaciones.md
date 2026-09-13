@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§2 enmendada por [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md)** el 2026-09-13: la conversación se asigna a un vendedor cuando el cliente escribe (su vendedor anterior, o el siguiente por turno), y el pool queda sólo para cuando no hay nadie que pueda recibirla |
 | **Fecha** | 2026-08-06 |
 | **Etapa** | Diseño — Paso 3 |
 | **Resuelve** | Hallazgo H-15 de la [matriz de trazabilidad](../01-trazabilidad.md) |

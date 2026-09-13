@@ -83,7 +83,7 @@ Una fila por cada requisito funcional (F01–F39) y por cada objetivo específic
 | **F24** | **Etiquetas por conversación** | — | Vínculo conversación ↔ etiqueta | ❌ `conversations` no tiene ningún vínculo con `labels`. **No es representable hoy.** Ver **H-07** |
 | **F25** | Destacar con estrella | `conversations` | `starred` | ✅ |
 | **F26** | Transferencia entre operadores | `conversations` | Historial de reasignaciones + **notas internas** | ⚠️ `operator_id` se sobrescribe: no queda historial. Y "notas internas" no tiene entidad (`contacts.notes` es del contacto). Ver **H-15** |
-| **F27** | Control de modo por conversación | `conversations` | `mode` | ✅ |
+| **F27** | Control de modo por conversación | `conversations` | `mode` | ✅ El operador cambia el modo de sus conversaciones, y `supervisor` y `admin` el de cualquiera ([ADR-0037](02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), regla 4). La desviación de rol que había declarado [ADR-0035](02-decisiones/0035-reglas-de-la-bandeja-manual.md) se revirtió antes del merge |
 | **F28** | Recordatorios | `reminders` | Alerta vinculada **a un contacto**, con fecha | ⚠️ El requisito los vincula a contactos; el modelo, a conversaciones. Ver **H-14** |
 | **F29** | Restricción: sin borrado de mensajes | `messages` | — | 📄 Documental. Su consecuencia de modelo ya está resuelta en la convención C09 |
 | **F30** | ABM de contactos | `contacts` | Nombre, apellido, teléfono, email, etiquetas, notas, tipo | ⚠️ Todos los campos existen; las etiquetas están como `tags_json`. Ver **H-16** |

@@ -96,12 +96,25 @@ func (s *stubChannel) ContactByPhone(_ context.Context, _ uuid.UUID, phone strin
 
 type stubAggregate struct {
 	conversationID uuid.UUID
-	messages       []string
-	duplicate      bool
+	// holder is who the open conversation already belongs to; nil is one nobody holds, which is what a new conversation is.
+	holder    *uuid.UUID
+	messages  []string
+	duplicate bool
 }
 
 func (s *stubAggregate) EnsureOpen(_ context.Context, contactID, inboxID uuid.UUID, agentID *uuid.UUID, _ time.Time) (conversations.Conversation, error) {
-	return conversations.Conversation{ID: s.conversationID, ContactID: contactID, InboxID: inboxID, AIAgentID: agentID}, nil
+	return conversations.Conversation{ID: s.conversationID, ContactID: contactID, InboxID: inboxID, AIAgentID: agentID, OperatorID: s.holder}, nil
+}
+
+// stubAssigner records whose conversation it was asked to give a vendor, so a case can tell a new conversation from a held one.
+type stubAssigner struct {
+	asked []uuid.UUID
+	err   error
+}
+
+func (a *stubAssigner) Assign(_ context.Context, _, _, conversationID uuid.UUID) error {
+	a.asked = append(a.asked, conversationID)
+	return a.err
 }
 
 func (s *stubAggregate) RecordInbound(_ context.Context, c conversations.Conversation, wamid, text string, _ enums.MessageContentType, _ time.Time) (conversations.Message, error) {
@@ -155,7 +168,12 @@ func channel() (*stubChannel, *stubAggregate, *stubContacts) {
 // service wires the trio into one Service, with the transaction as a plain call: what the tests check is behaviour and order,
 // not that a real Postgres binds the three collaborators together (that lives in the integration tests), matching turn/'s stub.
 func service(repo *stubChannel, agg *stubAggregate, cs *stubContacts, log *slog.Logger) *Service {
-	return NewService(repo, func(_ context.Context, fn func(Store, Aggregate, Contacts) error) error {
-		return fn(repo, agg, cs)
+	return serviceWith(repo, agg, cs, &stubAssigner{}, log)
+}
+
+// serviceWith is service with the assigner in the case's hands, for the cases about who a conversation goes to (ADR-0037).
+func serviceWith(repo *stubChannel, agg *stubAggregate, cs *stubContacts, as *stubAssigner, log *slog.Logger) *Service {
+	return NewService(repo, func(_ context.Context, fn func(Store, Aggregate, Contacts, Assigner) error) error {
+		return fn(repo, agg, cs, as)
 	}, log)
 }

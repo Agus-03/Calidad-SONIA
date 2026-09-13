@@ -66,6 +66,10 @@ El costo de sostener la nomenclatura invertida es acumulativo: aparece en cada d
 
 > Este renombre **cambia terminología del anteproyecto** y debe reflejarse en la versión final del informe para que no aparezca como inconsistencia. Las capacidades no se tocan: son exactamente las del Anexo B.
 
+> **Enmendada el 2026-09-13** por [ADR-0035](02-decisiones/0035-reglas-de-la-bandeja-manual.md), regla 10. El `operator` **ya no activa ni desactiva el agente IA**: el modo de una conversación lo cambian `supervisor` y `admin`. Es una desviación declarada de F27 y del Anexo B, y la tabla de arriba queda como estaba para que se vea de dónde partió. Desde esta enmienda, *"sin cambios respecto del Anexo B"* deja de ser cierto para esa capacidad.
+
+> **Revertida el mismo 2026-09-13** por [ADR-0037](02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), regla 4, antes del merge. El `operator` vuelve a activar y desactivar el agente IA **en las conversaciones que tiene asignadas**, que son las únicas que el Anexo B le deja ver como suyas. La tabla de arriba vuelve a ser exacta.
+
 ---
 
 ### C02 — Idioma
@@ -113,6 +117,12 @@ El español gana en la documentación porque el trabajo se escribe, se presenta 
 | Enumeración (base) | `snake_case` | tipo `conversation_status`, valor `active` |
 | Índice | `idx_<tabla>_<columnas>` | `idx_messages_conversation_id_created_at` |
 | Restricción única | `uq_<tabla>_<columnas>` | `uq_contacts_phone_whatsapp` |
+
+**Aplicada a todo `0001` el 2026-09-13**, con dos casos que la regla no prevé:
+- **Un índice sobre una expresión** no tiene columnas que nombrar. Se nombra por lo que garantiza: `uq_accounts_single_row`, que indexa la constante `true`.
+- **Un nombre que pasa los 63 caracteres** que PostgreSQL conserva se abrevia en las columnas, porque de otro modo se trunca sin avisar: `uq_signal_evaluations_batch_signal_classifier_version`.
+
+Un índice o restricción única escrito en línea (`UNIQUE` en la columna) también lleva su nombre explícito: el que PostgreSQL pone solo (`<tabla>_<columna>_key`) no sigue la regla.
 
 **Justificación.** Tablas en plural porque una tabla contiene un conjunto de filas; la fila individual es la entidad singular. Esa distinción hace que el modelo se lea solo: `conversations` tiene muchas `Conversation`.
 
@@ -175,7 +185,7 @@ Las FK se declaran en la base y no solo en la aplicación porque son la única g
 **Reglas:**
 
 - `ON DELETE RESTRICT` por defecto.
-- Cuando una FK es opcional se documenta **por qué** puede ser nula. Ejemplo: una conversación en modo autónomo no tiene operador asignado, lo que hace que `operator_id` sea legítimamente nulo.
+- Cuando una FK es opcional se documenta **por qué** puede ser nula. Ejemplo: una conversación que llega cuando no hay ningún vendedor activo queda en el pool sin operador asignado ([ADR-0037](02-decisiones/0037-toda-conversacion-nace-con-vendedor.md), regla 3), lo que hace que `operator_id` sea legítimamente nulo.
 - Cuando dos FK apuntan a la misma tabla desde una misma entidad, el nombre lleva el rol: `from_operator_id` / `to_operator_id`.
 - Una relación se modela **en un solo lugar**. Si la entidad A tiene `b_id` y la entidad B tiene `a_id` para expresar el mismo vínculo, eso no es redundancia: es una inconsistencia esperando ocurrir.
 
@@ -364,7 +374,7 @@ Antes de dar por cerrado cualquier diagrama, esquema o migración:
 
 Tres decisiones de este documento tienen efectos fuera de él y conviene confirmarlas explícitamente:
 
-1. **El renombre de los roles del Anexo B** (`User` → `operator`, `Super Agent` → `supervisor`). Cambia terminología del anteproyecto y debe reflejarse en el informe final. Las capacidades no se modifican.
+1. **El renombre de los roles del Anexo B** (`User` → `operator`, `Super Agent` → `supervisor`). Cambia terminología del anteproyecto y debe reflejarse en el informe final. Las capacidades no se modifican. **Enmendado el 2026-09-13 por [ADR-0035](02-decisiones/0035-reglas-de-la-bandeja-manual.md):** hay una excepción, el cambio de modo del agente IA, que se le quita al `operator` y queda sólo en `supervisor` y `admin`. También va al informe, como desviación de F27. **Revertido el mismo día por [ADR-0037](02-decisiones/0037-toda-conversacion-nace-con-vendedor.md):** el `operator` recupera el interruptor de sus conversaciones, y la frase original vuelve a ser cierta.
 2. **La separación entre eliminar, ocultar y anonimizar**, y la lectura de F29 como restricción del canal y no de la base. Es la interpretación que hace compatibles a F29 y al derecho de supresión de la Ley 25.326, y merece un párrafo en el informe.
 3. **El nombre `MessageContentType`** en lugar de `MessageType`, para que la enumeración coincida con la columna que tipa.
 

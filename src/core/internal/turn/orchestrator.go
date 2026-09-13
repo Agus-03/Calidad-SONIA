@@ -263,7 +263,8 @@ func (o *Orchestrator) undelivered(ctx context.Context, message conversations.Me
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeGrace)
 	defer cancel()
 
-	if err := o.opts.Aggregate.MarkFailed(writeCtx, message.ID, cause.Error()); err != nil {
+	// The row keeps the code and the returned error keeps the cause, which is what reaches the log.
+	if err := o.opts.Aggregate.MarkFailed(writeCtx, message.ID, whatsapp.FailureCode(cause)); err != nil {
 		return fmt.Errorf("turn: send failed (%w) and the row could not be marked: %w", cause, err)
 	}
 	return fmt.Errorf("turn: send: %w", cause)

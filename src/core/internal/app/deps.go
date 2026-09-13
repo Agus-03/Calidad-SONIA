@@ -11,6 +11,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
@@ -52,14 +53,21 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
 	// the instance would tie two contexts together for a reason that is not a reason of the domain.
 	channelContacts := contacts.NewRepository(pool, cipher)
+	deskRepo := inbox.NewRepository(pool)
 
-	// Binds the three collaborators to one transaction, the same pattern turn/ uses below: the webhook event, the contact it
-	// may create and the conversation it opens commit together or not at all (regla 5).
-	channelTx := func(ctx context.Context, fn func(whatsapp.Store, whatsapp.Aggregate, whatsapp.Contacts) error) error {
+	// Binds the four collaborators to one transaction, the same pattern turn/ uses below: the webhook event, the contact it may
+	// create, the conversation it opens and the vendor it gives it commit together or not at all (regla 5, ADR-0037).
+	channelTx := func(ctx context.Context, fn func(whatsapp.Store, whatsapp.Aggregate, whatsapp.Contacts, whatsapp.Assigner) error) error {
 		return db.InTx(ctx, pool, func(exec db.Executor) error {
-			return fn(channelRepo.WithExecutor(exec), aggregate.WithExecutor(exec), channelContacts.WithExecutor(exec))
+			bound := aggregate.WithExecutor(exec)
+			return fn(channelRepo.WithExecutor(exec), bound, channelContacts.WithExecutor(exec),
+				inbox.NewDispatcher(deskRepo.WithExecutor(exec), bound, log))
 		})
 	}
+
+	// One sender for the agent and the operator alike: the two answer the same customers through the same number, and a doubled
+	// stack has to double both or the smoke would send a real message.
+	send := sender(cfg, log)
 
 	turnRepo := turn.NewRepository(pool)
 
@@ -79,7 +87,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			Logger:  log,
 		}),
 		Channel:      channelRepo,
-		Sender:       sender(cfg, log),
+		Sender:       send,
 		Budget:       cfg.TurnBudget,
 		MaxRetries:   cfg.TurnMaxRetries,
 		RetryBackoff: cfg.TurnRetryBackoff,
@@ -95,12 +103,26 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// A second repository over the same pool, and not the one the catalogue service holds: a repository keeps no state past its
 	// executor, and sharing the instance would tie two contexts together for a reason that is not a reason of the domain.
 	book := contacts.NewService(contacts.NewRepository(pool, cipher), labels.NewRepository(pool), log)
+	desk := inbox.NewService(inbox.Options{
+		Repo:      deskRepo,
+		Aggregate: aggregate,
+		// Binds the assignment and the aggregate to one transaction: taking the pool and writing the answer commit together (regla 5).
+		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(deskRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+			})
+		},
+		Channel: channelRepo,
+		Sender:  send,
+		Logger:  log,
+	})
 
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
+			inbox.NewController(desk, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

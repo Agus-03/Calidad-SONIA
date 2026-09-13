@@ -79,6 +79,47 @@ func TestReceiveFollowsTheWriteOrderOf07Secuencia(t *testing.T) {
 	}
 }
 
+// TestAConversationNobodyHoldsGetsItsVendorWhenTheCustomerWrites is ADR-0037 from the channel's side: the one without a vendor is
+// handed to inbox/ inside the webhook's transaction, one already held is never moved from here, and a failure to assign fails the
+// webhook, so the conversation never commits without the vendor it was owed.
+func TestAConversationNobodyHoldsGetsItsVendorWhenTheCustomerWrites(t *testing.T) {
+	holder := uuid.New()
+	boom := errors.New("connection reset")
+
+	for _, tc := range []struct {
+		name       string
+		holder     *uuid.UUID
+		redelivery bool
+		assignErr  error
+		wantAsked  int
+		wantErr    error
+	}{
+		{"a conversation nobody holds is handed to the dispatcher", nil, false, nil, 1, nil},
+		{"one already held keeps its vendor: the webhook never reassigns", &holder, false, nil, 0, nil},
+		{"a redelivery stores no message, so it is not the customer writing and assigns nothing", nil, true, nil, 0, nil},
+		{"a failure to assign fails the webhook, and with it the transaction", nil, false, boom, 1, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, agg, cs := channel()
+			agg.holder = tc.holder
+			agg.duplicate = tc.redelivery
+			as := &stubAssigner{err: tc.assignErr}
+
+			_, err := serviceWith(repo, agg, cs, as, slog.Default()).
+				Receive(context.Background(), []byte(metaTextPayload), sign(metaTextPayload, testAppSecret), time.Now().UTC())
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Receive: got %v, want %v", err, tc.wantErr)
+			}
+			if len(as.asked) != tc.wantAsked {
+				t.Fatalf("the dispatcher was asked %d times, want %d", len(as.asked), tc.wantAsked)
+			}
+			if tc.wantAsked == 1 && as.asked[0] != agg.conversationID {
+				t.Fatalf("the dispatcher was asked about %v, want the conversation the message opened, %v", as.asked[0], agg.conversationID)
+			}
+		})
+	}
+}
+
 // TestReceiveReadsMetaClockAndNotOurs protects C06: sent_at is the channel's clock, and only a broken one falls back to ours.
 func TestReceiveReadsMetaClockAndNotOurs(t *testing.T) {
 	repo, agg, cs := channel()
@@ -119,7 +160,7 @@ func TestReceiveCreatesAContactFromAnUnknownNumber(t *testing.T) {
 		t.Fatalf("created phone=%q name=%q, want the number and the profile name the message carried", created.PhoneWhatsapp, created.Name)
 	}
 	if created := cs.created[0]; created.Type != enums.ContactTypeProspect || created.SourceChannel != enums.SourceChannelDirect {
-		t.Fatalf("created type=%q source_channel=%q, want prospect and direct (ADR-0001)", created.Type, created.SourceChannel)
+		t.Fatalf("created type=%q source_channel=%q, want prospect and direct (ADR-0034)", created.Type, created.SourceChannel)
 	}
 	if len(repo.events) != 1 || len(repo.processed) != 1 {
 		t.Fatalf("the event was not logged and closed, so F20 lost the trace of a real delivery")

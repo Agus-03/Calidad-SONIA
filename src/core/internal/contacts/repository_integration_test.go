@@ -730,7 +730,7 @@ func seededLabel(t *testing.T, ctx context.Context, exec db.Executor, account, b
 }
 
 // TestTaggingTwiceWritesOneLink is the case the stub cannot prove: whether ON CONFLICT (contact_id, label_id) actually infers
-// contact_labels_unique. If the inference were wrong the statement would fail, not silently write a second row.
+// uq_contact_labels_contact_id_label_id. If the inference were wrong the statement would fail, not silently write a second row.
 func TestTaggingTwiceWritesOneLink(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)

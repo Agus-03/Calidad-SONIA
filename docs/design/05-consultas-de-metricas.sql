@@ -549,11 +549,21 @@ ORDER  BY conversaciones DESC;
 --    distribución por canal de origen."
 
 -- F34.a — estados.
+--
+-- SUPUESTO: una conversación sin resolver de un contacto dado de baja NO cuenta.
+--   Queda `active` u oculta para siempre (ADR-0035, regla 1 y §4): nadie la ve
+--   ni la cierra, así que contarla haría crecer "activas" y "en espera" sin
+--   límite con carga que nadie puede atender. Las resueltas sí cuentan: son
+--   historial, y un contacto dado de baja no se lleva sus métricas (C05).
+--   CAMBIO DE DEFINICIÓN, decidido por el equipo el 2026-09-13: hasta entonces
+--   la consulta contaba toda conversación no borrada.
 
 SELECT c.status,
        count(*) AS conversaciones
 FROM   conversations c
+JOIN   contacts ct ON ct.id = c.contact_id
 WHERE  c.deleted_at IS NULL
+  AND  (ct.deleted_at IS NULL OR c.status = 'resolved')
 GROUP  BY c.status
 ORDER  BY conversaciones DESC;
 
@@ -567,12 +577,19 @@ ORDER  BY conversaciones DESC;
 --   la bandeja: el argumento de rendimiento de H-12 no aplica acá.
 -- SUPUESTO S2: se reporta MEDIANA además del promedio. Los tiempos de respuesta
 --   tienen cola larga y el promedio se desplaza con unos pocos casos extremos.
+-- SUPUESTO S3: la primera respuesta es la primera que LE LLEGÓ al cliente, no el
+--   primer intento. Un saliente `failed`, o uno que quedó sin estado porque el
+--   envío nunca se confirmó, no cuenta: el cliente siguió esperando. Es la misma
+--   regla que `first_response_at` (ADR-0035, regla 7). Tomar el pool es otra
+--   cosa y cuenta el primer envío llegue o no, pero eso no es un tiempo de
+--   respuesta.
 
 WITH primer_saliente AS (
     SELECT DISTINCT ON (m.conversation_id)
            m.conversation_id, m.sender_type, m.created_at
     FROM   messages m
     WHERE  m.direction = 'outbound'
+      AND  m.status IN ('sent', 'delivered', 'read')                        -- S3
     ORDER  BY m.conversation_id, m.created_at
 )
 SELECT p.sender_type,
@@ -852,7 +869,8 @@ GROUP  BY ps_grounding.outcome;
 --       Defecto: el cierre es manual (ADR-0002), así que acredita al que sólo
 --       apretó "resolver" en un chat que atendió la IA.
 --   R2  conversations.operator_id              → último asignado.
---       Defecto: se sobrescribe; F26 lo vuelve arbitrario; nulo en autónomo.
+--       Defecto: se sobrescribe; F26 lo vuelve arbitrario; y desde ADR-0037
+--       toda conversación tiene vendedor, así que acredita lo que atendió la IA.
 --   R3  conversation_assignments.to_operator_id → todos los que intervinieron.
 --       Defecto: los porcentajes suman más de 100 %.
 --   R4  messages.sender_operator_id            → quién efectivamente respondió.

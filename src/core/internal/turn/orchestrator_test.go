@@ -191,7 +191,7 @@ func TestAFailedTurnLeavesItselfMarkedAndUnprocessed(t *testing.T) {
 // ADR-0020 sends at most once: the failure stays visible on the row and nobody tries again by itself.
 func TestASendThatFailsIsMarkedAndNeverRetried(t *testing.T) {
 	h := conductor()
-	h.sender.err = errors.New("meta: 131047")
+	h.sender.err = &httpclient.StatusError{Status: 400, Body: `{"error":{"message":"(#131047) Re-engagement message","code":131047}}`}
 
 	h.turn()
 
@@ -200,6 +200,12 @@ func TestASendThatFailsIsMarkedAndNeverRetried(t *testing.T) {
 	}
 	if len(h.aggregate.failed) != 1 {
 		t.Fatal("the outbound message was not marked failed, so the failure is invisible")
+	}
+	// Meta's code and not the body it answered with: the row is what the operator reads in the inbox.
+	for _, code := range h.aggregate.failed {
+		if code != "131047" {
+			t.Fatalf("error_code = %q, want Meta's code", code)
+		}
 	}
 	if len(h.aggregate.sent) != 0 {
 		t.Fatal("a message that never left was marked as sent")
@@ -213,7 +219,7 @@ func TestASendThatFailsIsMarkedAndNeverRetried(t *testing.T) {
 // An inbox that cannot be read is the same kind of failure as a send that was refused, and it must not lose the row either.
 func TestAnUnreadableInboxLeavesTheMessageMarked(t *testing.T) {
 	h := conductor()
-	h.channel.err = errors.New("whatsapp: inbox not found")
+	h.channel.err = whatsapp.ErrInboxNotFound
 
 	h.turn()
 
@@ -222,6 +228,11 @@ func TestAnUnreadableInboxLeavesTheMessageMarked(t *testing.T) {
 	}
 	if len(h.aggregate.failed) != 1 {
 		t.Fatal("the outbound message was not marked failed")
+	}
+	for _, code := range h.aggregate.failed {
+		if code != "inbox_not_found" {
+			t.Fatalf("error_code = %q, want inbox_not_found", code)
+		}
 	}
 }
 
@@ -288,6 +299,8 @@ type blockingSender struct {
 	release chan struct{}
 	once    sync.Once
 }
+
+func (b *blockingSender) Ready(whatsapp.Inbox) error { return nil }
 
 func (b *blockingSender) Send(context.Context, whatsapp.Inbox, string, string) (string, error) {
 	b.once.Do(func() { <-b.release })

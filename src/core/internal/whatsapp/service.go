@@ -56,7 +56,7 @@ type Contacts interface {
 }
 
 // Assigner is what inbox/ exposes to the channel: a conversation nobody holds gets its vendor here, never through SQL of our own,
-// because conversation_assignments is inbox's (regla 1, ADR-0037).
+// because conversation_assignments is inbox's (struct.md regla 1; the assignment itself is ADR-0037).
 type Assigner interface {
 	Assign(ctx context.Context, accountID, contactID, conversationID uuid.UUID) error
 }
@@ -180,17 +180,17 @@ func (s *Service) recordMessage(
 	if err != nil {
 		return Inbound{}, err
 	}
+	stored, err := agg.RecordInbound(ctx, conversation, message.ID, textOf(message), contentTypeOf(message), sentAt)
+	if err != nil {
+		return Inbound{}, err
+	}
 	// Every conversation has a vendor from the start (ADR-0037). One that has none is new, or one that arrived when nobody could
-	// receive it: either way the customer writing is when it gets one, and one already held is never moved from here.
+	// receive it: either way the customer writing is when it gets one, and one already held is never moved from here. After the
+	// message is stored, so a redelivery, which stores nothing, assigns nothing either (regla 3: the next time the customer writes).
 	if conversation.OperatorID == nil {
 		if err := assigner.Assign(ctx, inbox.AccountID, contact.ID, conversation.ID); err != nil {
 			return Inbound{}, err
 		}
-	}
-
-	stored, err := agg.RecordInbound(ctx, conversation, message.ID, textOf(message), contentTypeOf(message), sentAt)
-	if err != nil {
-		return Inbound{}, err
 	}
 
 	return Inbound{ConversationID: conversation.ID, MessageID: stored.ID, AIAgentID: conversation.AIAgentID}, nil

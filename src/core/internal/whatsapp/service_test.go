@@ -87,19 +87,22 @@ func TestAConversationNobodyHoldsGetsItsVendorWhenTheCustomerWrites(t *testing.T
 	boom := errors.New("connection reset")
 
 	for _, tc := range []struct {
-		name      string
-		holder    *uuid.UUID
-		assignErr error
-		wantAsked int
-		wantErr   error
+		name       string
+		holder     *uuid.UUID
+		redelivery bool
+		assignErr  error
+		wantAsked  int
+		wantErr    error
 	}{
-		{"a conversation nobody holds is handed to the dispatcher", nil, nil, 1, nil},
-		{"one already held keeps its vendor: the webhook never reassigns", &holder, nil, 0, nil},
-		{"a failure to assign fails the webhook, and with it the transaction", nil, boom, 1, boom},
+		{"a conversation nobody holds is handed to the dispatcher", nil, false, nil, 1, nil},
+		{"one already held keeps its vendor: the webhook never reassigns", &holder, false, nil, 0, nil},
+		{"a redelivery stores no message, so it is not the customer writing and assigns nothing", nil, true, nil, 0, nil},
+		{"a failure to assign fails the webhook, and with it the transaction", nil, false, boom, 1, boom},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo, agg, cs := channel()
 			agg.holder = tc.holder
+			agg.duplicate = tc.redelivery
 			as := &stubAssigner{err: tc.assignErr}
 
 			_, err := serviceWith(repo, agg, cs, as, slog.Default()).

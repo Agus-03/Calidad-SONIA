@@ -181,7 +181,7 @@ func sameIDs(got, want []uuid.UUID) bool {
 }
 
 // TestTheInboxOfEachRoleIsTheOneAnexoBDescribes proves the reach against real DDL, and the deleted conversation along with it: it has
-// the newest activity of all, so if the filter slipped it would be the first row every role sees.
+// the newest activity of all, so if the filter slipped it would be the first row every role sees (ADR-0035, regla 1).
 func TestTheInboxOfEachRoleIsTheOneAnexoBDescribes(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -210,7 +210,7 @@ func TestTheInboxOfEachRoleIsTheOneAnexoBDescribes(t *testing.T) {
 }
 
 // TestTheCursorContinuesStrictlyAfterTheRowItNamed walks three pages of one row through the service, so the instant makes the round
-// trip PostgreSQL to Go to PostgreSQL with its microseconds and the comparison stays strict.
+// trip PostgreSQL to Go to PostgreSQL with its microseconds and the comparison stays strict (ADR-0036, regla 3).
 func TestTheCursorContinuesStrictlyAfterTheRowItNamed(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -276,6 +276,46 @@ func TestAFailedSendStaysVisibleInTheInbox(t *testing.T) {
 	})
 }
 
+// TestAContactTakenDownLeavesTheInbox is ADR-0035, regla 1, against real DDL: the conversation of a contact an admin took down is
+// neither listed nor reachable by its id, and it stays in the database as history (C09).
+func TestAContactTakenDownLeavesTheInbox(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		if _, err := exec.Exec(ctx,
+			`UPDATE contacts SET deleted_at = now() WHERE id = (SELECT contact_id FROM conversations WHERE id = $1)`, w.pooledConv); err != nil {
+			t.Fatalf("take the contact down: %v", err)
+		}
+
+		rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, nil, 3)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		got := idsOf(rows)
+		if len(got) < 2 || got[0] != w.theirsConv || got[1] != w.mineConv {
+			t.Fatalf("the head of the inbox is %v, want %v and %v first", got, w.theirsConv, w.mineConv)
+		}
+		for _, conversation := range got {
+			if conversation == w.pooledConv {
+				t.Fatalf("the conversation of a contact taken down is still listed: %v", got)
+			}
+		}
+
+		if _, err := repo.Target(ctx, w.account, w.pooledConv); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Target of a contact taken down: got %v, want ErrNotFound", err)
+		}
+
+		var kept bool
+		if err := exec.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1)`, w.pooledConv).Scan(&kept); err != nil {
+			t.Fatalf("look for the history: %v", err)
+		}
+		if !kept {
+			t.Fatal("the history of the conversation went with the contact")
+		}
+	})
+}
+
 // sendingDesk is the real repository and the real aggregate bound to the case's transaction, with only the channel doubled: the
 // writes and their order are what these cases prove, and Meta is the one collaborator that must never be called from a test.
 func sendingDesk(exec db.Executor, sender *stubSender) *Service {
@@ -294,7 +334,7 @@ func sendingDesk(exec db.Executor, sender *stubSender) *Service {
 }
 
 // TestTheFirstOperatorToAnswerThePoolKeepsIt is ADR-0004 end to end against real DDL: the answer, the owner, the history row and
-// the first response land together, and from then on the conversation is out of the other operator's reach.
+// the first response land together, and from then on the conversation is out of the other operator's reach (ADR-0035, reglas 6 y 7).
 func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -357,8 +397,8 @@ func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
 	})
 }
 
-// TestAFailedManualSendStaysOnTheRowWithAnOwner is ADR-0020 against real DDL: the row says failed with its cause, nothing counts it
-// as a response, and the conversation keeps the operator who has to decide whether to send it again.
+// TestAFailedManualSendStaysOnTheRowWithAnOwner is ADR-0020 against real DDL: the row says failed with Meta's code, nothing counts it
+// as a response, and the conversation keeps the operator who has to decide whether to send it again (ADR-0035, regla 7).
 func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -394,7 +434,7 @@ func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
 	})
 }
 
-// TestAClosedWindowWritesNothing refuses before the transaction, so not even the claim survives (ADR-0008).
+// TestAClosedWindowWritesNothing refuses before the transaction, so not even the claim survives (ADR-0008, ADR-0035 regla 9).
 func TestAClosedWindowWritesNothing(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -422,7 +462,7 @@ func TestAClosedWindowWritesNothing(t *testing.T) {
 }
 
 // TestASupervisorTurnsTheBotOffWithoutTakingTheConversation is F27 end to end against real DDL: the mode moves, the agent and the
-// holder stay where they were, and a conversation born without an agent cannot be turned on.
+// holder stay where they were, and a conversation born without an agent cannot be turned on (ADR-0035, reglas 12 y 13).
 func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
@@ -466,8 +506,9 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 	})
 }
 
-// TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock, the failed answer in
-// its place with its cause and its author, the hidden message left out, and the reach of the listing applied to one conversation.
+// TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock (ADR-0036, regla 2), the
+// failed answer in its place with its code and its author, the hidden message left out, and the reach of the listing applied to one
+// conversation (ADR-0035, regla 2).
 func TestTheThreadIsReadNewestFirstWithItsFailures(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)

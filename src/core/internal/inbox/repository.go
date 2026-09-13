@@ -20,12 +20,15 @@ func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec
 // WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).
 func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
-// Reads four tables this package does not own: the ownership rule of regla 1 restricts writes and not reads, as turn/ already does.
+// Reads four tables this package does not own: the ownership rule restricts writes and not reads, as turn/ already does (regla 1).
 //
-// The last message is ordered by created_at and not by sent_at because sent_at mixes two clocks — Meta's for an inbound message, ours
-// for an outbound draft — and only ours orders both directions on one line (C06). The id breaks the tie of a single transaction.
+// The last message goes by created_at and not sent_at, because sent_at mixes Meta's clock and ours and only ours orders both
+// directions on one line (C06, ADR-0036 regla 2). The id breaks the tie of a single transaction.
 //
-// Hidden messages are left out of both reads: hidden_at means "not shown in the inbox", and this is the inbox (C09).
+// Hidden messages are left out of both reads: hidden_at means "not shown in the inbox", and this is the inbox (C09). A contact taken
+// down leaves the inbox with its conversations, which stay in the database as history (ADR-0035, regla 1).
+//
+// The failed status travels as $2 and is not written in, so a renamed value in enums.yaml cannot silently count zero (C07).
 const summarySelect = `
 SELECT c.id, c.status, c.mode, c.ai_agent_id,
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
@@ -47,17 +50,17 @@ LEFT   JOIN LATERAL (
 CROSS  JOIN LATERAL (
        SELECT count(*) AS failed_count, max(f.created_at) AS last_failed_at
        FROM   messages f
-       WHERE  f.conversation_id = c.id AND f.status = 'failed' AND f.hidden_at IS NULL
+       WHERE  f.conversation_id = c.id AND f.status = $2 AND f.hidden_at IS NULL
 ) failed
-WHERE  c.deleted_at IS NULL AND ct.account_id = $1`
+WHERE  c.deleted_at IS NULL AND ct.deleted_at IS NULL AND ct.account_id = $1`
 
 // reach is built and not written as a constant because the narrowing adds an argument, and returning the args with the SQL is what
 // keeps the placeholders from drifting apart.
 //
-// The operator sees what is assigned to it and the pool. Anexo B forbids it the conversations "de otros operadores", and one in the
-// pool is nobody's; hiding the pool would leave nobody able to answer first, which is how ADR-0004 assigns at all.
+// The operator sees what is assigned to it and the pool. Anexo B forbids it the conversations of other operators, and one in the
+// pool is nobody's; hiding the pool would leave nobody able to answer first, which is how ADR-0004 assigns at all (ADR-0035, regla 1).
 func reach(s Scope) (where string, args []any) {
-	args = []any{s.AccountID}
+	args = []any{s.AccountID, enums.MessageStatusFailed}
 	if s.seesTheWholeTeam() {
 		return "", args
 	}
@@ -68,7 +71,7 @@ func reach(s Scope) (where string, args []any) {
 // List answers up to limit rows after the cursor, newest activity first. Deciding whether another page exists is the service's.
 //
 // The row comparison is what makes the cursor exact: both columns descend together, so "(a, b) < (x, y)" is "strictly after the row
-// the last page ended on", and the id settles two conversations touched in the same microsecond.
+// the last page ended on", and the id settles two conversations touched in the same microsecond (ADR-0036, regla 3).
 func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error) {
 	where, args := reach(scope)
 	if after != nil {
@@ -98,12 +101,13 @@ func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit
 	return out, nil
 }
 
-// Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists.
+// Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists,
+// and one whose contact was taken down is one nobody answers any more (ADR-0035, regla 1).
 const targetSelect = `
 SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode
 FROM   conversations c
 JOIN   contacts ct ON ct.id = c.contact_id
-WHERE  c.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
+WHERE  c.deleted_at IS NULL AND ct.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
 
 // Target reads without the reach on purpose: whether this operator may send is a rule, and rules are the service's.
 func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error) {
@@ -120,7 +124,8 @@ func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.
 }
 
 // The same two exclusions as the listing, for the same reasons: hidden messages are not shown in the inbox (C09), and the order is
-// our clock and not the channel's (C06). The operator is joined so a thread a reassignment passed through says who wrote what.
+// our clock and not the channel's (C06, ADR-0036 regla 2). The operator is joined so a thread a reassignment passed through says
+// who wrote what.
 const threadSelect = `
 SELECT m.id, m.direction, m.sender_type, m.content_text, m.content_type, m.status, m.error_code, m.sent_at, m.created_at,
        op.id, op.name, op.lastname
@@ -148,15 +153,9 @@ func (r *Repository) Thread(ctx context.Context, conversationID uuid.UUID, after
 
 	out := []ThreadMessage{}
 	for rows.Next() {
-		var m ThreadMessage
-		var operatorID *uuid.UUID
-		var operatorName, operatorLastname *string
-		if err := rows.Scan(&m.ID, &m.Direction, &m.SenderType, &m.ContentText, &m.ContentType, &m.Status, &m.ErrorCode, &m.SentAt,
-			&m.CreatedAt, &operatorID, &operatorName, &operatorLastname); err != nil {
-			return nil, fmt.Errorf("inbox: scan message: %w", err)
-		}
-		if operatorID != nil && operatorName != nil && operatorLastname != nil {
-			m.SenderOperator = &Operator{ID: *operatorID, Name: *operatorName, Lastname: *operatorLastname}
+		m, err := scanThreadMessage(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, m)
 	}
@@ -215,4 +214,20 @@ func scanSummary(row pgx.Row) (Summary, error) {
 		}
 	}
 	return s, nil
+}
+
+// The operator is a LEFT JOIN too: only an operator's answer has one, so it is moved to the model only when the group is there.
+func scanThreadMessage(row pgx.Row) (ThreadMessage, error) {
+	var m ThreadMessage
+	var operatorID *uuid.UUID
+	var operatorName, operatorLastname *string
+
+	if err := row.Scan(&m.ID, &m.Direction, &m.SenderType, &m.ContentText, &m.ContentType, &m.Status, &m.ErrorCode, &m.SentAt,
+		&m.CreatedAt, &operatorID, &operatorName, &operatorLastname); err != nil {
+		return ThreadMessage{}, fmt.Errorf("inbox: scan message: %w", err)
+	}
+	if operatorID != nil && operatorName != nil && operatorLastname != nil {
+		m.SenderOperator = &Operator{ID: *operatorID, Name: *operatorName, Lastname: *operatorLastname}
+	}
+	return m, nil
 }

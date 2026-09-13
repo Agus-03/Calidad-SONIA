@@ -115,10 +115,11 @@ type Target struct {
 type Assignment struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
-	// Nil when the conversation comes from the pool, which is the only kind this phase writes (ADR-0035, regla 15).
+	// Nil when the conversation had nobody before, which is every kind this phase writes: nobody reassigns yet (ADR-0035, regla 15).
 	FromOperatorID *uuid.UUID
 	ToOperatorID   uuid.UUID
-	// The same as ToOperatorID in an auto assignment: the operator who answered is the one who took it (ADR-0035, regla 7).
+	// The same as ToOperatorID when an operator takes the pool by answering, since who answered is who took it (ADR-0035, regla 7);
+	// nil when the dispatcher assigns, because nobody did (ADR-0037, regla 5).
 	AssignedByOperatorID *uuid.UUID
 	Reason               string
 }

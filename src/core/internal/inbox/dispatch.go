@@ -25,7 +25,7 @@ type DispatchStore interface {
 	RecordAssignment(ctx context.Context, a Assignment) error
 }
 
-// Claimer is the one write of conversations/ the dispatcher needs: the column the reach reads (regla 1).
+// Claimer is the one write of conversations/ the dispatcher needs: the column the reach reads, written by its owner (struct.md regla 1).
 type Claimer interface {
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 }
@@ -56,8 +56,12 @@ func (d *Dispatcher) Assign(ctx context.Context, accountID, contactID, conversat
 	}
 
 	if err := d.aggregate.Claim(ctx, conversationID, *operatorID); err != nil {
-		// Somebody took it between the read and this write, by answering it from the pool: it has a vendor, which is the point.
+		// Somebody took it between the read and this write, by answering it from the pool or through a second webhook of the same
+		// customer: it has a vendor, which is the point. Logged because a claim bound outside the transaction would land here too,
+		// on every conversation, and silence would leave them all in the pool.
 		if errors.Is(err, conversations.ErrTaken) {
+			d.log.Info("the conversation was taken before the dispatcher could assign it",
+				slog.String("conversation_id", conversationID.String()))
 			return nil
 		}
 		return err

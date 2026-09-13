@@ -76,6 +76,16 @@ func (s scene) conversation(contact uuid.UUID, holder *uuid.UUID, status string)
 	return conversation
 }
 
+// earlier writes a resolved conversation of the contact that began some time ago, so which one is the latest never rests on ids.
+func (s scene) earlier(contact uuid.UUID, holder *uuid.UUID, ago time.Duration) {
+	s.t.Helper()
+	conversation := s.conversation(contact, holder, "resolved")
+	if _, err := s.exec.Exec(s.ctx, `UPDATE conversations SET created_at = now() - make_interval(secs => $2) WHERE id = $1`,
+		conversation, ago.Seconds()); err != nil {
+		s.t.Fatalf("date an earlier conversation: %v", err)
+	}
+}
+
 // received writes the history row that makes a vendor's turn: the last conversation it was given, and when.
 func (s scene) received(vendor uuid.UUID, ago time.Duration) {
 	s.t.Helper()
@@ -154,6 +164,77 @@ func TestAReturningCustomerGoesBackToItsVendor(t *testing.T) {
 		}
 		if holder, reason := s.assign(customer); holder == nil || *holder != waiting || reason != reasonTurn {
 			t.Fatalf("with its vendor off the customer went to %v for %q, want %v by turn", holder, reason, waiting)
+		}
+	})
+}
+
+// TestOnlyTheCustomersLatestVendorCounts is ADR-0037, regla 1, where two readings part: an earlier conversation nobody held is
+// skipped, because it arrived when nobody could receive it and says nothing about the customer's vendor; but a latest vendor who
+// can no longer receive sends the customer to the turn, and never to a vendor from further back.
+func TestOnlyTheCustomersLatestVendorCounts(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		s := newScene(t, ctx, exec)
+		older, latest, waiting := s.vendor(true), s.vendor(true), s.vendor(true)
+		// Both have just received one, so whenever the turn decides it is waiting's.
+		s.received(older, time.Minute)
+		s.received(latest, time.Minute)
+
+		kept := s.contact()
+		s.earlier(kept, &older, 2*time.Hour)
+		s.earlier(kept, nil, time.Hour)
+		if holder, reason := s.assign(kept); holder == nil || *holder != older || reason != reasonPreviousOperator {
+			t.Fatalf("past a conversation of the pool the customer went to %v for %q, want its vendor %v", holder, reason, older)
+		}
+
+		passed := s.contact()
+		s.earlier(passed, &older, 2*time.Hour)
+		s.earlier(passed, &latest, time.Hour)
+		if _, err := exec.Exec(ctx, `UPDATE operators SET active = false WHERE id = $1`, latest); err != nil {
+			t.Fatalf("switch the latest vendor off: %v", err)
+		}
+		if holder, reason := s.assign(passed); holder == nil || *holder != waiting || reason != reasonTurn {
+			t.Fatalf("with its latest vendor off the customer went to %v for %q, want %v by turn and not the older %v",
+				holder, reason, waiting, older)
+		}
+	})
+}
+
+// TestNeitherRuleChoosesWhoIsNoLongerAVendor is ADR-0037, regla 2, and C09, for both queries: a vendor who became a supervisor is
+// no longer in sales, and one taken down is gone even with active still true. Both never received a conversation, so the turn would
+// put them first if either filter were missing.
+func TestNeitherRuleChoosesWhoIsNoLongerAVendor(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		s := newScene(t, ctx, exec)
+		promoted, gone, waiting := s.vendor(true), s.vendor(true), s.vendor(true)
+		s.received(waiting, time.Hour)
+		if _, err := exec.Exec(ctx, `UPDATE operators SET role = 'supervisor' WHERE id = $1`, promoted); err != nil {
+			t.Fatalf("promote the vendor: %v", err)
+		}
+		if _, err := exec.Exec(ctx, `UPDATE operators SET deleted_at = now() WHERE id = $1`, gone); err != nil {
+			t.Fatalf("take the vendor down: %v", err)
+		}
+
+		for _, previous := range []uuid.UUID{promoted, gone} {
+			customer := s.contact()
+			s.earlier(customer, &previous, time.Hour)
+			if holder, reason := s.assign(customer); holder == nil || *holder != waiting || reason != reasonTurn {
+				t.Fatalf("the customer of %v went to %v for %q, want %v by turn", previous, holder, reason, waiting)
+			}
+		}
+	})
+}
+
+// TestTheTurnAlternatesInsideOnePayload is a webhook that brings several new customers at once: its assignments share now(), and the
+// turn still alternates instead of handing everything after the first round to the lowest id.
+func TestTheTurnAlternatesInsideOnePayload(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		s := newScene(t, ctx, exec)
+		first, second := s.vendor(true), s.vendor(true)
+
+		for i, want := range []uuid.UUID{first, second, first, second} {
+			if holder, _ := s.assign(s.contact()); holder == nil || *holder != want {
+				t.Fatalf("conversation %d of the payload went to %v, want %v", i+1, holder, want)
+			}
 		}
 	})
 }

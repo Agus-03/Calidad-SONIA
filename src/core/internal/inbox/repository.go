@@ -198,18 +198,24 @@ func (r *Repository) PreviousOperator(ctx context.Context, accountID, contactID,
 	return r.oneOperator(ctx, "previous operator", previousOperatorSelect, contactID, conversationID, accountID, enums.OperatorRoleOperator)
 }
 
-// The vendor who has gone longest without receiving a conversation, and first of all one who never received any. The id settles two
-// who received their last one in the same instant, so the turn is the same whoever asks (ADR-0037, regla 1).
+// The vendor who has gone longest without receiving a conversation, and first of all one who never received any. Every assignment
+// counts, whatever its reason: a returning customer or a conversation taken from the pool is work received too (ADR-0037, regla 1).
+//
+// The last assignment is read as a row and not as max(created_at): now() is the start of the transaction, so the assignments of one
+// payload share an instant, and only their v7 id still says which came first. Without it, the lowest operator id would take every
+// conversation of the payload after the first round.
 const nextInTurnSelect = `
 SELECT o.id
 FROM   operators o
 LEFT   JOIN LATERAL (
-       SELECT max(a.created_at) AS received_at
+       SELECT a.created_at, a.id
        FROM   conversation_assignments a
        WHERE  a.to_operator_id = o.id
+       ORDER  BY a.created_at DESC, a.id DESC
+       LIMIT  1
 ) last ON true
 WHERE  o.account_id = $1 AND o.role = $2 AND o.active AND o.deleted_at IS NULL
-ORDER  BY last.received_at ASC NULLS FIRST, o.id
+ORDER  BY last.created_at ASC NULLS FIRST, last.id ASC NULLS FIRST, o.id
 LIMIT  1`
 
 // NextInTurn answers nil when no vendor is active, which leaves the conversation in the pool (ADR-0037, regla 3).

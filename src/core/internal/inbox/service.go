@@ -46,6 +46,9 @@ var (
 	// ErrChannelUnavailable is a number that does not exist or that the sender can never send from: known before writing, so refused
 	// before writing, like the closed window (ADR-0035, regla 9).
 	ErrChannelUnavailable = errors.New("inbox: the number of the conversation cannot send")
+
+	// ErrNotHeld is an operator switching the bot of a conversation it can see and does not hold: one of the pool (ADR-0037, regla 4).
+	ErrNotHeld = errors.New("inbox: the conversation is not assigned to the caller")
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
@@ -228,8 +231,9 @@ func (s *Service) channelFor(ctx context.Context, target Target) (whatsapp.Inbox
 	return inbox, nil
 }
 
-// SetMode turns the agent of one conversation on or off without touching the others (F27, brought forward from Fase 10). Who may call it
-// is decided in routes.go and not here; what this decides is which changes make sense for the conversation (ADR-0035, reglas 11 a 14).
+// SetMode turns the agent of one conversation on or off without touching the others (F27, brought forward from Fase 10). The operator
+// switches the conversations it holds and supervisor and admin any of the account (ADR-0037, regla 4); besides that, what this decides
+// is which changes make sense for the conversation (ADR-0035, reglas 11 a 14).
 //
 // It does not take the conversation out of the pool: answering is what assigns, and turning the bot off is not an answer (ADR-0035, regla 13).
 //
@@ -245,6 +249,9 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 
 	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
 	if err != nil {
+		return "", err
+	}
+	if err := maySwitch(scope, target); err != nil {
 		return "", err
 	}
 	if target.Status == enums.ConversationStatusResolved {
@@ -268,6 +275,18 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	default:
 		return "", err
 	}
+}
+
+// maySwitch is ADR-0037, regla 4: the vendor answers for the bot of the conversations it holds, and nothing else. What it cannot see
+// it is told does not exist, as everywhere in the inbox; the pool it can see, and is told it has to take it first.
+func maySwitch(scope Scope, t Target) error {
+	if scope.seesTheWholeTeam() || (t.OperatorID != nil && *t.OperatorID == scope.OperatorID) {
+		return nil
+	}
+	if t.OperatorID == nil {
+		return ErrNotHeld
+	}
+	return ErrNotFound
 }
 
 // mayAnswer is ADR-0035, reglas 5 y 6: the conversation is the caller's or nobody's, for every role. The supervisor sees the whole

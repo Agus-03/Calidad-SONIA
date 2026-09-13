@@ -306,6 +306,8 @@ func translate(err error) error {
 		return soniahttp.BadRequest("mode_not_available", "only autonomous and off can be chosen for now").WithCause(err)
 	case errors.Is(err, ErrNoAgent):
 		return soniahttp.Conflict("no_ai_agent", "the conversation has no agent to turn on").WithCause(err)
+	case errors.Is(err, ErrNotHeld):
+		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot: answer it first").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:

@@ -614,32 +614,45 @@ func patchMode(engine http.Handler, conversationID, body string) *httptest.Respo
 	return rec
 }
 
-// TestOnlyTheRolesAboveTheVendorsChangeTheMode is ADR-0035, regla 10, written as a test, and a departure from F27 and Anexo B that
-// has to stay visible: the basic operator is refused by the router, before the service is asked anything.
-func TestOnlyTheRolesAboveTheVendorsChangeTheMode(t *testing.T) {
+// TestTheVendorSwitchesTheBotOfWhatItHolds is ADR-0037, regla 4, through the real router: the operator switches the bot of its own
+// conversations, as F27 and Anexo B give it, and supervisor and admin the bot of any. What the operator cannot see does not exist,
+// and the pool, which it can see, it has to take first.
+func TestTheVendorSwitchesTheBotOfWhatItHolds(t *testing.T) {
+	someoneElse := id.New()
+
 	for _, tc := range []struct {
-		role enums.OperatorRole
-		want int
+		name     string
+		role     enums.OperatorRole
+		holder   *uuid.UUID
+		wantCode int
+		want     string
 	}{
-		{enums.OperatorRoleOperator, http.StatusForbidden},
-		{enums.OperatorRoleSupervisor, http.StatusOK},
-		{enums.OperatorRoleAdmin, http.StatusOK},
+		{"an operator switches the bot of its own conversation", enums.OperatorRoleOperator, &testOperator, http.StatusOK, ""},
+		{"an operator is told to take the pool before switching its bot", enums.OperatorRoleOperator, nil, http.StatusConflict, "conversation_not_assigned"},
+		{"an operator is told another's conversation does not exist", enums.OperatorRoleOperator, &someoneElse, http.StatusNotFound, "conversation_not_found"},
+		{"a supervisor switches any conversation of the team", enums.OperatorRoleSupervisor, &someoneElse, http.StatusOK, ""},
+		{"an admin switches one of the pool too", enums.OperatorRoleAdmin, nil, http.StatusOK, ""},
 	} {
-		t.Run(string(tc.role), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			d := newDesk(&stubStore{})
-			// Held by somebody else on purpose: both roles see the whole team, so the holder does not decide who changes the mode.
-			holder := id.New()
-			target := d.open(&holder)
+			target := d.open(tc.holder)
 
 			rec := patchMode(mountDesk(tc.role, d), target.ConversationID.String(), `{"mode":"off"}`)
-			if rec.Code != tc.want {
-				t.Fatalf("PATCH as %s: got %d, want %d - body %s", tc.role, rec.Code, tc.want, rec.Body)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("PATCH as %s: got %d, want %d - body %s", tc.role, rec.Code, tc.wantCode, rec.Body)
 			}
-			if tc.want == http.StatusOK && !strings.Contains(rec.Body.String(), `"mode":"off"`) {
-				t.Fatalf("the answer does not carry the mode - body %s", rec.Body)
+			_, written := d.aggregate.modes[target.ConversationID]
+			if tc.wantCode == http.StatusOK {
+				if !written || !strings.Contains(rec.Body.String(), `"mode":"off"`) {
+					t.Fatalf("written = %v, want the mode written and answered - body %s", written, rec.Body)
+				}
+				return
 			}
-			if _, written := d.aggregate.modes[target.ConversationID]; written != (tc.want == http.StatusOK) {
-				t.Fatalf("written = %v for %s", written, tc.role)
+			if written {
+				t.Fatal("a refused switch still wrote the mode")
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
 			}
 		})
 	}

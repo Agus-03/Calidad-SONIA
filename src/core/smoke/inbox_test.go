@@ -234,39 +234,69 @@ func holderOf(t *testing.T, body, conversationID string) string {
 // so three is room enough for the bot to have answered if it was going to; the positive control below is what makes it a proof.
 const silenceWindow = 3 * time.Second
 
-// TestTheBotTurnedOffStaysSilentThroughTheRealProcess is the proof that the inbox of Fase 5 is manual: a supervisor turns the agent
-// off over the API, the customer writes, and nothing answers. Then the agent is turned back on and the next message is answered,
-// which is what tells "the mode kept it quiet" apart from "the stack was down".
+// TestTheVendorGivenTheConversationSwitchesItsBotThroughTheRealProcess walks ADR-0037 end to end: a conversation in the pool is not
+// the vendor's to switch, the customer writing hands it to the vendor, the vendor turns the bot off and nothing answers, and the
+// supervisor turns it back on and the next message is answered, which is what tells "the mode kept it quiet" from "the stack was down".
 //
-// It works on the demo contact's open conversation because postWebhook writes as that contact, and it restores the mode it found.
-func TestTheBotTurnedOffStaysSilentThroughTheRealProcess(t *testing.T) {
+// It works on the demo contact's open conversation because postWebhook writes as that contact. It starts that conversation in the
+// pool and leaves it there, and restores the mode it found, so the turn cases find the conversation they expect.
+func TestTheVendorGivenTheConversationSwitchesItsBotThroughTheRealProcess(t *testing.T) {
 	core, brain, pool := stack(t)
 	ctx := context.Background()
 	waitForHealth(t, core)
 	waitForHealth(t, brain)
 
 	secret := signingSecret(ctx, t, pool)
+	// Seeded before any webhook, so the vendor is the one active to receive the conversation (ADR-0037, reglas 1 y 2).
+	switchers := seedSwitchers(ctx, t, core, pool)
 	conversation := demoConversation(ctx, t, core, pool, secret)
-	supervisor, operator := seedSwitchers(ctx, t, core, pool)
 	path := "/api/v1/conversations/" + conversation.String() + "/mode"
 
-	// ADR-0035, regla 10, through the real router: the vendor cannot touch the toggle (it departs from F27 and Anexo B).
-	if status, body := call(t, core, http.MethodPatch, path, operator, `{"mode":"off"}`); status != http.StatusForbidden {
-		t.Fatalf("an operator turning the bot off: got %d, want 403 - %s", status, body)
+	// Registered after seedSwitchers, so it runs before the vendors are deleted: their assignments would keep them alive otherwise.
+	release := func() {
+		if _, err := pool.Exec(context.Background(), `UPDATE conversations SET operator_id = NULL WHERE id = $1`, conversation); err != nil {
+			t.Errorf("returning the demo conversation to the pool: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(),
+			`DELETE FROM conversation_assignments WHERE conversation_id = $1 AND to_operator_id = ANY($2)`, conversation, switchers.seeded); err != nil {
+			t.Errorf("cleaning up the assignments: %v", err)
+		}
+	}
+	release()
+	t.Cleanup(release)
+
+	// ADR-0037, regla 4: the pool is visible to the vendor but not its to switch.
+	status, body := call(t, core, http.MethodPatch, path, switchers.operator, `{"mode":"off"}`)
+	if status != http.StatusConflict {
+		t.Fatalf("a vendor switching a conversation of the pool: got %d, want 409 - %s", status, body)
+	}
+	if code, _ := refusal(t, body); code != "conversation_not_assigned" {
+		t.Fatalf("the refusal says %q, want conversation_not_assigned", code)
 	}
 
-	if status, body := call(t, core, http.MethodPatch, path, supervisor, `{"mode":"off"}`); status != http.StatusOK {
-		t.Fatalf("a supervisor turning the bot off: got %d, want 200 - %s", status, body)
+	// ADR-0037, regla 1: the customer writing is what hands the conversation to the vendor, through the real webhook.
+	arrival := "wamid.smoke.arrival." + uuid.New().String()
+	if status := postWebhook(t, core, arrival, secret); status != http.StatusOK {
+		t.Fatalf("POST /webhooks/whatsapp: got %d, want 200", status)
+	}
+	awaitTurn(ctx, t, pool, arrival)
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", switchers.operator, "")
+	if holder := holderOf(t, body, conversation.String()); holder != switchers.operatorID.String() {
+		t.Fatalf("after the customer wrote, the conversation is held by %q, want the vendor %v - %s", holder, switchers.operatorID, body)
+	}
+
+	if status, body := call(t, core, http.MethodPatch, path, switchers.operator, `{"mode":"off"}`); status != http.StatusOK {
+		t.Fatalf("the vendor turning off the bot of its conversation: got %d, want 200 - %s", status, body)
 	}
 	silenced := "wamid.smoke.off." + uuid.New().String()
 	if status := postWebhook(t, core, silenced, secret); status != http.StatusOK {
 		t.Fatalf("POST /webhooks/whatsapp: got %d, want 200", status)
 	}
 	if answeredWithin(ctx, t, pool, silenced, silenceWindow) {
-		t.Fatalf("the bot answered a conversation a supervisor had turned off")
+		t.Fatalf("the bot answered a conversation its vendor had turned off")
 	}
 
-	if status, body := call(t, core, http.MethodPatch, path, supervisor, `{"mode":"autonomous"}`); status != http.StatusOK {
+	if status, body := call(t, core, http.MethodPatch, path, switchers.supervisor, `{"mode":"autonomous"}`); status != http.StatusOK {
 		t.Fatalf("a supervisor turning the bot back on: got %d, want 200 - %s", status, body)
 	}
 	heard := "wamid.smoke.on." + uuid.New().String()
@@ -317,8 +347,15 @@ func demoConversation(ctx context.Context, t *testing.T, core string, pool db.Po
 	return conversation
 }
 
-// seedSwitchers logs in one role that may touch the toggle and one that may not.
-func seedSwitchers(ctx context.Context, t *testing.T, core string, pool db.Pool) (supervisor, operator string) {
+// switchers are the two roles of the toggle: the supervisor, who switches any conversation, and the vendor, who switches its own.
+type switchers struct {
+	supervisor, operator string
+	operatorID           uuid.UUID
+	seeded               []uuid.UUID
+}
+
+// seedSwitchers logs in a supervisor and a vendor, and deletes both when the case ends.
+func seedSwitchers(ctx context.Context, t *testing.T, core string, pool db.Pool) switchers {
 	t.Helper()
 
 	var account uuid.UUID
@@ -330,14 +367,13 @@ func seedSwitchers(ctx context.Context, t *testing.T, core string, pool db.Pool)
 		t.Fatalf("hashing the password: %v", err)
 	}
 
-	seeded := []uuid.UUID{}
+	s := switchers{}
 	t.Cleanup(func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM operators WHERE id = ANY($1)`, seeded); err != nil {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM operators WHERE id = ANY($1)`, s.seeded); err != nil {
 			t.Errorf("cleaning up the operators: %v", err)
 		}
 	})
 
-	tokens := map[string]string{}
 	for _, role := range []string{"supervisor", "operator"} {
 		operatorID := id.New()
 		email := "switch-" + operatorID.String() + "@coop.test"
@@ -347,10 +383,15 @@ func seedSwitchers(ctx context.Context, t *testing.T, core string, pool db.Pool)
 			operatorID, account, role, email, hash); err != nil {
 			t.Fatalf("seeding the %s: %v", role, err)
 		}
-		seeded = append(seeded, operatorID)
-		tokens[role] = login(t, core, email, walkerPassword)
+		s.seeded = append(s.seeded, operatorID)
+		token := login(t, core, email, walkerPassword)
+		if role == "supervisor" {
+			s.supervisor = token
+		} else {
+			s.operator, s.operatorID = token, operatorID
+		}
 	}
-	return tokens["supervisor"], tokens["operator"]
+	return s
 }
 
 // answeredWithin watches one inbound message for the turn that would answer it: a batch linked to it is the first trace a turn

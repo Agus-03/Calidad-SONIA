@@ -116,7 +116,7 @@ Los argumentos que la sostienen son de gobierno del sistema, no de requisitos:
 ### Negativas / costos asumidos
 
 - **Un vendedor que toma una conversación autónoma no puede callar al bot.** Mientras un `supervisor` o `admin` no lo apague, **el cliente recibe dos voces**: la del vendedor y la de la IA, que sigue contestando cada mensaje. Es el problema que el interruptor venía a resolver, y para el rol que más responde queda resuelto a medias. El equipo necesita un procedimiento —el vendedor avisa y el supervisor apaga— que el sistema no sostiene ni registra.
-- **La decisión contradice un requisito, no sólo un anexo.** F27 está en el Anexo A y dice *"el operador"*. **Hay que declararlo en el informe final**, igual que ADR-0032 declara que revirtió a ADR-0011, y corregir la tabla de C01 en `00-convenciones.md`, que hoy le atribuye al `operator` una capacidad que el sistema no le da.
+- **La decisión contradice un requisito, no sólo un anexo.** F27 está en el Anexo A y dice *"el operador"*. **Hay que declararlo en el informe final**, igual que ADR-0032 declara que revirtió a ADR-0011. La tabla de C01 en `00-convenciones.md`, que le atribuía al `operator` una capacidad que el sistema no le da, quedó marcada como enmendada el 2026-09-13.
 - **Hasta la Fase 11, una conversación tomada por alguien ausente queda trabada.** El `supervisor` la ve y no puede responderla (regla 5) ni reasignarla (regla 15). La única salida es SQL a mano. Con un equipo chico y la bandeja en construcción el riesgo es acotado, pero no es cero.
 - **Un envío fallido igual toma la conversación** (regla 7). El vendedor que responde a un número que Meta rechaza se queda con una conversación que el cliente nunca recibió como atendida. El fallido queda visible en la bandeja (ADR-0020), y la conversación, a su nombre.
 - **El `operator` ve el nombre y el teléfono de todos los que escriben al pool** (regla 4), aunque nunca los atienda. Es más de lo que su agenda le muestra (ADR-0032, regla 2), y es el precio de que el pool se pueda tomar.
@@ -129,7 +129,7 @@ Los argumentos que la sostienen son de gobierno del sistema, no de requisitos:
 |---|---|
 | **Si el `operator` reasigna sus propias conversaciones** | Regla 16. Se decide en la **Fase 11**, con F26 |
 | **Qué hace el sistema con el bot cuando un vendedor toma la conversación** | El equipo descartó que tomar la conversación apague el bot (§5). Si el procedimiento manual no alcanza en la operación real, la salida está en esta decisión —devolverle el interruptor al `operator` para las conversaciones suyas— y no en un automatismo |
-| **Declarar la desviación de F27 en el informe final y corregir C01** | El ADR la registra; el informe y la convención son documentos aparte |
+| **Declarar la desviación de F27 en el informe final** | El ADR la registra y C01 ya apunta acá; el informe es un documento aparte |
 | **Qué filtros ofrece la bandeja** | F23 —no leídas, asignadas, en espera, resueltas, por etiqueta, con recordatorio, destacadas— es de la **Fase 10** |
 
 ## 5. Alternativas descartadas

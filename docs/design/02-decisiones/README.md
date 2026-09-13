@@ -77,7 +77,7 @@ Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los ha
 
 **ADR-0033 es el primero que enmienda a otro ADR en lugar de reemplazarlo.** La decisión de ADR-0031 —AES-256-GCM en la aplicación, con la llave en el entorno— se sostiene entera. Lo que dejó de ser cierto es una consecuencia de su §4, que describía el esquema de ese momento. Reemplazar el ADR completo por una línea obligaría a leer dos documentos para entender una sola decisión que no cambió. Por eso se hizo como ADR-0015 con `03-capa-prompts.md`: el texto original queda como estaba y su estado apunta a la enmienda.
 
-**ADR-0035 es la primera decisión que contradice un requisito del Anexo A**, no sólo un anexo o una sección. F27 dice *"el operador cambia el modo del agente"*, y el equipo reservó el modo a `supervisor` y `admin`. Se registró como desviación, con sus argumentos y su costo principal (un vendedor que toma una conversación no puede callar al bot). Hay que declararla en el informe final y corregir la tabla de C01 en [`00-convenciones.md`](../00-convenciones.md), que todavía le atribuye esa capacidad al `operator`.
+**ADR-0035 es la primera decisión que contradice un requisito del Anexo A**, no sólo un anexo o una sección. F27 dice *"el operador cambia el modo del agente"*, y el equipo reservó el modo a `supervisor` y `admin`. Se registró como desviación, con sus argumentos y su costo principal (un vendedor que toma una conversación no puede callar al bot). Hay que declararla en el informe final. La tabla de C01 en [`00-convenciones.md`](../00-convenciones.md), que le atribuía esa capacidad al `operator`, quedó marcada como enmendada el mismo día.
 
 ---
 

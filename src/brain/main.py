@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
-from api.routes import health, turns
+from api.routes import health, models, turns
 from api.security import require_internal_token
 from infra import logging as sonia_logging
 from infra.config import ConfigError, Settings, get_settings
@@ -52,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     internal = APIRouter(dependencies=[Depends(require_internal_token)])
     internal.include_router(turns.router)
+    internal.include_router(models.router)
     app.include_router(internal)
     return app
 

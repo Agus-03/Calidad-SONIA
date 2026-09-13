@@ -14,6 +14,45 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ModelsResponse": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/PricedModel"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "pricing_version": {
+            "title": "Pricing Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pricing_version",
+          "models"
+        ],
+        "title": "ModelsResponse",
+        "type": "object"
+      },
+      "PricedModel": {
+        "properties": {
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "PricedModel",
+        "type": "object"
+      },
       "TransferProposal": {
         "properties": {
           "proposed": {
@@ -191,6 +230,49 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "list_models_models_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Internal-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "models"
         ]
       }
     },

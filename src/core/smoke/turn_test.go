@@ -41,6 +41,8 @@ type outcome struct {
 	generationState     string
 	promptHasComponents bool
 	promptHasEnvelope   bool
+	assembled           int
+	missing             int
 }
 
 func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
@@ -84,6 +86,10 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	}
 	if !got.promptHasComponents || !got.promptHasEnvelope {
 		t.Error("prompt_rendered carries neither the components nor the envelope: the assembler of F03 did not run")
+	}
+	// The two sides of OE1 by their own paths: with nothing assembled the query reads this generation as 0 %, not as absent.
+	if got.assembled == 0 || got.missing != 0 {
+		t.Errorf("generation_components: %d assembled and %d active components missing, want some and none (OE1)", got.assembled, got.missing)
 	}
 }
 
@@ -244,7 +250,13 @@ SELECT b.processed_at IS NOT NULL,
        coalesce(g.cost::text, ''),
        coalesce(g.status, ''),
        position('Ayudar a potenciales inquilinos' in g.prompt_rendered) > 0,
-       position('[MENSAJE DEL CLIENTE]' in g.prompt_rendered) > 0
+       position('[MENSAJE DEL CLIENTE]' in g.prompt_rendered) > 0,
+       (SELECT count(*) FROM generation_components gc WHERE gc.generation_id = g.id),
+       (SELECT count(*) FROM prompt_components pc
+        WHERE  pc.ai_agent_id = g.ai_agent_id AND pc.active AND pc.deleted_at IS NULL
+          AND  NOT EXISTS (SELECT 1 FROM generation_components gc
+                           JOIN   prompt_component_versions v ON v.id = gc.prompt_component_version_id
+                           WHERE  gc.generation_id = g.id AND v.prompt_component_id = pc.id))
 FROM   messages i
 JOIN   message_batches b ON b.id = i.message_batch_id
 JOIN   generations g ON g.message_batch_id = b.id
@@ -260,7 +272,7 @@ func awaitTurn(ctx context.Context, t *testing.T, pool db.Pool, wamid string) ou
 		err := pool.QueryRow(ctx, turnOutcome, wamid).Scan(
 			&got.batchProcessed, &got.batchError, &got.messageDirection, &got.messageStatus,
 			&got.messageHasWamid, &got.generationCost, &got.generationState,
-			&got.promptHasComponents, &got.promptHasEnvelope,
+			&got.promptHasComponents, &got.promptHasEnvelope, &got.assembled, &got.missing,
 		)
 		switch {
 		case err == nil:

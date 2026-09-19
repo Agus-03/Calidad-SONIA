@@ -153,6 +153,38 @@ func TestTheHistoryOfAComponentIsNewestFirst(t *testing.T) {
 	}
 }
 
+// The history pages by number like contacts/ (ADR-0036, regla 9): total, page and per_page come back, and a bad page is named.
+func TestTheHistoryPagesByNumber(t *testing.T) {
+	store, agent, created := withTone(t)
+	engine := mountComponents(enums.OperatorRoleAdmin, store)
+	one := "/ai-agents/" + agent.ID.String() + "/components/" + created.ID.String()
+	for _, text := range []string{"Dos.", "Tres."} {
+		if rec := call(engine, http.MethodPatch, one, `{"content":"`+text+`"}`); rec.Code != http.StatusOK {
+			t.Fatalf("PATCH: got %d - %s", rec.Code, rec.Body)
+		}
+	}
+
+	rec := call(engine, http.MethodGet, one+"/versions?page=2&per_page=1", "")
+	var page struct {
+		Items   []struct{ Version int } `json:"items"`
+		Total   int                     `json:"total"`
+		Page    int                     `json:"page"`
+		PerPage int                     `json:"per_page"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decoding: %v - %s", err, rec.Body)
+	}
+	if len(page.Items) != 1 || page.Items[0].Version != 2 || page.Total != 3 || page.Page != 2 || page.PerPage != 1 {
+		t.Fatalf("page 2 of one = %s, want version 2 of 3", rec.Body)
+	}
+
+	for _, tc := range []struct{ query, want string }{{"page=0", "invalid_page"}, {"per_page=no", "invalid_per_page"}} {
+		if rec := call(engine, http.MethodGet, one+"/versions?"+tc.query, ""); rec.Code != http.StatusBadRequest || codeOf(t, rec) != tc.want {
+			t.Fatalf("?%s: got %d %q, want 400 %q", tc.query, rec.Code, codeOf(t, rec), tc.want)
+		}
+	}
+}
+
 // Every id that is not one is a 400 of its own, and a block or an agent out of reach is a 404 of its own.
 func TestAComponentOutOfReachIsNamed(t *testing.T) {
 	store, agent, _ := withTone(t)

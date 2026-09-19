@@ -39,7 +39,7 @@ type componentReader interface {
 	ByID(ctx context.Context, accountID, agentID uuid.UUID) (AIAgent, error)
 	Components(ctx context.Context, accountID, agentID uuid.UUID) ([]Component, error)
 	Component(ctx context.Context, accountID, agentID, componentID uuid.UUID) (Component, error)
-	Versions(ctx context.Context, componentID uuid.UUID) ([]ComponentVersion, error)
+	Versions(ctx context.Context, componentID uuid.UUID, limit, offset int) (VersionPage, error)
 }
 
 // ComponentStore is what the components write inside the transaction they conduct. Exported because internal/app/deps.go binds it to
@@ -52,6 +52,7 @@ type ComponentStore interface {
 	UpdateComponent(ctx context.Context, componentID uuid.UUID, content string, active bool) (Component, error)
 	SoftDeleteComponent(ctx context.Context, componentID uuid.UUID) error
 	AppendVersion(ctx context.Context, v ComponentVersion) (int, error)
+	LatestVersion(ctx context.Context, componentID uuid.UUID) (int, error)
 }
 
 // ComponentTxFunc runs fn in one transaction (regla 5): a block and its version commit together, or neither does.
@@ -83,11 +84,11 @@ func (s *Components) List(ctx context.Context, accountID, agentID uuid.UUID) ([]
 }
 
 // Versions reads the component first, so the history of a block out of reach is as missing as the block.
-func (s *Components) Versions(ctx context.Context, accountID, agentID, componentID uuid.UUID) ([]ComponentVersion, error) {
+func (s *Components) Versions(ctx context.Context, accountID, agentID, componentID uuid.UUID, limit, offset int) (VersionPage, error) {
 	if _, err := s.opts.Repo.Component(ctx, accountID, agentID, componentID); err != nil {
-		return nil, err
+		return VersionPage{}, err
 	}
-	return s.opts.Repo.Versions(ctx, componentID)
+	return s.opts.Repo.Versions(ctx, componentID, limit, offset)
 }
 
 // Create adds a block with its first version, in one transaction and with the agent locked: two blocks of one type sent at once are
@@ -167,7 +168,9 @@ func (s *Components) Update(ctx context.Context, accountID, operatorID, agentID,
 		}
 		if content == current.Content && active == current.Active {
 			updated = current
-			return nil
+			// Read after the lock and not from it, or a save that waited behind another edit answers the version it replaced.
+			updated.Version, err = store.LatestVersion(ctx, componentID)
+			return err
 		}
 
 		if updated, err = store.UpdateComponent(ctx, componentID, content, active); err != nil {

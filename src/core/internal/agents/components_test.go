@@ -134,14 +134,29 @@ func (s *stubComponents) AppendVersion(_ context.Context, v ComponentVersion) (i
 	return v.Number, nil
 }
 
-func (s *stubComponents) Versions(_ context.Context, componentID uuid.UUID) ([]ComponentVersion, error) {
-	out := []ComponentVersion{}
+func (s *stubComponents) Versions(_ context.Context, componentID uuid.UUID, limit, offset int) (VersionPage, error) {
+	all := []ComponentVersion{}
 	for i := len(s.versions) - 1; i >= 0; i-- {
 		if s.versions[i].ComponentID == componentID {
-			out = append(out, s.versions[i])
+			all = append(all, s.versions[i])
 		}
 	}
-	return out, nil
+	page := VersionPage{Items: []ComponentVersion{}, Total: len(all)}
+	for i := offset; i < len(all) && i < offset+limit; i++ {
+		page.Items = append(page.Items, all[i])
+	}
+	return page, nil
+}
+
+// LatestVersion counts from the versions and not from the component row, which is the point of asking it apart.
+func (s *stubComponents) LatestVersion(_ context.Context, componentID uuid.UUID) (int, error) {
+	latest := 0
+	for _, v := range s.versions {
+		if v.ComponentID == componentID && v.Number > latest {
+			latest = v.Number
+		}
+	}
+	return latest, nil
 }
 
 // The transaction is a plain call here: what the test checks is which writes happen, and binding them is the pool's job.
@@ -292,7 +307,7 @@ func TestRemovingAComponentLeavesWhoRemovedIt(t *testing.T) {
 	if list, _ := service.List(context.Background(), testAccount, agent.ID); len(list) != 0 {
 		t.Fatalf("the listing still shows %d blocks after the removal", len(list))
 	}
-	if _, err := service.Versions(context.Background(), testAccount, agent.ID, created.ID); !errors.Is(err, ErrComponentNotFound) {
+	if _, err := service.Versions(context.Background(), testAccount, agent.ID, created.ID, 20, 0); !errors.Is(err, ErrComponentNotFound) {
 		t.Fatalf("the history of a removed block: got %v, want ErrComponentNotFound", err)
 	}
 	if err := service.Delete(context.Background(), testAccount, remover, agent.ID, created.ID); !errors.Is(err, ErrComponentNotFound) {
@@ -314,5 +329,27 @@ func TestAFailedComponentWriteLeavesNoVersion(t *testing.T) {
 	}
 	if len(store.versions) != 0 {
 		t.Fatalf("a version was written for a block that failed: %+v", store.versions)
+	}
+}
+
+// A save with no change answers the version the block is at now, read after the lock: the row it locked may carry the number from
+// before it waited behind another edit.
+func TestASaveWithNoChangeAnswersTheVersionAfterTheLock(t *testing.T) {
+	agent := seeded("Agente")
+	store := newStubComponents(agent)
+	service := componentsOver(store)
+	created, err := service.Create(context.Background(), testAccount, testOperator, agent.ID, tone("Formal."))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := service.Update(context.Background(), testAccount, testOperator, agent.ID, created.ID, ComponentEdit{Content: ptr("Cálido.")}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// The row as a lock taken behind that edit would read it: its text is new, its number is the one before.
+	store.components[0].Version = 1
+
+	same, err := service.Update(context.Background(), testAccount, testOperator, agent.ID, created.ID, ComponentEdit{Content: ptr("Cálido.")})
+	if err != nil || same.Version != 2 {
+		t.Fatalf("a save with no change: got %+v, %v, want version 2", same, err)
 	}
 }

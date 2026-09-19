@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,9 +64,19 @@ type versionResponse struct {
 	CreatedAt   string  `json:"created_at"`
 }
 
+// The page-number shape of contacts/ and labels/ (ADR-0036, regla 9): the history only grows when somebody edits.
 type versionListResponse struct {
-	Items []versionResponse `json:"items"`
+	Items   []versionResponse `json:"items"`
+	Total   int               `json:"total"`
+	Page    int               `json:"page"`
+	PerPage int               `json:"per_page"`
 }
+
+// A page nobody asked to size, and a ceiling so per_page=100000 is not a query the caller can ask for, the same as contacts/.
+const (
+	defaultVersionsPerPage = 20
+	maxVersionsPerPage     = 100
+)
 
 func presentComponent(c Component) componentResponse {
 	return componentResponse{
@@ -194,13 +205,18 @@ func (c *ComponentsController) versions(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, err)
 		return
 	}
-	found, err := c.service.Versions(gc.Request.Context(), actor.AccountID, agentID, componentID)
+	page, perPage, err := versionPagination(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	found, err := c.service.Versions(gc.Request.Context(), actor.AccountID, agentID, componentID, perPage, (page-1)*perPage)
 	if err != nil {
 		soniahttp.Fail(gc, c.log, translateComponent(err))
 		return
 	}
-	items := make([]versionResponse, 0, len(found))
-	for _, v := range found {
+	items := make([]versionResponse, 0, len(found.Items))
+	for _, v := range found.Items {
 		drawn := versionResponse{
 			Version: v.Number, Content: v.Content, Active: v.Active, ChangeNote: v.ChangeNote,
 			CreatedAt: v.CreatedAt.UTC().Format(time.RFC3339),
@@ -211,8 +227,38 @@ func (c *ComponentsController) versions(gc *gin.Context) {
 		}
 		items = append(items, drawn)
 	}
-	soniahttp.OK(gc, versionListResponse{Items: items})
+	soniahttp.OK(gc, versionListResponse{Items: items, Total: found.Total, Page: page, PerPage: perPage})
 }
+
+// versionPagination reads page and per_page like contacts/ does: a page past the end is an empty list with the real total, and a
+// per_page above the ceiling is trimmed, not refused.
+func versionPagination(gc *gin.Context) (page, perPage int, err error) {
+	page, err = positiveQuery(gc.Query("page"), 1)
+	if err != nil {
+		return 0, 0, soniahttp.BadRequest("invalid_page", "page must be a positive whole number").WithCause(err)
+	}
+	perPage, err = positiveQuery(gc.Query("per_page"), defaultVersionsPerPage)
+	if err != nil {
+		return 0, 0, soniahttp.BadRequest("invalid_per_page", "per_page must be a positive whole number").WithCause(err)
+	}
+	return page, min(perPage, maxVersionsPerPage), nil
+}
+
+func positiveQuery(raw string, fallback int) (int, error) {
+	if raw == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, err
+	}
+	if n < 1 {
+		return 0, errNotPositive
+	}
+	return n, nil
+}
+
+var errNotPositive = errors.New("agents: not a positive whole number")
 
 // scope reads who asks and for which agent, the two things every route of a component starts from.
 func (c *ComponentsController) scope(gc *gin.Context) (soniahttp.Actor, uuid.UUID, bool) {

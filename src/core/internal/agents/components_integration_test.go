@@ -84,9 +84,19 @@ func TestAComponentLivesThroughItsVersionsAgainstRealDDL(t *testing.T) {
 			t.Fatalf("a save with no change: got %+v, %v, want still version 3", same, err)
 		}
 
-		history, err := service.Versions(ctx, account, agent.ID, created.ID)
-		if err != nil || len(history) != 3 {
-			t.Fatalf("Versions: got %d, %v, want 3", len(history), err)
+		all, err := service.Versions(ctx, account, agent.ID, created.ID, 20, 0)
+		history := all.Items
+		if err != nil || len(history) != 3 || all.Total != 3 {
+			t.Fatalf("Versions: got %d of %d, %v, want 3 of 3", len(history), all.Total, err)
+		}
+		// A page of one, the second: the one in the middle, with the total of all of them (ADR-0036, regla 9).
+		middle, err := service.Versions(ctx, account, agent.ID, created.ID, 1, 1)
+		if err != nil || len(middle.Items) != 1 || middle.Items[0].Number != 2 || middle.Total != 3 {
+			t.Fatalf("the second page of one: got %+v, %v, want version 2 of 3", middle, err)
+		}
+		past, err := service.Versions(ctx, account, agent.ID, created.ID, 20, 40)
+		if err != nil || len(past.Items) != 0 || past.Total != 3 {
+			t.Fatalf("a page past the end: got %+v, %v, want nothing with the real total", past, err)
 		}
 		first := history[2]
 		if history[0].Number != 3 || history[0].Active || first.Content != "Formal." || first.ChangeNote == nil ||

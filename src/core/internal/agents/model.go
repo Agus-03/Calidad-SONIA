@@ -138,6 +138,12 @@ type ComponentEdit struct {
 
 // ComponentVersion is one frozen state of a block: what it said, whether it was on, who left it that way and why. It is the audit of
 // the components, so audit_logs does not repeat it (ADR-0039).
+// VersionPage is one page of a block's history and the size of all of it.
+type VersionPage struct {
+	Items []ComponentVersion
+	Total int
+}
+
 type ComponentVersion struct {
 	ID          uuid.UUID
 	ComponentID uuid.UUID

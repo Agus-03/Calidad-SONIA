@@ -262,25 +262,51 @@ func (r *Repository) AppendVersion(ctx context.Context, v ComponentVersion) (int
 	return number, nil
 }
 
-// Versions answers the history of a block, newest first, which is the order the panel shows it in.
-func (r *Repository) Versions(ctx context.Context, componentID uuid.UUID) ([]ComponentVersion, error) {
+// Versions answers one page of the history of a block, newest first, which is the order the panel shows it in, with the total the
+// page-number listings of ADR-0036 regla 9 answer: the history only grows when somebody edits, like a catalogue.
+func (r *Repository) Versions(ctx context.Context, componentID uuid.UUID, limit, offset int) (VersionPage, error) {
 	rows, err := r.exec.Query(ctx, `
-		SELECT id, prompt_component_id, version_number, content, active, changed_by_operator_id, change_note, created_at
+		SELECT id, prompt_component_id, version_number, content, active, changed_by_operator_id, change_note, created_at,
+		       count(*) OVER ()
 		FROM   prompt_component_versions
 		WHERE  prompt_component_id = $1
-		ORDER  BY version_number DESC`, componentID)
+		ORDER  BY version_number DESC
+		LIMIT  $2 OFFSET $3`, componentID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("agents: list prompt component versions: %w", err)
+		return VersionPage{}, fmt.Errorf("agents: list prompt component versions: %w", err)
 	}
 	defer rows.Close()
 
-	out := []ComponentVersion{}
+	page := VersionPage{Items: []ComponentVersion{}}
 	for rows.Next() {
 		var v ComponentVersion
-		if err := rows.Scan(&v.ID, &v.ComponentID, &v.Number, &v.Content, &v.Active, &v.ChangedBy, &v.ChangeNote, &v.CreatedAt); err != nil {
-			return nil, fmt.Errorf("agents: scan prompt component version: %w", err)
+		if err := rows.Scan(&v.ID, &v.ComponentID, &v.Number, &v.Content, &v.Active, &v.ChangedBy, &v.ChangeNote, &v.CreatedAt,
+			&page.Total); err != nil {
+			return VersionPage{}, fmt.Errorf("agents: scan prompt component version: %w", err)
 		}
-		out = append(out, v)
+		page.Items = append(page.Items, v)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return VersionPage{}, fmt.Errorf("agents: list prompt component versions: %w", err)
+	}
+	// A page past the end reads no row and so no window count: the total is asked for on its own, so it is never a false zero.
+	if len(page.Items) == 0 && offset > 0 {
+		if err := r.exec.QueryRow(ctx, `SELECT count(*) FROM prompt_component_versions WHERE prompt_component_id = $1`,
+			componentID).Scan(&page.Total); err != nil {
+			return VersionPage{}, fmt.Errorf("agents: count prompt component versions: %w", err)
+		}
+	}
+	return page, nil
+}
+
+// LatestVersion reads the number in a statement of its own, after the block is locked: the subquery of componentSelect is evaluated
+// with the snapshot from before the wait, so behind another edit it would answer the version that edit replaced.
+func (r *Repository) LatestVersion(ctx context.Context, componentID uuid.UUID) (int, error) {
+	var number int
+	if err := r.exec.QueryRow(ctx, `
+		SELECT COALESCE(max(version_number), 0) FROM prompt_component_versions WHERE prompt_component_id = $1`,
+		componentID).Scan(&number); err != nil {
+		return 0, fmt.Errorf("agents: read the latest prompt component version: %w", err)
+	}
+	return number, nil
 }

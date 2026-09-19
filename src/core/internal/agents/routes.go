@@ -38,3 +38,13 @@ func (c *ComponentsController) Routes() []soniahttp.Route {
 		{Method: http.MethodGet, Path: components + "/:componentId/versions", Roles: admin, Handler: c.versions},
 	}
 }
+
+// A POST that writes nothing, because the drafts travel in the body: F03 shows the prompt "a medida que edita", before any save.
+// The admin alone, for the reason the components are (ADR-0040).
+func (c *PreviewController) Routes() []soniahttp.Route {
+	admin := []enums.OperatorRole{enums.OperatorRoleAdmin}
+
+	return []soniahttp.Route{
+		{Method: http.MethodPost, Path: routeBase + "/:id/preview", Roles: admin, Handler: c.preview},
+	}
+}

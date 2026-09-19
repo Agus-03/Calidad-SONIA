@@ -203,6 +203,64 @@ func TestModelsReadsThePricedList(t *testing.T) {
 	}
 }
 
+// The drafts travel as the panel sent them, signed, and the system comes back with the types that went in (ADR-0040).
+func TestPreviewSendsTheDraftsAndReadsTheSystem(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+	var gotBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotToken = r.Method, r.URL.Path, r.Header.Get(tokenHeader)
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		_, _ = w.Write([]byte(`{"system":"Sos Agente.","rules_version":2,"components":["tone"]}`))
+	}))
+	defer server.Close()
+
+	agent := uuid.New()
+	res, err := New(Options{BaseURL: server.URL, Token: "secreto"}).Preview(context.Background(), PreviewRequest{
+		AIAgentID:  agent,
+		Components: []DraftComponent{{Type: enums.PromptComponentTypeTone, Content: "Formal.", Position: 3}},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v, want nil", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != previewPath || gotToken != "secreto" {
+		t.Fatalf("request = %s %s with token %q, want POST %s signed", gotMethod, gotPath, gotToken, previewPath)
+	}
+	drafts, _ := gotBody["components"].([]any)
+	if gotBody["ai_agent_id"] != agent.String() || len(drafts) != 1 {
+		t.Fatalf("body = %v, want the agent and its one draft", gotBody)
+	}
+	if res.System != "Sos Agente." || res.RulesVersion != 2 || len(res.Components) != 1 || res.Components[0] != enums.PromptComponentTypeTone {
+		t.Fatalf("Preview() = %+v, want the system, version 2 and the tone", res)
+	}
+}
+
+// The brain's 404 is an agent removed after the core checked it, and it is named so the panel hears a 404 too.
+func TestPreviewTranslatesTheBrains404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if !errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want ErrAIAgentNotFound", err)
+	}
+}
+
+func TestPreviewPassesTheFailureUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want the brain's failure and not a 404", err)
+	}
+}
+
 // A brain that cannot answer is an error to the caller, which turns it into a 503 and never into an agent saved unchecked.
 func TestModelsPassesTheFailureUp(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

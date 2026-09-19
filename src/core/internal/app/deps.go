@@ -151,6 +151,9 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger: log,
 	})
 
+	// The admin's client of the brain, with the short timeout: an administrator is typing and the next keystroke asks again.
+	previews := agents.NewPreviews(agents.PreviewOptions{Repo: agentRepo, Brain: adminBrain, Logger: log})
+
 	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
 		Repo: channelRepo,
 		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
@@ -170,6 +173,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			inbox.NewController(desk, log),
 			agents.NewController(identity, log),
 			agents.NewComponentsController(blocks, log),
+			agents.NewPreviewController(previews, log),
 			whatsapp.NewSettingsController(numbers, log),
 		},
 		tokenVerifier:     verifyToken(tokens),

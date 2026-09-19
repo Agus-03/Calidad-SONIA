@@ -15,6 +15,9 @@ import (
 // ErrTurnNotFound is the brain's 404: the four ids name no turn, which is our mistake and never gets better on a retry.
 var ErrTurnNotFound = errors.New("brainclient: the brain does not know that turn")
 
+// ErrAIAgentNotFound is the preview's 404: the agent was removed between the core's check and the brain's read.
+var ErrAIAgentNotFound = errors.New("brainclient: the brain does not know that ai agent")
+
 // The whole authentication between the two deployables (ADR-0017 (k)); there is no user on this hop.
 const tokenHeader = "X-Internal-Token"
 
@@ -70,6 +73,27 @@ func (c *Client) Turn(ctx context.Context, req TurnRequest) (TurnResponse, error
 		slog.String("conversation_id", req.ConversationID.String()),
 		slog.String("outcome", res.Outcome),
 	)
+	return res, nil
+}
+
+// Preview asks the brain for the system the model would read with these blocks. No retry: an administrator is typing, and the next
+// keystroke asks again.
+func (c *Client) Preview(ctx context.Context, req PreviewRequest) (PreviewResponse, error) {
+	var res PreviewResponse
+	err := c.http.PostJSON(ctx, previewPath, req, &res)
+	if err != nil {
+		agent := slog.String("ai_agent_id", req.AIAgentID.String())
+		cause := slog.String("cause", err.Error())
+
+		var status *httpclient.StatusError
+		if errors.As(err, &status) && status.Status == http.StatusNotFound {
+			c.log.Warn("brain does not know the ai agent", agent, cause)
+			return PreviewResponse{}, fmt.Errorf("%w: %w", ErrAIAgentNotFound, err)
+		}
+
+		c.log.Error("brain preview call failed", agent, cause)
+		return PreviewResponse{}, err
+	}
 	return res, nil
 }
 

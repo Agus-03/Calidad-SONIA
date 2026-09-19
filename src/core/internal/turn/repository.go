@@ -19,17 +19,20 @@ func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec
 
 func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
-// Reads two tables this package does not own: the ownership rule of regla 1 restricts writes and not reads.
+// Reads three tables this package does not own: the ownership rule of regla 1 restricts writes and not reads.
+// The agent is read here and not trusted from the webhook: a pause or a removal after the message arrived still has to win (ADR-0038).
 const targetSelect = `
-SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.mode
-FROM   conversations c
-JOIN   contacts ct ON ct.id = c.contact_id
-WHERE  c.id = $1 AND c.deleted_at IS NULL`
+SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.mode,
+          COALESCE(a.active AND a.deleted_at IS NULL, false)
+FROM      conversations c
+JOIN      contacts ct ON ct.id = c.contact_id
+LEFT JOIN ai_agents a ON a.id = c.ai_agent_id
+WHERE     c.id = $1 AND c.deleted_at IS NULL`
 
 func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AIAgentAvailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrConversationNotFound
 	}

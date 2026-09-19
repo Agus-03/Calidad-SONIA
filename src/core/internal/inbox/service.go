@@ -40,8 +40,12 @@ var (
 	// review cycle that makes it a mode does not exist yet (ADR-0035, regla 11).
 	ErrModeNotAvailable = errors.New("inbox: only autonomous and off are available until the suggestion cycle exists")
 
-	// ErrNoAgent refuses to turn on a bot the conversation was born without: conversations.ErrNoAgent, seen from here (ADR-0035, regla 12).
-	ErrNoAgent = errors.New("inbox: the conversation has no agent to turn on")
+	// ErrNoAIAgent refuses to turn on a bot the conversation was born without: conversations.ErrNoAIAgent, seen from here (ADR-0035, regla 12).
+	ErrNoAIAgent = errors.New("inbox: the conversation has no agent to turn on")
+
+	// ErrAIAgentUnavailable is an agent the conversation has and that cannot answer: paused or removed by the admin. Told apart from
+	// ErrNoAIAgent because a pause ends and the vendor can try again then, and a conversation with no agent never will (ADR-0038).
+	ErrAIAgentUnavailable = errors.New("inbox: the agent of the conversation is paused or removed")
 
 	// ErrChannelUnavailable is a number that does not exist or that the sender can never send from: known before writing, so refused
 	// before writing, like the closed window (ADR-0035, regla 9).
@@ -267,14 +271,21 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 		return mode, nil
 	}
 	if mode != enums.AgentModeOff && target.AIAgentID == nil {
-		return "", ErrNoAgent
+		return "", ErrNoAIAgent
+	}
+	// The same conditions the turn reads before answering: a switch that says the bot is on while the turn skips it lies to the
+	// vendor, who then leaves the customer unanswered (ADR-0038).
+	if mode != enums.AgentModeOff && !target.AIAgentAvailable {
+		return "", ErrAIAgentUnavailable
 	}
 
 	switch err := s.opts.Aggregate.SetMode(ctx, conversationID, mode); {
 	case err == nil:
 		return mode, nil
-	case errors.Is(err, conversations.ErrNoAgent):
-		return "", ErrNoAgent
+	case errors.Is(err, conversations.ErrNoAIAgent):
+		// The read already refused a conversation with no agent, so the predicate refused a pause or a removal that committed in
+		// between (ADR-0038).
+		return "", ErrAIAgentUnavailable
 	case errors.Is(err, conversations.ErrNotFound):
 		return "", ErrNotFound
 	default:

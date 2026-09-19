@@ -32,6 +32,11 @@ type Summary struct {
 	AIAgentID *uuid.UUID
 	Contact   Contact
 
+	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
+	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
+	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.
+	AIAgentAvailable bool
+
 	// Nil is the pool: every incoming conversation arrives unassigned until somebody answers it (ADR-0004).
 	Operator *Operator
 
@@ -109,6 +114,8 @@ type Target struct {
 	WindowExpiresAt time.Time
 	AIAgentID       *uuid.UUID
 	Mode            enums.AgentMode
+	// False when the agent is paused or removed, or there is none: turning the bot on then names one that cannot answer (ADR-0038).
+	AIAgentAvailable bool
 }
 
 // Assignment is one row of conversation_assignments: immutable, because F26 asks for the history and a row that changes is not one.

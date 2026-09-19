@@ -40,18 +40,20 @@ type pageResponse struct {
 }
 
 type summaryResponse struct {
-	ID              string            `json:"id"`
-	Status          string            `json:"status"`
-	Mode            string            `json:"mode"`
-	AIAgentID       *string           `json:"ai_agent_id"`
-	Contact         contactResponse   `json:"contact"`
-	Operator        *operatorResponse `json:"operator"`
-	LastMessage     *messageResponse  `json:"last_message"`
-	FailedCount     int               `json:"failed_count"`
-	LastFailedAt    *string           `json:"last_failed_at"`
-	LastInboundAt   string            `json:"last_inbound_at"`
-	WindowExpiresAt string            `json:"window_expires_at"`
-	LastActivityAt  string            `json:"last_activity_at"`
+	ID        string  `json:"id"`
+	Status    string  `json:"status"`
+	Mode      string  `json:"mode"`
+	AIAgentID *string `json:"ai_agent_id"`
+	// False when there is no agent or it is paused or removed: the panel greys the switch out instead of trying it (ADR-0038).
+	AIAgentAvailable bool              `json:"ai_agent_available"`
+	Contact          contactResponse   `json:"contact"`
+	Operator         *operatorResponse `json:"operator"`
+	LastMessage      *messageResponse  `json:"last_message"`
+	FailedCount      int               `json:"failed_count"`
+	LastFailedAt     *string           `json:"last_failed_at"`
+	LastInboundAt    string            `json:"last_inbound_at"`
+	WindowExpiresAt  string            `json:"window_expires_at"`
+	LastActivityAt   string            `json:"last_activity_at"`
 }
 
 type contactResponse struct {
@@ -86,11 +88,12 @@ func present(s Summary) summaryResponse {
 		Contact: contactResponse{
 			ID: s.Contact.ID.String(), Name: s.Contact.Name, Lastname: s.Contact.Lastname, PhoneWhatsapp: s.Contact.PhoneWhatsapp,
 		},
-		FailedCount:     s.FailedCount,
-		LastFailedAt:    rfc3339(s.LastFailedAt),
-		LastInboundAt:   s.LastInboundAt.UTC().Format(time.RFC3339),
-		WindowExpiresAt: s.WindowExpiresAt.UTC().Format(time.RFC3339),
-		LastActivityAt:  s.LastActivityAt.UTC().Format(time.RFC3339),
+		AIAgentAvailable: s.AIAgentAvailable,
+		FailedCount:      s.FailedCount,
+		LastFailedAt:     rfc3339(s.LastFailedAt),
+		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
+		WindowExpiresAt:  s.WindowExpiresAt.UTC().Format(time.RFC3339),
+		LastActivityAt:   s.LastActivityAt.UTC().Format(time.RFC3339),
 	}
 	if s.AIAgentID != nil {
 		agent := s.AIAgentID.String()
@@ -304,8 +307,10 @@ func translate(err error) error {
 		return soniahttp.BadRequest("invalid_mode", "the mode is not one of autonomous, suggestion, off").WithCause(err)
 	case errors.Is(err, ErrModeNotAvailable):
 		return soniahttp.BadRequest("mode_not_available", "only autonomous and off can be chosen for now").WithCause(err)
-	case errors.Is(err, ErrNoAgent):
+	case errors.Is(err, ErrNoAIAgent):
 		return soniahttp.Conflict("no_ai_agent", "the conversation has no agent to turn on").WithCause(err)
+	case errors.Is(err, ErrAIAgentUnavailable):
+		return soniahttp.Conflict("ai_agent_unavailable", "the agent of the conversation is paused or removed").WithCause(err)
 	case errors.Is(err, ErrNotHeld):
 		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot: answer it first").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):

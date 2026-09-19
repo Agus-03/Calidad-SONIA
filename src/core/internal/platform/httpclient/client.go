@@ -77,18 +77,28 @@ func (c *Client) PostJSON(ctx context.Context, path string, in, out any, opts ..
 	if err != nil {
 		return fmt.Errorf("httpclient: encode %s: %w", path, err)
 	}
+	return c.do(ctx, http.MethodPost, path, bytes.NewReader(body), out, opts)
+}
 
+// GetJSON decodes out with the same deadline, bound and classification as PostJSON: only the verb and the absent body differ.
+func (c *Client) GetJSON(ctx context.Context, path string, out any, opts ...Option) error {
+	return c.do(ctx, http.MethodGet, path, nil, out, opts)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader, out any, opts []Option) error {
 	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
 		defer cancel()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return fmt.Errorf("httpclient: build %s: %w", path, err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for name, value := range c.headers {
 		req.Header.Set(name, value)
 	}

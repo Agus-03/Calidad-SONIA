@@ -22,6 +22,17 @@ type Inbox struct {
 	AppSecret string
 }
 
+// InboxSettings is what the admin panel reads and edits of a number: no secret is a field of it, so none can reach a response by a
+// careless serialisation (ADR-0031, regla 11).
+type InboxSettings struct {
+	ID               uuid.UUID
+	AccountID        uuid.UUID
+	DisplayName      string
+	PhoneNumberID    string
+	Status           enums.InboxStatus
+	DefaultAIAgentID *uuid.UUID
+}
+
 // WebhookEvent is the log F20 asks for, written before anything is interpreted so an unparseable payload still leaves a trace.
 type WebhookEvent struct {
 	ID             uuid.UUID

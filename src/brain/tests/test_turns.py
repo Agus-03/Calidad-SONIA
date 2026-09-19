@@ -83,11 +83,12 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
         "messages": [message("hola")],
         # The six of F01: without them the agent reaches the model with no instructions at all (Regla 1).
         "prompt_components": [
-            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1},
-            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2},
+            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4(), "read_at": datetime.now(UTC)},
+            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4(), "read_at": datetime.now(UTC)},
         ],
-        # Declared so the fake connection records the INSERT: the write is the only one the brain makes in a turn.
+        # Declared so the fake connection records the INSERTs: the two writes are the only ones the brain makes in a turn.
         "generations": [],
+        "generation_components": [],
     }
     base.update(overrides)
     return base
@@ -165,6 +166,18 @@ def test_turns_generates_when_a_provider_answers() -> None:
     # Present because the evidence exists: it is the id the core writes back into generations.message_id.
     assert payload["generation_id"] is not None
     assert "generations" in connection.seen, "the turn generated an answer and left no evidence of it"
+    # One row per component assembled: without them OE1 reads this generation as missing all of them.
+    assert connection.seen.count("generation_components") == 2, "the generation does not name what it assembled"
+
+
+# The fixture has two of the six: the turn answers anyway, and says so in the log.
+def test_a_turn_with_fewer_than_six_components_says_so(settings: Settings, caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(tables())
+
+    with caplog.at_level("INFO", logger="sonia"), client(connection, settings) as http:
+        http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert [r for r in caplog.records if "fewer components" in r.getMessage()]
 
 
 def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) -> None:

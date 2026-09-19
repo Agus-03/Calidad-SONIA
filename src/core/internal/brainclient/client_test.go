@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -177,5 +178,123 @@ func TestTurnCallsTheBrainOnce(t *testing.T) {
 
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1", calls)
+	}
+}
+
+// The list the core validates an agent against comes back whole, signed with the secret like every call of this hop (ADR-0038).
+func TestModelsReadsThePricedList(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotToken = r.Method, r.URL.Path, r.Header.Get(tokenHeader)
+		_, _ = w.Write([]byte(`{"pricing_version":3,"models":[{"provider":"cohere","model":"command-a-03-2025"}]}`))
+	}))
+	defer server.Close()
+
+	res, err := New(Options{BaseURL: server.URL, Token: "secreto"}).Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models() error = %v, want nil", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != modelsPath || gotToken != "secreto" {
+		t.Fatalf("request = %s %s with token %q, want GET %s signed", gotMethod, gotPath, gotToken, modelsPath)
+	}
+	want := PricedModel{Provider: "cohere", Model: "command-a-03-2025"}
+	if res.PricingVersion != 3 || len(res.Models) != 1 || res.Models[0] != want {
+		t.Fatalf("Models() = %+v, want version 3 with %+v", res, want)
+	}
+}
+
+// The drafts travel as the panel sent them, signed, and the system comes back with the types that went in (ADR-0040).
+func TestPreviewSendsTheDraftsAndReadsTheSystem(t *testing.T) {
+	var gotMethod, gotPath, gotToken string
+	var gotBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotToken = r.Method, r.URL.Path, r.Header.Get(tokenHeader)
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		_, _ = w.Write([]byte(`{"system":"Sos Agente.","rules_version":2,"components":["tone"]}`))
+	}))
+	defer server.Close()
+
+	agent := uuid.New()
+	res, err := New(Options{BaseURL: server.URL, Token: "secreto"}).Preview(context.Background(), PreviewRequest{
+		AIAgentID:  agent,
+		Components: []DraftComponent{{Type: enums.PromptComponentTypeTone, Content: "Formal.", Position: 3}},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v, want nil", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != previewPath || gotToken != "secreto" {
+		t.Fatalf("request = %s %s with token %q, want POST %s signed", gotMethod, gotPath, gotToken, previewPath)
+	}
+	drafts, _ := gotBody["components"].([]any)
+	if gotBody["ai_agent_id"] != agent.String() || len(drafts) != 1 {
+		t.Fatalf("body = %v, want the agent and its one draft", gotBody)
+	}
+	if res.System != "Sos Agente." || res.RulesVersion != 2 || len(res.Components) != 1 || res.Components[0] != enums.PromptComponentTypeTone {
+		t.Fatalf("Preview() = %+v, want the system, version 2 and the tone", res)
+	}
+}
+
+// The brain's 404 is an agent removed after the core checked it, and it is named so the panel hears a 404 too.
+func TestPreviewTranslatesTheBrains404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if !errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want ErrAIAgentNotFound", err)
+	}
+}
+
+// A refusal of the brain travels up without its body: FastAPI echoes the drafts in a 422, and the error ends in the request log.
+func TestPreviewKeepsTheDraftsOutOfTheError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":[{"input":"texto secreto del borrador"}]}`))
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || strings.Contains(err.Error(), "texto secreto") {
+		t.Fatalf("error = %v, want the refusal without the drafts it echoed", err)
+	}
+}
+
+// A brain that is not there at all is a failure too, and it is not mistaken for a 404.
+func TestPreviewPassesAnUnreachableBrainUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want the failure to reach the brain", err)
+	}
+}
+
+func TestPreviewPassesTheFailureUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want the brain's failure and not a 404", err)
+	}
+}
+
+// A brain that cannot answer is an error to the caller, which turns it into a 503 and never into an agent saved unchecked.
+func TestModelsPassesTheFailureUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	if _, err := New(Options{BaseURL: server.URL}).Models(context.Background()); err == nil {
+		t.Fatal("Models() error = nil, want the brain's failure")
 	}
 }

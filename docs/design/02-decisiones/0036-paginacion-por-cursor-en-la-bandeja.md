@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño: el orden de la bandeja se declara decisión propia y los índices pasan a ser la regla 10 |
+| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño: el orden de la bandeja se declara decisión propia y los índices pasan a ser la regla 10 · regla 9 ampliada por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), reglas 11 y 14: un catálogo que no crece —los agentes IA y los números de la cuenta— no pagina |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 5 (bandeja manual mínima) |
 | **Resuelve** | Cómo se pagina un listado que se reordena mientras se lo lee, y por qué el núcleo pasa a tener dos formas de paginar |

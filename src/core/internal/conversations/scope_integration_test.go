@@ -38,7 +38,7 @@ func TestTheScopeReachesOnlyWhatIsAssignedNow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("insert contact: %v", err)
 			}
-			conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, time.Now().UTC())
+			conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
 			if err != nil {
 				t.Fatalf("EnsureOpen: %v", err)
 			}

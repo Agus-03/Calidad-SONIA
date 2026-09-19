@@ -32,6 +32,12 @@ from prompts.repository import Component
 PROVIDER = "cohere"
 MODEL = "command-a-03-2025"
 
+# The version the one component of prompt() is, so a case can see it named by the generation.
+OBJECTIVE_VERSION = uuid4()
+
+# When the components were read, which the generation carries as it was handed and never replaces with its own clock.
+ASSEMBLED_AT = datetime(2026, 9, 19, 12, 0, tzinfo=UTC)
+
 COHERE = Rate(input_per_million=Decimal("2.50"), output_per_million=Decimal("10.00"), currency="USD")
 
 
@@ -81,7 +87,7 @@ def turn(provider: str = PROVIDER, model: str = MODEL) -> Turn:
 def prompt():
     return assemble(
         agent_name="Agente demo",
-        components=(Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1),),
+        components=(Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1, OBJECTIVE_VERSION),),
         message="hola",
     )
 
@@ -91,7 +97,7 @@ async def test_an_unpriced_model_fails_before_the_provider_is_called() -> None:
     client = FakeClient()
 
     with pytest.raises(UnpricedModel):
-        await generate(client=client, turn=turn(model="un-modelo-que-nadie-tarifo"), prompt=prompt())
+        await generate(client=client, turn=turn(model="un-modelo-que-nadie-tarifo"), prompt=prompt(), assembled_at=ASSEMBLED_AT)
 
     assert client.calls == [], "the turn paid for a call it could not price"
 
@@ -119,7 +125,7 @@ def test_a_turn_cheaper_than_the_scale_is_stored_as_zero() -> None:
 
 # Evidence names who answered: the row said cohere, the double answered, and a cost aggregate has to be able to say so.
 async def test_the_generation_names_the_client_that_answered() -> None:
-    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt(), assembled_at=ASSEMBLED_AT)
 
     assert generation.llm_provider == "double"
     assert generation.llm_model == MODEL
@@ -128,7 +134,7 @@ async def test_the_generation_names_the_client_that_answered() -> None:
 
 
 async def test_the_generation_measures_the_call_it_made() -> None:
-    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt(), assembled_at=ASSEMBLED_AT)
 
     assert isinstance(generation.latency_ms, int)
     assert generation.latency_ms >= 0
@@ -137,15 +143,23 @@ async def test_the_generation_measures_the_call_it_made() -> None:
 
 
 # Written once and already with its verdict (07-secuencia section 4.2): there is no provisional value to correct later.
+async def test_the_generation_names_the_versions_it_assembled() -> None:
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt(), assembled_at=ASSEMBLED_AT)
+
+    assert generation.component_version_ids == (OBJECTIVE_VERSION,)
+    # The instant of the read and not of the call's end: an edit while the model answers must not count as missing (ADR-0039).
+    assert generation.assembled_at == ASSEMBLED_AT
+
+
 async def test_the_status_is_the_verdict_and_not_a_placeholder() -> None:
-    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt(), assembled_at=ASSEMBLED_AT)
 
     assert generation.status is GenerationStatus.AUTO_SENT
 
 
 # prompt_rendered has to be readable as what the model read, or the evidence cannot be audited against the answer.
 async def test_the_rendered_prompt_carries_the_scaffolding_and_the_envelope() -> None:
-    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt(), assembled_at=ASSEMBLED_AT)
 
     assert "Ayudar a inquilinos." in generation.prompt_rendered
     assert "[MENSAJE DEL CLIENTE]" in generation.prompt_rendered

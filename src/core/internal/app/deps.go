@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/agents"
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
@@ -117,12 +118,63 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:  log,
 	})
 
+	// A second client of the brain and not the turn's: an administrator is waiting on this one, so it gets the short timeout of
+	// the admin panel and not the ten seconds a turn may take.
+	adminBrain := brainclient.New(brainclient.Options{
+		BaseURL: cfg.BrainBaseURL,
+		Token:   cfg.BrainInternalToken,
+		Timeout: cfg.PreviewTimeout,
+		Logger:  log,
+	})
+	agentRepo := agents.NewRepository(pool)
+	identity := agents.NewService(agents.Options{
+		Repo: agentRepo,
+		// Binds the agent, the inboxes and the conversations to one transaction: a pause or a removal and the bots it turns off
+		// commit together, and so do a removal and the defaults it clears (regla 5).
+		Tx: func(ctx context.Context, fn func(agents.Store, agents.Inboxes, agents.Conversations) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(agentRepo.WithExecutor(exec), channelRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+			})
+		},
+		Catalogue: adminBrain,
+		Logger:    log,
+	})
+
+	blocks := agents.NewComponents(agents.ComponentOptions{
+		Repo: agentRepo,
+		// A block and its version commit together, so no component changes without the version OE2 reads (regla 5, ADR-0039).
+		Tx: func(ctx context.Context, fn func(agents.ComponentStore) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
+	})
+
+	// The admin's client of the brain, with the short timeout: an administrator is typing and the next keystroke asks again.
+	previews := agents.NewPreviews(agents.PreviewOptions{Repo: agentRepo, Brain: adminBrain, Logger: log})
+
+	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
+		Repo: channelRepo,
+		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
+		Tx: func(ctx context.Context, fn func(whatsapp.SettingsStore, whatsapp.Auditor) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(channelRepo.WithExecutor(exec), agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
+	})
+
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
+			agents.NewController(identity, log),
+			agents.NewComponentsController(blocks, log),
+			agents.NewPreviewController(previews, log),
+			whatsapp.NewSettingsController(numbers, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

@@ -475,7 +475,11 @@ func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
 			func(*Target) {}, enums.AgentModeSuggestion, ErrModeNotAvailable, false},
 		{"a word that is not a mode of F02", func(*Target) {}, enums.AgentMode("robot"), ErrUnknownMode, false},
 		{"a conversation born without an agent has no bot to turn on",
-			func(t *Target) { t.AIAgentID, t.Mode = nil, enums.AgentModeOff }, enums.AgentModeAutonomous, ErrNoAgent, false},
+			func(t *Target) { t.AIAgentID, t.Mode = nil, enums.AgentModeOff }, enums.AgentModeAutonomous, ErrNoAIAgent, false},
+		{"an agent paused or removed by the admin cannot be turned on: the turn would skip it and nobody would answer (ADR-0038)",
+			func(t *Target) { t.Mode, t.AIAgentAvailable = enums.AgentModeOff, false }, enums.AgentModeAutonomous, ErrAIAgentUnavailable, false},
+		{"turning off never needs an agent that can answer",
+			func(t *Target) { t.AIAgentAvailable = false }, enums.AgentModeOff, nil, true},
 		{"a resolved conversation is a closed unit of work (ADR-0002)",
 			func(t *Target) { t.Status = enums.ConversationStatusResolved }, enums.AgentModeOff, ErrResolved, false},
 	} {
@@ -508,12 +512,14 @@ func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
 func TestTheModeReportsWhatTheAggregateSaid(t *testing.T) {
 	boom := errors.New("connection refused")
 
+	// Every case turns on a bot that is off and whose agent could answer when it was read: the only request that reaches the
+	// predicate with something to refuse, since turning off never needs an agent and the read already refused one that was missing.
 	for _, tc := range []struct {
 		name    string
 		err     error
 		wantErr error
 	}{
-		{"the predicate found no agent", conversations.ErrNoAgent, ErrNoAgent},
+		{"the predicate refused an agent paused or removed after the read (ADR-0038)", conversations.ErrNoAIAgent, ErrAIAgentUnavailable},
 		{"the row was gone", conversations.ErrNotFound, ErrNotFound},
 		{"the database did not answer", boom, boom},
 	} {
@@ -521,8 +527,10 @@ func TestTheModeReportsWhatTheAggregateSaid(t *testing.T) {
 			d := newDesk(&stubStore{})
 			d.aggregate.setModeErr = tc.err
 			target := d.open(nil)
+			target.Mode = enums.AgentModeOff
+			d.store.targets[target.ConversationID] = target
 
-			_, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID, enums.AgentModeOff)
+			_, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID, enums.AgentModeAutonomous)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("SetMode: got %v, want %v", err, tc.wantErr)
 			}

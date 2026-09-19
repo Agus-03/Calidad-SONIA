@@ -6,7 +6,7 @@
 | **Autoridad** | Detalla [`08-structure-rules.md`](design/08-structure-rules.md) (las 12 reglas) y el resumen de *Estructura del código* en [`CLAUDE.md`](../CLAUDE.md), que son la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-12 |
+| **Última revisión** | 2026-09-19 |
 
 ---
 
@@ -65,7 +65,7 @@ sonia/
 │   │   │   └── vectorstore/            base · qdrant
 │   │   │
 │   │   ├── api/                        el contrato interno que consume el núcleo
-│   │   │   ├── routes/                 turns · prompts · ingest · health
+│   │   │   ├── routes/                 turns · prompts · models · ingest · health
 │   │   │   └── schemas/                Pydantic = el contrato
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
@@ -80,7 +80,7 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
-│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente
+│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente IA · escribe la generación con lo que ensambló (ADR-0039, regla 10)
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
@@ -92,7 +92,7 @@ sonia/
 │   │   ├── prompts/                    F03, F04 · ÚNICA implementación del ensamblador
 │   │   │   ├── assembler.py
 │   │   │   ├── budget.py
-│   │   │   ├── repository.py
+│   │   │   ├── repository.py           los componentes activos con su versión más nueva
 │   │   │   └── rewriter.py
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
@@ -111,7 +111,15 @@ sonia/
 │   │   ├── internal/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
-│   │   │   │   └── controller · routes · service · repository · model
+│   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y rechaza por nombre lo que no expone (ADR-0038, regla 7)
+│   │   │   │   ├── components_controller.go  los seis bloques de F01, bajo el agente IA · tipo y posición no se editan · el historial pagina por número (ADR-0039)
+│   │   │   │   ├── preview_controller.go  POST /ai-agents/:id/preview: los borradores viajan en el cuerpo (ADR-0040)
+│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038) · las de componentes y la previsualización también (ADR-0039, ADR-0040)
+│   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
+│   │   │   │   ├── components.go       un componente por tipo · cada cambio del texto o del interruptor es una versión (ADR-0039)
+│   │   │   │   ├── preview.go          valida los borradores como un guardado y le pide el system al cerebro · no escribe nada (F03, ADR-0040)
+│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
+│   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
 │   │   │   │   ├── app.go              Run(ctx): config, pool, router, apagado ordenado
@@ -121,14 +129,14 @@ sonia/
 │   │   │   │
 │   │   │   ├── brainclient/            puerto de salida hacia el cerebro
 │   │   │   │   ├── client.go           agrega X-Internal-Token
-│   │   │   │   └── contract.go
+│   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
 │   │   │   │   └── controller · routes · service · repository · model
 │   │   │   │                           persiste también los atributos de F31
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
-│   │   │   │   ├── service.go          turn/, inbox/ y whatsapp/ escriben por acá
+│   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038)
 │   │   │   │   ├── repository.go       recibe el Executor de quien conduce
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
@@ -145,8 +153,8 @@ sonia/
 │   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje y sus fallidos · escribe conversation_assignments
+│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · escribe conversation_assignments
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
@@ -197,9 +205,11 @@ sonia/
 │   │   │   │
 │   │   │   └── whatsapp/               canal · F20, F29
 │   │   │       ├── controller.go       entrada del webhook · lee la firma y responde a Meta antes del turno
-│   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador
-│   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja
-│   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031)
+│   │   │       ├── settings_controller.go  el panel de los números, bajo /api/v1 · sin ningún secreto en la respuesta (ADR-0038)
+│   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador · GET y PATCH /inboxes, sólo admin
+│   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja · relee el agente IA por defecto dentro de la transacción (ADR-0038)
+│   │   │       ├── settings.go         qué agente IA atiende cada número · audita por el repositorio de agents/ (ADR-0038)
+│   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031) · vacía el default de un agente IA dado de baja (ADR-0038)
 │   │   │       ├── model.go
 │   │   │       ├── payload.go          la forma que manda Meta, reducida a lo que se lee
 │   │   │       └── client.go           envío a Meta
@@ -234,9 +244,9 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 
 | Paquete | Tablas | Nota |
 |---|---|---|
-| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente (ADR-0007) |
+| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt (ADR-0007, ADR-0038, ADR-0039) |
 | `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
-| `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/` y `whatsapp/` escriben por acá |
+| `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/`, `whatsapp/` y `agents/` escriben por acá |
 | `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |
 | `inbox/` | `conversation_assignments` · `internal_notes` · `conversation_labels` | |
 | `labels/` | `labels` | El catálogo; las dos tablas de unión son de quien etiqueta |

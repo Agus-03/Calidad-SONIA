@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 |
+| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` |
 | **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) · **firmada 2026-09-05** |
 | **Etapa** | Diseño — antes del Paso 7 (nivel físico) |
 | **Resuelve** | La sección 8.4 deja el lenguaje sin decidir (*"Python o GO"*, *"Go o Python"*) y 8.5 no dice si los módulos son procesos separados |

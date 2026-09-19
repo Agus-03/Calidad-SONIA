@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
-from api.routes import health, turns
+from api.routes import health, models, prompts, turns
 from api.security import require_internal_token
 from infra import logging as sonia_logging
 from infra.config import ConfigError, Settings, get_settings
@@ -43,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="SONIA — cerebro",
         description="API interna del cerebro: la consume el núcleo, desplegable 1 de ADR-0017.",
         # The version of the contract and not of the deployment: it moves when brain.openapi.json changes shape, never alone.
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.state.settings = settings
@@ -52,6 +52,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     internal = APIRouter(dependencies=[Depends(require_internal_token)])
     internal.include_router(turns.router)
+    internal.include_router(models.router)
+    internal.include_router(prompts.router)
     app.include_router(internal)
     return app
 

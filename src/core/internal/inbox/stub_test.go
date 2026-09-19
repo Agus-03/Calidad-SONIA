@@ -295,7 +295,7 @@ func (d *desk) open(holder *uuid.UUID) Target {
 	t := Target{
 		ConversationID: id.New(), InboxID: id.New(), ContactPhone: "5493510000000",
 		OperatorID: holder, Status: enums.ConversationStatusActive, WindowExpiresAt: time.Now().Add(time.Hour),
-		AIAgentID: &agent, Mode: enums.AgentModeAutonomous,
+		AIAgentID: &agent, Mode: enums.AgentModeAutonomous, AIAgentAvailable: true,
 	}
 	d.store.targets[t.ConversationID] = t
 	return t

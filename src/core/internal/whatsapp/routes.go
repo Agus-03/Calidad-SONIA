@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"net/http"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -14,5 +15,19 @@ func (c *Controller) Routes() []soniahttp.Route {
 	return []soniahttp.Route{
 		{Method: http.MethodGet, Path: routeBase, Handler: c.verify},
 		{Method: http.MethodPost, Path: routeBase, Handler: c.receive},
+	}
+}
+
+// Written once so the two routes of the panel cannot drift apart.
+const settingsBase = "/inboxes"
+
+// The admin alone, reading included: which agent answers a number is the configuration of F17, and Anexo B gives it to the Admin
+// (ADR-0038).
+func (c *SettingsController) Routes() []soniahttp.Route {
+	admin := []enums.OperatorRole{enums.OperatorRoleAdmin}
+
+	return []soniahttp.Route{
+		{Method: http.MethodGet, Path: settingsBase, Roles: admin, Handler: c.list},
+		{Method: http.MethodPatch, Path: settingsBase + "/:id", Roles: admin, Handler: c.setDefault},
 	}
 }

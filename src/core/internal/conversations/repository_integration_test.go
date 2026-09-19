@@ -80,7 +80,7 @@ func TestTheIndexAndNotTheReadDecidesWhoOpens(t *testing.T) {
 		}
 
 		at := time.Now().UTC()
-		first, err := NewService(repo, nil).EnsureOpen(ctx, contact, inbox, &agent, at)
+		first, err := NewService(repo, nil).EnsureOpen(ctx, contact, inbox, &agent, true, at)
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -94,7 +94,7 @@ func TestTheIndexAndNotTheReadDecidesWhoOpens(t *testing.T) {
 			t.Fatalf("a second open conversation was accepted: got %v, want ErrAlreadyOpen", err)
 		}
 
-		second, err := NewService(repo, nil).EnsureOpen(ctx, contact, inbox, &agent, at)
+		second, err := NewService(repo, nil).EnsureOpen(ctx, contact, inbox, &agent, true, at)
 		if err != nil {
 			t.Fatalf("EnsureOpen after the race: %v", err)
 		}
@@ -124,7 +124,7 @@ func TestTheOutboundMessageIsWrittenBeforeItIsSent(t *testing.T) {
 		}
 
 		at := time.Now().UTC()
-		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, at)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, at)
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -211,7 +211,7 @@ func TestOnlyTheFirstClaimTakesThePool(t *testing.T) {
 		if err != nil {
 			t.Fatalf("insert operator: %v", err)
 		}
-		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, time.Now().UTC())
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -254,7 +254,7 @@ func TestALateInboundNeverMovesTheClocksBack(t *testing.T) {
 		}
 		// Meta's instants, months before the database clock, so the activity cannot pass by coinciding with one of them.
 		newer := time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
-		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, newer)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, newer)
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -321,7 +321,7 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 		}
 		// Well before the database clock, so "the activity moved" cannot pass by the two instants happening to coincide.
 		opened := time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
-		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, opened)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, opened)
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -399,9 +399,9 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 	}
 }
 
-// TestTheBotIsTurnedOffWithoutLosingItsAgent is F27 against real DDL: off keeps ai_agent_id so the bot can come back, and a
+// TestTheBotIsTurnedOffWithoutLosingItsAIAgent is F27 against real DDL: off keeps ai_agent_id so the bot can come back, and a
 // conversation born without an agent cannot be turned on, because the predicate and not a read decides it (ADR-0035, regla 12).
-func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
+func TestTheBotIsTurnedOffWithoutLosingItsAIAgent(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
 	account, inbox, agent := seeded(t, pool)
@@ -418,11 +418,11 @@ func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
 			return m, a
 		}
 
-		withAgent, err := insertContact(ctx, exec, account)
+		withAIAgent, err := insertContact(ctx, exec, account)
 		if err != nil {
 			t.Fatalf("insert contact: %v", err)
 		}
-		answered, err := service.EnsureOpen(ctx, withAgent, inbox, &agent, time.Now().UTC())
+		answered, err := service.EnsureOpen(ctx, withAIAgent, inbox, &agent, true, time.Now().UTC())
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
@@ -440,19 +440,54 @@ func TestTheBotIsTurnedOffWithoutLosingItsAgent(t *testing.T) {
 			t.Fatalf("after turning it on: mode %q, want autonomous", m)
 		}
 
-		withoutAgent, err := insertContact(ctx, exec, account)
+		withoutAIAgent, err := insertContact(ctx, exec, account)
 		if err != nil {
 			t.Fatalf("insert contact: %v", err)
 		}
-		silent, err := service.EnsureOpen(ctx, withoutAgent, inbox, nil, time.Now().UTC())
+		silent, err := service.EnsureOpen(ctx, withoutAIAgent, inbox, nil, false, time.Now().UTC())
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}
-		if err := service.SetMode(ctx, silent.ID, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAgent) {
-			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAgent", err)
+		if err := service.SetMode(ctx, silent.ID, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAIAgent) {
+			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAIAgent", err)
 		}
 		if m, _ := mode(silent.ID); m != enums.AgentModeOff {
 			t.Fatalf("the refused change still wrote %q", m)
+		}
+
+		// An agent the conversation has and that cannot answer is refused by the same predicate, paused or removed: it is what the
+		// turn reads before answering, and a switch that disagrees with it lies to the vendor (ADR-0038). The agent is this case's
+		// own, so pausing it never touches the demo agent.
+		for _, stop := range []string{
+			`UPDATE ai_agents SET active = false WHERE id = $1`,
+			`UPDATE ai_agents SET deleted_at = now() WHERE id = $1`,
+		} {
+			own := id.New()
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO ai_agents (id, account_id, name, default_mode, llm_provider, llm_model)
+				VALUES ($1, $2, 'Agente de integracion', 'autonomous', 'cohere', 'command-a-03-2025')`, own, account); err != nil {
+				t.Fatalf("insert an agent: %v", err)
+			}
+			contact, err := insertContact(ctx, exec, account)
+			if err != nil {
+				t.Fatalf("insert contact: %v", err)
+			}
+			stopped, err := service.EnsureOpen(ctx, contact, inbox, &own, true, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("EnsureOpen: %v", err)
+			}
+			if err := service.SetMode(ctx, stopped.ID, enums.AgentModeOff); err != nil {
+				t.Fatalf("turning the bot off: %v", err)
+			}
+			if _, err := exec.Exec(ctx, stop, own); err != nil {
+				t.Fatalf("stop the agent: %v", err)
+			}
+			if err := service.SetMode(ctx, stopped.ID, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAIAgent) {
+				t.Fatalf("turning on after %q: got %v, want ErrNoAIAgent", stop, err)
+			}
+			if m, a := mode(stopped.ID); m != enums.AgentModeOff || a == nil || *a != own {
+				t.Fatalf("after %q: mode %q agent %v, want off and the agent kept as evidence", stop, m, a)
+			}
 		}
 
 		if err := service.SetMode(ctx, id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {

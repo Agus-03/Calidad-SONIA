@@ -92,6 +92,86 @@ func TestTargetJoinsTheConversationToItsContact(t *testing.T) {
 	}
 }
 
+// The pause and the removal are read from ai_agents at the moment of the turn, against real DDL: a stub cannot tell a NULL agent
+// from a NULL active, and the COALESCE is what keeps the first from scanning into a bool (ADR-0038).
+func TestTargetSaysWhetherTheAIAgentCanAnswer(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name  string
+		agent string
+		want  bool
+	}{
+		{"an active agent answers", `UPDATE ai_agents SET active = true WHERE id = $1`, true},
+		{"a paused agent keeps its configuration and answers nothing", `UPDATE ai_agents SET active = false WHERE id = $1`, false},
+		{"a removed agent answers nothing even if it was active", `UPDATE ai_agents SET deleted_at = now() WHERE id = $1`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+				conversationID, _ := conversation(t, ctx, exec)
+				agentID := ownAIAgent(t, ctx, exec, conversationID)
+				if _, err := exec.Exec(ctx, tc.agent, agentID); err != nil {
+					t.Fatalf("set the agent up: %v", err)
+				}
+
+				target, err := NewRepository(exec).Target(ctx, conversationID)
+				if err != nil {
+					t.Fatalf("Target: got %v, want no error", err)
+				}
+				if target.AIAgentAvailable != tc.want {
+					t.Fatalf("AIAgentAvailable = %v, want %v", target.AIAgentAvailable, tc.want)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+			}
+		})
+	}
+
+	t.Run("a conversation born without an agent has nobody to answer", func(t *testing.T) {
+		err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+			conversationID, _ := conversation(t, ctx, exec)
+			if _, err := exec.Exec(ctx,
+				`UPDATE conversations SET ai_agent_id = NULL, mode = 'off' WHERE id = $1`, conversationID); err != nil {
+				t.Fatalf("take the agent away: %v", err)
+			}
+
+			target, err := NewRepository(exec).Target(ctx, conversationID)
+			if err != nil {
+				t.Fatalf("Target: got %v, want no error", err)
+			}
+			if target.AIAgentAvailable {
+				t.Fatal("AIAgentAvailable = true for a conversation with no agent")
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+		}
+	})
+}
+
+// ownAIAgent gives the conversation an agent of its own, so a case that pauses or removes it never touches the demo agent.
+func ownAIAgent(t *testing.T, ctx context.Context, exec db.Executor, conversationID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	agentID := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO ai_agents (id, account_id, name, default_mode, llm_provider, llm_model)
+		SELECT $1, account_id, 'Agente de integracion', 'autonomous', 'cohere', 'command-a-03-2025'
+		FROM   ai_agents
+		WHERE  id = (SELECT ai_agent_id FROM conversations WHERE id = $2)`, agentID, conversationID); err != nil {
+		t.Fatalf("insert an agent: %v", err)
+	}
+	if _, err := exec.Exec(ctx, `UPDATE conversations SET ai_agent_id = $1 WHERE id = $2`, agentID, conversationID); err != nil {
+		t.Fatalf("give the conversation its agent: %v", err)
+	}
+	return agentID
+}
+
 func TestTargetReportsAConversationThatIsNotThere(t *testing.T) {
 	ctx := context.Background()
 
@@ -285,8 +365,8 @@ func evidence(t *testing.T, ctx context.Context, exec db.Executor, conversationI
 	_, err := exec.Exec(ctx,
 		`INSERT INTO generations (id, conversation_id, ai_agent_id, message_batch_id, llm_provider, llm_model,
 		                          prompt_rendered, completion_text, prompt_tokens, completion_tokens,
-		                          latency_ms, cost, currency, status)
-		 SELECT $1, c.id, c.ai_agent_id, $2, 'double', 'command-a-03-2025', 'system', 'hola', 10, 5, 120, 0.000075, 'USD', $3
+		                          latency_ms, cost, currency, status, assembled_at)
+		 SELECT $1, c.id, c.ai_agent_id, $2, 'double', 'command-a-03-2025', 'system', 'hola', 10, 5, 120, 0.000075, 'USD', $3, now()
 		 FROM   conversations c WHERE c.id = $4`,
 		generationID, batchID, enums.GenerationStatusAutoSent, conversationID)
 	if err != nil {

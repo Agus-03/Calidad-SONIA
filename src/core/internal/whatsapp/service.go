@@ -41,11 +41,12 @@ type Store interface {
 	SaveWebhookEvent(ctx context.Context, event WebhookEvent) error
 	MarkEventProcessed(ctx context.Context, eventID uuid.UUID, at time.Time) error
 	ContactByPhone(ctx context.Context, accountID uuid.UUID, phone string) (Contact, error)
+	AIAgentForBirth(ctx context.Context, accountID, inboxID uuid.UUID) (*uuid.UUID, bool, error)
 }
 
 // Aggregate is what conversations/ exposes to the channel: whatsapp never writes those two tables itself (regla 1).
 type Aggregate interface {
-	EnsureOpen(ctx context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, at time.Time) (conversations.Conversation, error)
+	EnsureOpen(ctx context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, canAnswer bool, at time.Time) (conversations.Conversation, error)
 	RecordInbound(ctx context.Context, c conversations.Conversation, wamid, text string, contentType enums.MessageContentType, at time.Time) (conversations.Message, error)
 }
 
@@ -145,8 +146,12 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 			return nil
 		}
 
+		born, err := bornWith(ctx, store, inbox)
+		if err != nil {
+			return err
+		}
 		for _, message := range value.Messages {
-			inbound, err := s.recordMessage(ctx, store, agg, registrar, assigner, inbox, value, message, at)
+			inbound, err := s.recordMessage(ctx, store, agg, registrar, assigner, inbox, born, value, message, at)
 			if errors.Is(err, conversations.ErrDuplicateWAMID) {
 				// Meta redelivers what it did not hear a 200 for, and skipping is right: the turn already ran the first time (07-secuencia).
 				s.log.Info("message already stored, redelivery ignored", slog.String("wamid", message.ID))
@@ -166,9 +171,27 @@ func (s *Service) receiveChange(ctx context.Context, value Value, body []byte, s
 	return started, nil
 }
 
+// birth is the agent a conversation opened by this payload is born with, and whether it can answer right now.
+type birth struct {
+	aiAgentID *uuid.UUID
+	canAnswer bool
+}
+
+// bornWith reads the default of the inbox again, inside the transaction and before any conversation row is touched: the inbox was
+// read outside it, and a removal or a pause may have committed since. Taking the agent first, and nothing else of it, is what keeps
+// this from waiting in a cycle with a pause, which takes the agent and then the conversations (ADR-0038).
+func bornWith(ctx context.Context, store Store, inbox Inbox) (birth, error) {
+	// Asked even when the inbox read had no default: the admin may have given the number one since.
+	aiAgentID, canAnswer, err := store.AIAgentForBirth(ctx, inbox.AccountID, inbox.ID)
+	if err != nil {
+		return birth{}, err
+	}
+	return birth{aiAgentID: aiAgentID, canAnswer: canAnswer}, nil
+}
+
 func (s *Service) recordMessage(
-	ctx context.Context, store Store, agg Aggregate, registrar Contacts, assigner Assigner, inbox Inbox, value Value, message MetaMessage,
-	at time.Time,
+	ctx context.Context, store Store, agg Aggregate, registrar Contacts, assigner Assigner, inbox Inbox, born birth, value Value,
+	message MetaMessage, at time.Time,
 ) (Inbound, error) {
 	contact, err := s.contactFor(ctx, store, registrar, inbox, value, message)
 	if err != nil {
@@ -176,7 +199,7 @@ func (s *Service) recordMessage(
 	}
 
 	sentAt := message.SentAt(at)
-	conversation, err := agg.EnsureOpen(ctx, contact.ID, inbox.ID, inbox.DefaultAIAgentID, sentAt)
+	conversation, err := agg.EnsureOpen(ctx, contact.ID, inbox.ID, born.aiAgentID, born.canAnswer, sentAt)
 	if err != nil {
 		return Inbound{}, err
 	}

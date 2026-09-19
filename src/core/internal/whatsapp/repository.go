@@ -101,6 +101,134 @@ func (r *Repository) Connect(ctx context.Context, phoneNumberID, accessToken, ap
 	return inboxID, nil
 }
 
+// The columns of the admin panel and none of the three secrets: they never leave this file for that screen (ADR-0031, regla 11).
+const settingsSelect = `
+SELECT id, account_id, display_name, phone_number_id, status, default_ai_agent_id
+FROM   inboxes
+WHERE  deleted_at IS NULL AND account_id = $1`
+
+func scanSettings(row pgx.Row) (InboxSettings, error) {
+	var s InboxSettings
+	err := row.Scan(&s.ID, &s.AccountID, &s.DisplayName, &s.PhoneNumberID, &s.Status, &s.DefaultAIAgentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return InboxSettings{}, ErrInboxNotFound
+	}
+	if err != nil {
+		return InboxSettings{}, fmt.Errorf("whatsapp: scan inbox settings: %w", err)
+	}
+	return s, nil
+}
+
+// ListSettings has no page: an account connects a handful of numbers, the same reading as the agents of ADR-0038 regla 11.
+func (r *Repository) ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error) {
+	rows, err := r.exec.Query(ctx, settingsSelect+" ORDER BY lower(display_name), id", accountID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsapp: list inboxes: %w", err)
+	}
+	defer rows.Close()
+
+	out := []InboxSettings{}
+	for rows.Next() {
+		s, err := scanSettings(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.
+func (r *Repository) SettingsForUpdate(ctx context.Context, accountID, inboxID uuid.UUID) (InboxSettings, error) {
+	return scanSettings(r.exec.QueryRow(ctx, settingsSelect+" AND id = $2 FOR UPDATE", accountID, inboxID))
+}
+
+// FOR SHARE and not a plain read: the removal of an agent locks its row FOR UPDATE, so an assignment and a removal at once are
+// serialised, and whichever commits second sees the other (ADR-0038). A paused agent passes: a pause is not a removal.
+const aiAgentAssignable = `
+SELECT 1
+FROM   ai_agents
+WHERE  id = $1 AND account_id = $2 AND deleted_at IS NULL
+FOR SHARE`
+
+// AIAgentAssignable reads a table agents/ owns: the ownership rule restricts writes and not reads.
+func (r *Repository) AIAgentAssignable(ctx context.Context, accountID, aiAgentID uuid.UUID) error {
+	var one int
+	err := r.exec.QueryRow(ctx, aiAgentAssignable, aiAgentID, accountID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAIAgentNotAssignable
+	}
+	if err != nil {
+		return fmt.Errorf("whatsapp: read the agent to assign: %w", err)
+	}
+	return nil
+}
+
+// The default of the inbox is read again here and not taken from the read before the transaction, so an admin who just changed or
+// cleared it is obeyed. FOR SHARE OF a, the same lock as an assignment, and on the agent alone: a pause or a removal holds the agent
+// while it turns its bots off, so a birth at that instant waits and reads what it committed. Locking the inbox too would take inbox
+// then agent, the reverse of a removal, and the two could wait on each other (ADR-0038).
+const aiAgentForBirth = `
+SELECT a.id, a.active
+FROM   inboxes i
+JOIN   ai_agents a ON a.id = i.default_ai_agent_id AND a.account_id = i.account_id AND a.deleted_at IS NULL
+WHERE  i.id = $1 AND i.account_id = $2 AND i.deleted_at IS NULL
+FOR SHARE OF a`
+
+// AIAgentForBirth answers the agent a new conversation of the inbox is born with and whether it can answer. An inbox without one, or
+// whose agent was removed, names none; a paused one is still named, and born off (ADR-0038, reglas 3 y 15).
+func (r *Repository) AIAgentForBirth(ctx context.Context, accountID, inboxID uuid.UUID) (*uuid.UUID, bool, error) {
+	var aiAgentID uuid.UUID
+	var active bool
+	err := r.exec.QueryRow(ctx, aiAgentForBirth, inboxID, accountID).Scan(&aiAgentID, &active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("whatsapp: read the agent a conversation is born with: %w", err)
+	}
+	return &aiAgentID, active, nil
+}
+
+const inboxSetDefaultAIAgent = `
+UPDATE inboxes
+SET    default_ai_agent_id = $3, updated_at = now()
+WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, account_id, display_name, phone_number_id, status, default_ai_agent_id`
+
+// SetDefaultAIAgent takes nil to leave the number without AI, which is a state ADR-0012 declares valid. Only the conversations born
+// after it get the new agent: the open ones keep the one that answered them (ADR-0038).
+func (r *Repository) SetDefaultAIAgent(ctx context.Context, accountID, inboxID uuid.UUID, aiAgentID *uuid.UUID) (InboxSettings, error) {
+	return scanSettings(r.exec.QueryRow(ctx, inboxSetDefaultAIAgent, accountID, inboxID, aiAgentID))
+}
+
+// Every inbox of the account and not only the live ones: a default naming a removed agent is wrong whether or not the inbox is.
+const inboxClearDefaultAIAgent = `
+UPDATE inboxes
+SET    default_ai_agent_id = NULL, updated_at = now()
+WHERE  account_id = $1 AND default_ai_agent_id = $2
+RETURNING id`
+
+// ClearDefaultAIAgent runs inside the transaction that removes the agent, so no conversation is born with it after the removal
+// commits (ADR-0038). It returns the inboxes it changed, because the audit of the removal is the only place that records them.
+func (r *Repository) ClearDefaultAIAgent(ctx context.Context, accountID, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, inboxClearDefaultAIAgent, accountID, aiAgentID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsapp: clear the default agent: %w", err)
+	}
+	defer rows.Close()
+
+	cleared := []uuid.UUID{}
+	for rows.Next() {
+		var inboxID uuid.UUID
+		if err := rows.Scan(&inboxID); err != nil {
+			return nil, fmt.Errorf("whatsapp: scan a cleared inbox: %w", err)
+		}
+		cleared = append(cleared, inboxID)
+	}
+	return cleared, rows.Err()
+}
+
 const webhookEventInsert = `
 INSERT INTO webhook_events (id, inbox_id, event_type, wamid, payload_json, signature_valid, status, received_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`

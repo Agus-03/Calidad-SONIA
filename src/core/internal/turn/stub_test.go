@@ -248,10 +248,11 @@ func conductor() *harness {
 
 	store := &stubStore{
 		target: Target{
-			ConversationID: uuid.New(),
-			InboxID:        uuid.New(),
-			ContactPhone:   "5493510000000",
-			Mode:           enums.AgentModeAutonomous,
+			ConversationID:   uuid.New(),
+			InboxID:          uuid.New(),
+			ContactPhone:     "5493510000000",
+			Mode:             enums.AgentModeAutonomous,
+			AIAgentAvailable: true,
 		},
 		steps: steps,
 	}

@@ -113,9 +113,11 @@ sonia/
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
 │   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y rechaza por nombre lo que no expone (ADR-0038, regla 7)
 │   │   │   │   ├── components_controller.go  los seis bloques de F01, bajo el agente IA · tipo y posición no se editan (ADR-0039)
-│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038) · las de componentes también (ADR-0039)
+│   │   │   │   ├── preview_controller.go  POST /ai-agents/:id/preview: los borradores viajan en el cuerpo (ADR-0040)
+│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038) · las de componentes y la previsualización también (ADR-0039, ADR-0040)
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
 │   │   │   │   ├── components.go       un componente por tipo · cada cambio del texto o del interruptor es una versión (ADR-0039)
+│   │   │   │   ├── preview.go          valida los borradores como un guardado y le pide el system al cerebro · no escribe nada (F03, ADR-0040)
 │   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
@@ -127,7 +129,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── brainclient/            puerto de salida hacia el cerebro
 │   │   │   │   ├── client.go           agrega X-Internal-Token
-│   │   │   │   └── contract.go
+│   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
 │   │   │   │   └── controller · routes · service · repository · model

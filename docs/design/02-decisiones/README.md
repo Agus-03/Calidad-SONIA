@@ -65,6 +65,7 @@ Dos reglas que conviene sostener:
 | [0037](0037-toda-conversacion-nace-con-vendedor.md) | Toda conversación nace con un vendedor, y el vendedor maneja el bot de las suyas | Fase 5 · enmienda ADR-0004 §2 y ADR-0035 reglas 10 y 15 | Aceptada |
 | [0038](0038-alta-baja-y-pausa-del-agente-ia.md) | Alta, baja y pausa del agente IA | Fase 6 · F17 · enmienda ADR-0035 regla 12, ADR-0036 regla 9 y ADR-0007 §2 | Aceptada · revisada dos veces antes del merge: regla 5 y reglas 12 a 14; después, regla 4 invertida y reglas 15 y 16 |
 | [0039](0039-componentes-del-prompt-y-su-versionado.md) | Los componentes del prompt y su versionado | Fase 6 · F01 | Aceptada |
+| [0040](0040-previsualizacion-del-prompt.md) | La previsualización del prompt | Fase 6 · F03 | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

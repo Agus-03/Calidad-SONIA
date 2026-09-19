@@ -83,11 +83,12 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
         "messages": [message("hola")],
         # The six of F01: without them the agent reaches the model with no instructions at all (Regla 1).
         "prompt_components": [
-            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1},
-            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2},
+            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4()},
+            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4()},
         ],
-        # Declared so the fake connection records the INSERT: the write is the only one the brain makes in a turn.
+        # Declared so the fake connection records the INSERTs: the two writes are the only ones the brain makes in a turn.
         "generations": [],
+        "generation_components": [],
     }
     base.update(overrides)
     return base
@@ -165,6 +166,8 @@ def test_turns_generates_when_a_provider_answers() -> None:
     # Present because the evidence exists: it is the id the core writes back into generations.message_id.
     assert payload["generation_id"] is not None
     assert "generations" in connection.seen, "the turn generated an answer and left no evidence of it"
+    # One row per component assembled: without them OE1 reads this generation as missing all of them.
+    assert connection.seen.count("generation_components") == 2, "the generation does not name what it assembled"
 
 
 def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) -> None:

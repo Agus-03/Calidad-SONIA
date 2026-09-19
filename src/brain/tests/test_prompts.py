@@ -13,12 +13,12 @@ AGENT_ID = uuid4()
 
 # One of each, in an order that is not the declaration order of the enumeration: what rules is position, not the code.
 SIX = (
-    Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1),
-    Component(PromptComponentType.PERSONALITY, "Cercano y resolutivo.", 2),
-    Component(PromptComponentType.TONE, "Formal pero cálido.", 3),
-    Component(PromptComponentType.BRAND_VOICE, "Inmobiliaria familiar.", 4),
-    Component(PromptComponentType.BEHAVIOR, "Consultar antes de responder.", 5),
-    Component(PromptComponentType.RULES, "No tomar pagos por este canal.", 6),
+    Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1, uuid4()),
+    Component(PromptComponentType.PERSONALITY, "Cercano y resolutivo.", 2, uuid4()),
+    Component(PromptComponentType.TONE, "Formal pero cálido.", 3, uuid4()),
+    Component(PromptComponentType.BRAND_VOICE, "Inmobiliaria familiar.", 4, uuid4()),
+    Component(PromptComponentType.BEHAVIOR, "Consultar antes de responder.", 5, uuid4()),
+    Component(PromptComponentType.RULES, "No tomar pagos por este canal.", 6, uuid4()),
 )
 
 
@@ -72,12 +72,21 @@ def test_a_missing_component_prints_no_section() -> None:
 
 # An empty component is the same case as an absent one: a blank section reads as a void the agent has to fill.
 def test_an_empty_component_prints_no_section() -> None:
-    blank = (*SIX[:5], Component(PromptComponentType.RULES, "   ", 6))
+    blank = (*SIX[:5], Component(PromptComponentType.RULES, "   ", 6, uuid4()))
 
     prompt = build(components=blank)
 
     assert rules().headings[PromptComponentType.RULES] not in prompt.system
     assert prompt.components == 5
+
+
+# What went in is what the generation names: a blank block left out of the text cannot be recorded as assembled (OE1).
+def test_the_prompt_names_the_components_that_went_in_and_in_their_order() -> None:
+    blank = (*SIX[:5], Component(PromptComponentType.RULES, "   ", 6, uuid4()))
+
+    prompt = build(components=blank)
+
+    assert [c.version_id for c in prompt.assembled] == [c.version_id for c in SIX[:5]]
 
 
 # In Fase 1 there is neither dynamic context (Fase 9) nor RAG (Fase 12), so the envelope is the message and nothing else.
@@ -176,8 +185,12 @@ class FakeConnection:
 
 # active is F01's ablation switch and deleted_at is the definitive removal (C09): the query has to filter both.
 async def test_read_components_asks_for_the_active_ones_in_order() -> None:
+    tone, rules_version = uuid4(), uuid4()
     connection = FakeConnection(
-        [{"type": "tone", "content": "Formal.", "position": 3}, {"type": "rules", "content": "Sin pagos.", "position": 6}]
+        [
+            {"type": "tone", "content": "Formal.", "position": 3, "version_id": tone},
+            {"type": "rules", "content": "Sin pagos.", "position": 6, "version_id": rules_version},
+        ]
     )
 
     components = await read_components(connection, AGENT_ID)
@@ -186,6 +199,9 @@ async def test_read_components_asks_for_the_active_ones_in_order() -> None:
     assert "c.active" in connection.sql
     assert "c.deleted_at IS NULL" in connection.sql
     assert "ORDER  BY c.position" in connection.sql
+    # The newest version, which is the one the core wrote with this text (ADR-0039, regla 3).
+    assert "ORDER  BY pv.version_number DESC" in connection.sql
+    assert [c.version_id for c in components] == [tone, rules_version]
 
 
 async def test_read_components_returns_nothing_for_an_agent_with_no_components() -> None:

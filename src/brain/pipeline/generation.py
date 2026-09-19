@@ -154,6 +154,7 @@ async def generate(*, client: LLMClient, turn: Turn, prompt: Prompt) -> Generati
         currency=rate.currency,
         # Written once and already with its verdict (07-secuencia 4.2): pending_review and blocked have no path here yet.
         status=GenerationStatus.AUTO_SENT,
+        component_version_ids=tuple(c.version_id for c in prompt.assembled),
     )
 
 

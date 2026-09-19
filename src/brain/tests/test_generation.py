@@ -32,6 +32,9 @@ from prompts.repository import Component
 PROVIDER = "cohere"
 MODEL = "command-a-03-2025"
 
+# The version the one component of prompt() is, so a case can see it named by the generation.
+OBJECTIVE_VERSION = uuid4()
+
 COHERE = Rate(input_per_million=Decimal("2.50"), output_per_million=Decimal("10.00"), currency="USD")
 
 
@@ -81,7 +84,7 @@ def turn(provider: str = PROVIDER, model: str = MODEL) -> Turn:
 def prompt():
     return assemble(
         agent_name="Agente demo",
-        components=(Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1),),
+        components=(Component(PromptComponentType.OBJECTIVE, "Ayudar a inquilinos.", 1, OBJECTIVE_VERSION),),
         message="hola",
     )
 
@@ -137,6 +140,12 @@ async def test_the_generation_measures_the_call_it_made() -> None:
 
 
 # Written once and already with its verdict (07-secuencia section 4.2): there is no provisional value to correct later.
+async def test_the_generation_names_the_versions_it_assembled() -> None:
+    generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
+
+    assert generation.component_version_ids == (OBJECTIVE_VERSION,)
+
+
 async def test_the_status_is_the_verdict_and_not_a_placeholder() -> None:
     generation = await generate(client=FakeClient(), turn=turn(), prompt=prompt())
 

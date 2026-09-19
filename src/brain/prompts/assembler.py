@@ -42,8 +42,13 @@ class Prompt:
     user: str
     # Travels with the prompt because regla 9 exists so a measurement can name the version that produced it.
     rules_version: int
-    # How many of the six went in, which is the number OE1 counts.
-    components: int
+    # The ones that went in, in the order they went in: a blank one is left out, and that is what OE1 has to be able to see.
+    assembled: tuple[Component, ...]
+
+    # How many of the six went in, which is the number the log reports.
+    @property
+    def components(self) -> int:
+        return len(self.assembled)
 
 
 # Read once per process: the file is versioned data, so it changes with a deploy and never between two turns.
@@ -111,12 +116,14 @@ def assemble(
     spec = rules()
 
     blocks = [spec.preamble.replace(_AGENT_NAME, agent_name)]
+    assembled: list[Component] = []
     for component in components:
         # An empty component prints nothing, heading included: a blank section reads as a void the agent has to fill.
         if not component.content.strip():
             continue
         blocks.append(f"{spec.headings[component.type]}\n\n{component.content.strip()}")
-    written = len(blocks) - 1
+        assembled.append(component)
+    written = len(assembled)
     blocks.append(spec.closing)
 
     if written < len(PromptComponentType):
@@ -130,7 +137,7 @@ def assemble(
         system="\n\n".join(blocks),
         user=_envelope(spec, message, context, knowledge),
         rules_version=spec.version,
-        components=written,
+        assembled=tuple(assembled),
     )
 
 

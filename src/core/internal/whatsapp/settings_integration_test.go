@@ -98,25 +98,31 @@ func TestTheAdminNamesTheAIAgentOfANumberAgainstRealDDL(t *testing.T) {
 			t.Fatalf("the listing of the account does not carry %v", seeded.id)
 		}
 
-		// The read the webhook makes before a conversation is born, against the same agents: an active one is named and answers, a
-		// paused one is named and born off, and a removed one or one of another account is not named at all (ADR-0038, regla 3).
+		// The read the webhook makes before a conversation is born, of the inbox's default as it is now: an active agent is named and
+		// answers, a paused one is named and born off, and a removed one, no default at all or another account names none (ADR-0038,
+		// reglas 3 y 15).
 		for _, tc := range []struct {
 			name          string
 			account       uuid.UUID
-			aiAgentID     uuid.UUID
+			aiAgentID     *uuid.UUID
 			wantNamed     bool
 			wantCanAnswer bool
 		}{
-			{"active", account, active, true, true},
-			{"paused", account, paused, true, false},
-			{"removed", account, removed, false, false},
-			{"of another account", id.New(), active, false, false},
+			{"active", account, &active, true, true},
+			{"paused", account, &paused, true, false},
+			{"removed", account, &removed, false, false},
+			{"no default", account, nil, false, false},
+			{"of another account", id.New(), &active, false, false},
 		} {
-			named, canAnswer, err := repo.AIAgentForBirth(ctx, tc.account, tc.aiAgentID)
-			if err != nil {
-				t.Fatalf("AIAgentForBirth of the %s agent: %v", tc.name, err)
+			if _, err := repo.SetDefaultAIAgent(ctx, account, seeded.id, tc.aiAgentID); err != nil {
+				t.Fatalf("setting the default for the %s case: %v", tc.name, err)
 			}
-			if (named != nil) != tc.wantNamed || canAnswer != tc.wantCanAnswer {
+			named, canAnswer, err := repo.AIAgentForBirth(ctx, tc.account, seeded.id)
+			if err != nil {
+				t.Fatalf("AIAgentForBirth with the %s agent: %v", tc.name, err)
+			}
+			if (named != nil) != tc.wantNamed || canAnswer != tc.wantCanAnswer ||
+				(tc.wantNamed && *named != *tc.aiAgentID) {
 				t.Fatalf("the %s agent: named %v and able to answer %v, want %v and %v", tc.name, named, canAnswer, tc.wantNamed, tc.wantCanAnswer)
 			}
 		}

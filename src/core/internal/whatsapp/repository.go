@@ -164,19 +164,23 @@ func (r *Repository) AIAgentAssignable(ctx context.Context, accountID, aiAgentID
 	return nil
 }
 
-// FOR SHARE, the same lock as an assignment: a pause or a removal holds the row while it turns the agent's bots off, so a birth at
-// that instant waits and reads what it committed, and is never born on after the pause turned the rest off (ADR-0038).
+// The default of the inbox is read again here and not taken from the read before the transaction, so an admin who just changed or
+// cleared it is obeyed. FOR SHARE OF a, the same lock as an assignment, and on the agent alone: a pause or a removal holds the agent
+// while it turns its bots off, so a birth at that instant waits and reads what it committed. Locking the inbox too would take inbox
+// then agent, the reverse of a removal, and the two could wait on each other (ADR-0038).
 const aiAgentForBirth = `
-SELECT active
-FROM   ai_agents
-WHERE  id = $1 AND account_id = $2 AND deleted_at IS NULL
-FOR SHARE`
+SELECT a.id, a.active
+FROM   inboxes i
+JOIN   ai_agents a ON a.id = i.default_ai_agent_id AND a.account_id = i.account_id AND a.deleted_at IS NULL
+WHERE  i.id = $1 AND i.account_id = $2 AND i.deleted_at IS NULL
+FOR SHARE OF a`
 
-// AIAgentForBirth answers the agent a new conversation is born with and whether it can answer. A removed agent is none at all, the
-// state the removal leaves the inbox in once it commits; a paused one is still named, and born off (ADR-0038, regla 3).
-func (r *Repository) AIAgentForBirth(ctx context.Context, accountID, aiAgentID uuid.UUID) (*uuid.UUID, bool, error) {
+// AIAgentForBirth answers the agent a new conversation of the inbox is born with and whether it can answer. An inbox without one, or
+// whose agent was removed, names none; a paused one is still named, and born off (ADR-0038, reglas 3 y 15).
+func (r *Repository) AIAgentForBirth(ctx context.Context, accountID, inboxID uuid.UUID) (*uuid.UUID, bool, error) {
+	var aiAgentID uuid.UUID
 	var active bool
-	err := r.exec.QueryRow(ctx, aiAgentForBirth, aiAgentID, accountID).Scan(&active)
+	err := r.exec.QueryRow(ctx, aiAgentForBirth, inboxID, accountID).Scan(&aiAgentID, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}

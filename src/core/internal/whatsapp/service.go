@@ -41,7 +41,7 @@ type Store interface {
 	SaveWebhookEvent(ctx context.Context, event WebhookEvent) error
 	MarkEventProcessed(ctx context.Context, eventID uuid.UUID, at time.Time) error
 	ContactByPhone(ctx context.Context, accountID uuid.UUID, phone string) (Contact, error)
-	AIAgentForBirth(ctx context.Context, accountID, aiAgentID uuid.UUID) (*uuid.UUID, bool, error)
+	AIAgentForBirth(ctx context.Context, accountID, inboxID uuid.UUID) (*uuid.UUID, bool, error)
 }
 
 // Aggregate is what conversations/ exposes to the channel: whatsapp never writes those two tables itself (regla 1).
@@ -181,10 +181,8 @@ type birth struct {
 // read outside it, and a removal or a pause may have committed since. Taking the agent first, and nothing else of it, is what keeps
 // this from waiting in a cycle with a pause, which takes the agent and then the conversations (ADR-0038).
 func bornWith(ctx context.Context, store Store, inbox Inbox) (birth, error) {
-	if inbox.DefaultAIAgentID == nil {
-		return birth{}, nil
-	}
-	aiAgentID, canAnswer, err := store.AIAgentForBirth(ctx, inbox.AccountID, *inbox.DefaultAIAgentID)
+	// Asked even when the inbox read had no default: the admin may have given the number one since.
+	aiAgentID, canAnswer, err := store.AIAgentForBirth(ctx, inbox.AccountID, inbox.ID)
 	if err != nil {
 		return birth{}, err
 	}

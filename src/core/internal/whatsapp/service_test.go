@@ -125,12 +125,15 @@ func TestAConversationNobodyHoldsGetsItsVendorWhenTheCustomerWrites(t *testing.T
 // fails the webhook instead of guessing.
 func TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction(t *testing.T) {
 	boom := errors.New("connection reset")
+	laterAgent := uuid.New()
 
 	for _, tc := range []struct {
 		name          string
 		paused        bool
 		removed       bool
 		noDefault     bool
+		changedTo     *uuid.UUID
+		changed       bool
 		birthErr      error
 		wantNamed     bool
 		wantCanAnswer bool
@@ -139,7 +142,10 @@ func TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction(t *testing.
 		{name: "an agent that can answer is born on", wantNamed: true, wantCanAnswer: true},
 		{name: "a paused agent is still named, so resuming it lets the vendor turn it on, but it is born off", paused: true, wantNamed: true},
 		{name: "an agent removed since the inbox was read is not named at all, as the removal left the inbox", removed: true},
-		{name: "an inbox without an agent asks nothing and is born off", noDefault: true},
+		{name: "an inbox without an agent is born off", noDefault: true},
+		{name: "a default cleared after the inbox was read is obeyed, and the conversation is born off", changed: true},
+		{name: "a default given after the inbox was read is obeyed", noDefault: true, changed: true, changedTo: &laterAgent,
+			wantNamed: true, wantCanAnswer: true},
 		{name: "a failed read fails the webhook, and nothing is born on a guess", birthErr: boom, wantErr: boom},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -148,6 +154,7 @@ func TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction(t *testing.
 			if tc.noDefault {
 				repo.inbox.DefaultAIAgentID = nil
 			}
+			repo.defaultChanged, repo.defaultInTx = tc.changed, tc.changedTo
 
 			_, err := service(repo, agg, cs, slog.Default()).
 				Receive(context.Background(), []byte(metaTextPayload), sign(metaTextPayload, testAppSecret), time.Now().UTC())
@@ -160,8 +167,12 @@ func TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction(t *testing.
 				}
 				return
 			}
-			if tc.noDefault && repo.birthAsked != 0 {
-				t.Fatalf("the agent was asked for %d times with no default, want 0", repo.birthAsked)
+			// Once per webhook, even with no default read before: the inbox may have been given one since.
+			if repo.birthAsked != 1 {
+				t.Fatalf("the default was read %d times inside the transaction, want 1", repo.birthAsked)
+			}
+			if tc.changedTo != nil && (agg.bornWith == nil || *agg.bornWith != *tc.changedTo) {
+				t.Fatalf("born with %v, want the default given since, %v", agg.bornWith, *tc.changedTo)
 			}
 			if named := agg.bornWith != nil; named != tc.wantNamed || agg.canAnswer != tc.wantCanAnswer {
 				t.Fatalf("born naming an agent %v and able to answer %v, want %v and %v", named, agg.canAnswer, tc.wantNamed, tc.wantCanAnswer)

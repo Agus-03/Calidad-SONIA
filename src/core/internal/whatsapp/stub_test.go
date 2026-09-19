@@ -61,20 +61,29 @@ type stubChannel struct {
 	aiAgentRemoved bool
 	birthErr       error
 	birthAsked     int
+	// The default inside the transaction, when the admin changed it after the inbox was read.
+	defaultChanged bool
+	defaultInTx    *uuid.UUID
 
 	events    []WebhookEvent
 	processed []uuid.UUID
 }
 
-func (s *stubChannel) AIAgentForBirth(_ context.Context, _, aiAgentID uuid.UUID) (*uuid.UUID, bool, error) {
+// AIAgentForBirth reads the default the inbox has inside the transaction, which a case can make differ from the one read before it.
+func (s *stubChannel) AIAgentForBirth(_ context.Context, _, _ uuid.UUID) (*uuid.UUID, bool, error) {
 	s.birthAsked++
 	if s.birthErr != nil {
 		return nil, false, s.birthErr
 	}
-	if s.aiAgentRemoved {
+	current := s.inbox.DefaultAIAgentID
+	if s.defaultChanged {
+		current = s.defaultInTx
+	}
+	if s.aiAgentRemoved || current == nil {
 		return nil, false, nil
 	}
-	return &aiAgentID, !s.aiAgentPaused, nil
+	named := *current
+	return &named, !s.aiAgentPaused, nil
 }
 
 func (s *stubChannel) InboxByVerifyToken(_ context.Context, token string) (Inbox, error) {

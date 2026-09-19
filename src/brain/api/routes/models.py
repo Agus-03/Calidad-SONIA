@@ -8,9 +8,10 @@ from pipeline.generation import pricing
 router = APIRouter(tags=["models"])
 
 
-# The same list rate_for() reads, so the core's check and the turn's refusal can never disagree about what is priced.
+# The same list rate_for() reads, so the core's check and the turn's refusal can never disagree about what is priced. A plain def
+# and not async: the first call reads the file, and FastAPI runs a def in its thread pool instead of blocking the event loop.
 @router.get("/models", response_model=ModelsResponse)
-async def list_models() -> ModelsResponse:
+def list_models() -> ModelsResponse:
     spec = pricing()
     return ModelsResponse(
         pricing_version=spec.version,

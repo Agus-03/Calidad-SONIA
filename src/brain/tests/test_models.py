@@ -40,7 +40,7 @@ def test_models_lists_exactly_what_the_turn_can_price(settings: Settings) -> Non
     assert listed == set(pricing().rates)
 
 
-# Sorted so two calls answer the same body, which keeps a cached list in the core comparable with a fresh one.
+# Sorted so two calls answer the same body: the admin panel draws the list in the same order every time.
 def test_models_answers_in_a_stable_order(settings: Settings) -> None:
     with client(settings) as http:
         payload = http.get("/models", headers={"X-Internal-Token": "test-token"}).json()

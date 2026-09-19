@@ -198,8 +198,11 @@ CREATE TABLE prompt_components (
     deleted_at  timestamptz
 );
 
--- F01 declares one component of each type per agent; active is ablation and deleted_at is a definitive removal.
-CREATE UNIQUE INDEX uq_prompt_components_ai_agent_id_type ON prompt_components (ai_agent_id, type) WHERE active AND deleted_at IS NULL;
+-- F01 declares one component of each type per agent, switched off or not: editing it is a new version, not a second row (ADR-0039).
+CREATE UNIQUE INDEX uq_prompt_components_ai_agent_id_type ON prompt_components (ai_agent_id, type) WHERE deleted_at IS NULL;
+
+-- The brain assembles by position, and a tie would leave the order of the prompt to however PostgreSQL returns it (ADR-0039).
+CREATE UNIQUE INDEX uq_prompt_components_ai_agent_id_position ON prompt_components (ai_agent_id, position) WHERE deleted_at IS NULL;
 
 -- H-20: active is versioned too, or OE1 compares a set against itself and can only ever return 100 percent.
 CREATE TABLE prompt_component_versions (

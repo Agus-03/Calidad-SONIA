@@ -81,20 +81,29 @@ func (c *Client) Turn(ctx context.Context, req TurnRequest) (TurnResponse, error
 func (c *Client) Preview(ctx context.Context, req PreviewRequest) (PreviewResponse, error) {
 	var res PreviewResponse
 	err := c.http.PostJSON(ctx, previewPath, req, &res)
-	if err != nil {
-		agent := slog.String("ai_agent_id", req.AIAgentID.String())
-		cause := slog.String("cause", err.Error())
+	if err == nil {
+		return res, nil
+	}
+	agent := slog.String("ai_agent_id", req.AIAgentID.String())
 
-		var status *httpclient.StatusError
-		if errors.As(err, &status) && status.Status == http.StatusNotFound {
-			c.log.Warn("brain does not know the ai agent", agent, cause)
-			return PreviewResponse{}, fmt.Errorf("%w: %w", ErrAIAgentNotFound, err)
-		}
-
-		c.log.Error("brain preview call failed", agent, cause)
+	var status *httpclient.StatusError
+	if !errors.As(err, &status) {
+		c.log.Error("brain preview call failed", agent, slog.String("cause", err.Error()))
 		return PreviewResponse{}, err
 	}
-	return res, nil
+	// The status alone and never the body, here and in the error that travels up to the request log: a 422 of FastAPI echoes its
+	// input, and the input of a preview is the text of the drafts.
+	code := slog.Int("status", status.Status)
+	if status.Status == http.StatusNotFound {
+		c.log.Warn("brain does not know the ai agent", agent, code)
+		return PreviewResponse{}, fmt.Errorf("%w: status %d", ErrAIAgentNotFound, status.Status)
+	}
+	if status.Retryable() {
+		c.log.Error("brain preview call failed", agent, code)
+	} else {
+		c.log.Warn("brain refused the preview", agent, code)
+	}
+	return PreviewResponse{}, fmt.Errorf("brainclient: the brain answered the preview with status %d", status.Status)
 }
 
 // Models reads the priced models. Asked on every save and never cached: pricing.yaml changes with a deploy of the brain, not of the core.

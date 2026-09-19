@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -246,6 +247,31 @@ func TestPreviewTranslatesTheBrains404(t *testing.T) {
 	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
 	if !errors.Is(err, ErrAIAgentNotFound) {
 		t.Fatalf("error = %v, want ErrAIAgentNotFound", err)
+	}
+}
+
+// A refusal of the brain travels up without its body: FastAPI echoes the drafts in a 422, and the error ends in the request log.
+func TestPreviewKeepsTheDraftsOutOfTheError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":[{"input":"texto secreto del borrador"}]}`))
+	}))
+	defer server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || strings.Contains(err.Error(), "texto secreto") {
+		t.Fatalf("error = %v, want the refusal without the drafts it echoed", err)
+	}
+}
+
+// A brain that is not there at all is a failure too, and it is not mistaken for a 404.
+func TestPreviewPassesAnUnreachableBrainUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+
+	_, err := New(Options{BaseURL: server.URL}).Preview(context.Background(), PreviewRequest{AIAgentID: uuid.New()})
+	if err == nil || errors.Is(err, ErrAIAgentNotFound) {
+		t.Fatalf("error = %v, want the failure to reach the brain", err)
 	}
 }
 

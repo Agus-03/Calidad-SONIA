@@ -210,8 +210,14 @@ func waitForHealth(t *testing.T, base string) {
 	t.Fatalf("%s/health never answered 200: the stack is not up", base)
 }
 
-// postWebhook signs with secret the way Meta does, over the exact bytes it sends.
+// postWebhook signs with secret the way Meta does, over the exact bytes it sends, as the contact of the seed.
 func postWebhook(t *testing.T, base, wamid, secret string) int {
+	t.Helper()
+	return postWebhookFrom(t, base, wamid, secret, seededContactPhone)
+}
+
+// postWebhookFrom is postWebhook from any number: a number nobody wrote from yet opens a conversation of its own.
+func postWebhookFrom(t *testing.T, base, wamid, secret, from string) int {
 	t.Helper()
 
 	// Meta's shape and not ours: a fixture built from the core's own parser could not catch the parser drifting from Meta.
@@ -220,7 +226,7 @@ func postWebhook(t *testing.T, base, wamid, secret string) int {
 		`"contacts":[{"wa_id":"%[2]s","profile":{"name":"Contacto Demo"}}],`+
 		`"messages":[{"from":"%[2]s","id":"%[3]s","timestamp":"1788700000","type":"text",`+
 		`"text":{"body":"Hola, el depto de 2 ambientes en Jesus Maria sigue disponible?"}}]}}]}]}`,
-		seededPhoneNumberID, seededContactPhone, wamid)
+		seededPhoneNumberID, from, wamid)
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payload))

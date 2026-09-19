@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -221,6 +222,27 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 		if newest.Version != 2 || newest.ChangedByID == nil || *newest.ChangedByID != adminID.String() ||
 			newest.ChangeNote == nil || *newest.ChangeNote != "más cercano" {
 			t.Fatalf("the newest version = %+v, want 2 by %v with its note", newest, adminID)
+		}
+	})
+
+	t.Run("la previsualizacion arma lo que esta en pantalla con el ensamblador del cerebro", func(t *testing.T) {
+		drafts := `{"components":[{"type":"rules","content":"Sin pagos.","position":6},` +
+			`{"type":"objective","content":"Ayudar a inquilinos.","position":1},{"type":"tone","content":"  ","position":3}]}`
+		status, body := call(t, core, http.MethodPost, "/api/v1/ai-agents/"+agentID+"/preview", token, drafts)
+		if status != http.StatusOK {
+			t.Fatalf("the preview: got %d - %s", status, body)
+		}
+		var shown struct {
+			System     string   `json:"system"`
+			Components []string `json:"components"`
+		}
+		if err := json.Unmarshal([]byte(body), &shown); err != nil {
+			t.Fatalf("decoding the preview: %v - %s", err, body)
+		}
+		// By position and without the blank tone: the drafts reached the real assembler, not a copy of it in the core.
+		if len(shown.Components) != 2 || shown.Components[0] != "objective" || shown.Components[1] != "rules" ||
+			strings.Index(shown.System, "Ayudar a inquilinos.") > strings.Index(shown.System, "Sin pagos.") {
+			t.Fatalf("the preview = %+v, want the objective then the rules and no tone", shown)
 		}
 	})
 

@@ -80,7 +80,7 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
-│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente
+│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente · escribe la generación con lo que ensambló (ADR-0039, regla 10)
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
@@ -92,7 +92,7 @@ sonia/
 │   │   ├── prompts/                    F03, F04 · ÚNICA implementación del ensamblador
 │   │   │   ├── assembler.py
 │   │   │   ├── budget.py
-│   │   │   ├── repository.py
+│   │   │   ├── repository.py           los componentes activos con su versión más nueva
 │   │   │   └── rewriter.py
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
@@ -112,9 +112,11 @@ sonia/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
 │   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y rechaza por nombre lo que no expone (ADR-0038, regla 7)
-│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038)
+│   │   │   │   ├── components_controller.go  los seis bloques de F01, bajo el agente IA · tipo y posición no se editan (ADR-0039)
+│   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038) · las de componentes también (ADR-0039)
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
-│   │   │   │   ├── repository.go       ai_agents y audit_logs · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
+│   │   │   │   ├── components.go       un componente por tipo · cada cambio del texto o del interruptor es una versión (ADR-0039)
+│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas

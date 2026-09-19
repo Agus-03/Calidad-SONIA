@@ -596,7 +596,7 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 - **`accounts` tiene exactamente una fila** durante todo el proyecto (ADR-0012).
 - **`knowledge_bases.collection_name` y `document_chunks.vector_id` apuntan a Qdrant, fuera de PostgreSQL.** No son FK y **no llevan línea de relación**; la consistencia con el vector store es eventual (ADR-0010). Anotarlo evita que se lea como una FK olvidada.
 - Un contacto tiene **como máximo una conversación no resuelta** a la vez (ADR-0002).
-- Un `prompt_component` tiene **un solo tipo activo por agente** (F01: seis componentes, uno de cada tipo).
+- Un agente tiene **a lo sumo un `prompt_component` de cada tipo**, activo o no, y dos no comparten `position` (F01: seis componentes, uno de cada tipo · ADR-0039).
 - **`transfer_policies` manda sobre `rules`.** La decisión de transferir la toma el clasificador según sus umbrales; el componente `rules` no puede habilitarla ni inhibirla. Sin esta nota, las dos entidades parecen configurar lo mismo por dos vías.
 - **El clasificador evalúa las cuatro señales de F12 en cada bloque, dispare o no** (ADR-0014). Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: lo que no se evalúa no deja fila, y el detector de frustración deja de ser medible.
 - **Se crea una `prompt_component_version` cuando cambia `content` o `active`**, no sólo `content` (ADR-0015). Sin versionar el apagado, OE1 compara un conjunto contra sí mismo y sólo puede dar 100 %.

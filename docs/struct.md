@@ -114,7 +114,7 @@ sonia/
 │   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y lo de la Fase 9 se rechaza por nombre (ADR-0038)
 │   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038)
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas
-│   │   │   │   ├── repository.go       ai_agents y audit_logs · la baja es deleted_at y active es la pausa
+│   │   │   │   ├── repository.go       ai_agents y audit_logs · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
@@ -149,7 +149,7 @@ sonia/
 │   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037)
+│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
 │   │   │   │   ├── repository.go       la bandeja con su último mensaje y sus fallidos · escribe conversation_assignments
 │   │   │   │   └── model.go
 │   │   │   │
@@ -201,8 +201,10 @@ sonia/
 │   │   │   │
 │   │   │   └── whatsapp/               canal · F20, F29
 │   │   │       ├── controller.go       entrada del webhook · lee la firma y responde a Meta antes del turno
-│   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador
+│   │   │       ├── settings_controller.go  el panel de los números, bajo /api/v1 · sin ningún secreto en la respuesta (ADR-0038)
+│   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador · GET y PATCH /inboxes, sólo admin
 │   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja
+│   │   │       ├── settings.go         qué agente IA atiende cada número · audita por el repositorio de agents/ (ADR-0038)
 │   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031) · vacía el default de un agente IA dado de baja (ADR-0038)
 │   │   │       ├── model.go
 │   │   │       ├── payload.go          la forma que manda Meta, reducida a lo que se lee

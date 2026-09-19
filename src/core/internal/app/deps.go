@@ -140,6 +140,17 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:    log,
 	})
 
+	blocks := agents.NewComponents(agents.ComponentOptions{
+		Repo: agentRepo,
+		// A block and its version commit together, so no component changes without the version OE2 reads (regla 5, ADR-0039).
+		Tx: func(ctx context.Context, fn func(agents.ComponentStore) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
+	})
+
 	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
 		Repo: channelRepo,
 		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
@@ -158,6 +169,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
 			agents.NewController(identity, log),
+			agents.NewComponentsController(blocks, log),
 			whatsapp.NewSettingsController(numbers, log),
 		},
 		tokenVerifier:     verifyToken(tokens),

@@ -23,3 +23,18 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodDelete, Path: routeBase + "/:id", Roles: admin, Handler: c.remove},
 	}
 }
+
+// Under the agent they belong to, and for the admin alone for the same reason: the Admin of Anexo B "configura los componentes del
+// prompt de los agentes" (ADR-0039).
+func (c *ComponentsController) Routes() []soniahttp.Route {
+	admin := []enums.OperatorRole{enums.OperatorRoleAdmin}
+	components := routeBase + "/:id/components"
+
+	return []soniahttp.Route{
+		{Method: http.MethodGet, Path: components, Roles: admin, Handler: c.list},
+		{Method: http.MethodPost, Path: components, Roles: admin, Handler: c.create},
+		{Method: http.MethodPatch, Path: components + "/:componentId", Roles: admin, Handler: c.update},
+		{Method: http.MethodDelete, Path: components + "/:componentId", Roles: admin, Handler: c.remove},
+		{Method: http.MethodGet, Path: components + "/:componentId/versions", Roles: admin, Handler: c.versions},
+	}
+}

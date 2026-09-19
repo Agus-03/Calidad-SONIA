@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
 // AIAgent is the live row. default_mode and extraction_enabled are deliberately not here: neither changes anything until Fase 9,
@@ -99,4 +101,51 @@ type change struct {
 	// Only on a pause or a removal that turned some bot off: resuming the agent turns none back on, so this is the one record of
 	// which conversations it left to their vendor (ADR-0038).
 	TurnedOffConversationIDs []uuid.UUID `json:"turned_off_conversation_ids,omitempty"`
+}
+
+// Component is one of the six blocks of F01 as it stands now. There is one per type and agent: editing it is writing a new text for
+// the same block, which is why every change lands as a version and never as a second row (ADR-0039).
+type Component struct {
+	ID        uuid.UUID
+	AIAgentID uuid.UUID
+	Type      enums.PromptComponentType
+	Content   string
+	// Where the block goes in the prompt: sent by the panel, which knows the order prompting asks for, and fixed from then on (ADR-0039).
+	Position int16
+	// Off is ablation: the block exists and is not assembled. Removing it is deleted_at, which no read of this package returns.
+	Active bool
+	// The number of the version the row is at, the one a generation assembled from it names (H-20).
+	Version   int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// NewComponent is what the panel sends to add a block. A component is born active, the same as an agent.
+type NewComponent struct {
+	Type    enums.PromptComponentType
+	Content string
+	// An int and not the column's smallint, so a number too large is refused as a position and not as a body of the wrong type.
+	Position   int
+	ChangeNote *string
+}
+
+// ComponentEdit is what can change of a block after it exists: its text and whether it is assembled. A nil field keeps its value.
+type ComponentEdit struct {
+	Content    *string
+	Active     *bool
+	ChangeNote *string
+}
+
+// ComponentVersion is one frozen state of a block: what it said, whether it was on, who left it that way and why. It is the audit of
+// the components, so audit_logs does not repeat it (ADR-0039).
+type ComponentVersion struct {
+	ID          uuid.UUID
+	ComponentID uuid.UUID
+	Number      int
+	Content     string
+	Active      bool
+	// Nil only for the versions a seed wrote, which nobody edited.
+	ChangedBy  *uuid.UUID
+	ChangeNote *string
+	CreatedAt  time.Time
 }

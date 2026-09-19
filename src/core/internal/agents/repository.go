@@ -142,3 +142,145 @@ func (r *Repository) RecordInboxDefault(ctx context.Context, operatorID, inboxID
 		ID: id.New(), OperatorID: operatorID, Action: actionUpdate, EntityType: entityInbox, EntityID: inboxID, Changes: changes,
 	})
 }
+
+// The version is read and not stored in the row: prompt_component_versions is the one place it lives, so the two cannot disagree. The
+// agent is joined for its account and its removal: a component of a removed agent is out of reach like the agent (C09).
+const componentSelect = `
+SELECT c.id, c.ai_agent_id, c.type, c.content, c.position, c.active, c.created_at, c.updated_at,
+       COALESCE((SELECT max(v.version_number) FROM prompt_component_versions v WHERE v.prompt_component_id = c.id), 0)
+FROM   prompt_components c
+JOIN   ai_agents a ON a.id = c.ai_agent_id
+WHERE  c.deleted_at IS NULL AND a.deleted_at IS NULL AND a.account_id = $1 AND c.ai_agent_id = $2`
+
+func scanComponent(row pgx.Row) (Component, error) {
+	var c Component
+	err := row.Scan(&c.ID, &c.AIAgentID, &c.Type, &c.Content, &c.Position, &c.Active, &c.CreatedAt, &c.UpdatedAt, &c.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Component{}, ErrComponentNotFound
+	}
+	if err != nil {
+		return Component{}, fmt.Errorf("agents: scan prompt component: %w", err)
+	}
+	return c, nil
+}
+
+// Components lists the blocks of an agent in the order the brain assembles them, the inactive ones included: the panel shows them to
+// be turned back on.
+func (r *Repository) Components(ctx context.Context, accountID, agentID uuid.UUID) ([]Component, error) {
+	rows, err := r.exec.Query(ctx, componentSelect+" ORDER BY c.position, c.id", accountID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("agents: list prompt components: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Component{}
+	for rows.Next() {
+		c, err := scanComponent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) Component(ctx context.Context, accountID, agentID, componentID uuid.UUID) (Component, error) {
+	return scanComponent(r.exec.QueryRow(ctx, componentSelect+" AND c.id = $3", accountID, agentID, componentID))
+}
+
+// ComponentForUpdate locks the block and not the agent, so two edits of one block number their versions one after the other.
+func (r *Repository) ComponentForUpdate(ctx context.Context, accountID, agentID, componentID uuid.UUID) (Component, error) {
+	return scanComponent(r.exec.QueryRow(ctx, componentSelect+" AND c.id = $3 FOR NO KEY UPDATE OF c", accountID, agentID, componentID))
+}
+
+// Every live block of the agent and not only the active ones: the unique index of 0001 covers the active, and one block per type
+// is the rule of ADR-0039, whose check lives here while the caller holds the agent locked.
+const componentTaken = `
+SELECT COALESCE(bool_or(type = $2), false), COALESCE(bool_or(position = $3), false)
+FROM   prompt_components
+WHERE  ai_agent_id = $1 AND deleted_at IS NULL`
+
+// ComponentTaken answers whether the agent already has a block of that type, and one at that position.
+func (r *Repository) ComponentTaken(ctx context.Context, agentID uuid.UUID, t enums.PromptComponentType, position int16) (bool, bool, error) {
+	var typeTaken, positionTaken bool
+	if err := r.exec.QueryRow(ctx, componentTaken, agentID, t, position).Scan(&typeTaken, &positionTaken); err != nil {
+		return false, false, fmt.Errorf("agents: read the prompt components taken: %w", err)
+	}
+	return typeTaken, positionTaken, nil
+}
+
+const componentInsert = `
+INSERT INTO prompt_components (id, ai_agent_id, type, content, position)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, ai_agent_id, type, content, position, active, created_at, updated_at, 0`
+
+// CreateComponent returns the row as PostgreSQL wrote it, at version 0 until the caller appends the first one.
+func (r *Repository) CreateComponent(ctx context.Context, c Component) (Component, error) {
+	return scanComponent(r.exec.QueryRow(ctx, componentInsert, c.ID, c.AIAgentID, c.Type, c.Content, c.Position))
+}
+
+const componentUpdate = `
+UPDATE prompt_components
+SET    content = $2, active = $3, updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL
+RETURNING id, ai_agent_id, type, content, position, active, created_at, updated_at, 0`
+
+// UpdateComponent writes the text and the switch; the type and the position never change once the block exists (ADR-0039).
+func (r *Repository) UpdateComponent(ctx context.Context, componentID uuid.UUID, content string, active bool) (Component, error) {
+	return scanComponent(r.exec.QueryRow(ctx, componentUpdate, componentID, content, active))
+}
+
+// SoftDeleteComponent and not a DELETE: generation_components names its versions, and OE1 reads deleted_at to know since when the
+// block no longer had to be assembled (05-consultas-de-metricas, OE1).
+func (r *Repository) SoftDeleteComponent(ctx context.Context, componentID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx,
+		`UPDATE prompt_components SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, componentID)
+	if err != nil {
+		return fmt.Errorf("agents: delete prompt component: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrComponentNotFound
+	}
+	return nil
+}
+
+// The number is the next one of the block, counted here and not by the caller: the caller holds the block locked, so two versions
+// can never read the same maximum, and the unique index of 0001 would refuse it if they did.
+const versionInsert = `
+INSERT INTO prompt_component_versions (id, prompt_component_id, version_number, content, active, changed_by_operator_id, change_note)
+SELECT $1, $2, COALESCE(max(version_number), 0) + 1, $3, $4, $5, $6
+FROM   prompt_component_versions
+WHERE  prompt_component_id = $2
+RETURNING version_number`
+
+// AppendVersion is only ever an INSERT: a version is what the block said at a moment, and history is not corrected (C09).
+func (r *Repository) AppendVersion(ctx context.Context, v ComponentVersion) (int, error) {
+	var number int
+	if err := r.exec.QueryRow(ctx, versionInsert, v.ID, v.ComponentID, v.Content, v.Active, v.ChangedBy, v.ChangeNote).Scan(&number); err != nil {
+		return 0, fmt.Errorf("agents: insert prompt component version: %w", err)
+	}
+	return number, nil
+}
+
+// Versions answers the history of a block, newest first, which is the order the panel shows it in.
+func (r *Repository) Versions(ctx context.Context, componentID uuid.UUID) ([]ComponentVersion, error) {
+	rows, err := r.exec.Query(ctx, `
+		SELECT id, prompt_component_id, version_number, content, active, changed_by_operator_id, change_note, created_at
+		FROM   prompt_component_versions
+		WHERE  prompt_component_id = $1
+		ORDER  BY version_number DESC`, componentID)
+	if err != nil {
+		return nil, fmt.Errorf("agents: list prompt component versions: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ComponentVersion{}
+	for rows.Next() {
+		var v ComponentVersion
+		if err := rows.Scan(&v.ID, &v.ComponentID, &v.Number, &v.Content, &v.Active, &v.ChangedBy, &v.ChangeNote, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("agents: scan prompt component version: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}

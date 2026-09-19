@@ -202,7 +202,7 @@ func body(gc *gin.Context, allowed []string) (map[string]json.RawMessage, error)
 			known = known || a == field
 		}
 		if !known {
-			return nil, soniahttp.BadRequest("unknown_field", "the field "+field+" cannot be written on an ai agent")
+			return nil, soniahttp.BadRequest("unknown_field", "the field "+field+" cannot be written here")
 		}
 	}
 	return raw, nil

@@ -30,8 +30,24 @@ class Component:
     type: PromptComponentType
     content: str
     position: int
-    # The prompt_component_versions row this text is, which is what generation_components points at.
-    version_id: UUID
+    # The prompt_component_versions row this text is, which is what generation_components points at. None only for a draft of the
+    # preview, which has no version yet and is never written (ADR-0040).
+    version_id: UUID | None = None
+
+
+# The name only: the preview gets the texts from the panel, and the name is the one thing of the agent the scaffolding prints.
+# A paused agent answers too, because paused is when the administrator corrects it (ADR-0039, regla 8).
+_AGENT_NAME = """
+SELECT a.name
+FROM   ai_agents a
+WHERE  a.id = %(agent)s AND a.deleted_at IS NULL
+"""
+
+
+async def read_agent_name(conn: AsyncConnection, ai_agent_id: UUID) -> str | None:
+    cursor = await conn.execute(_AGENT_NAME, {"agent": ai_agent_id})
+    row = await cursor.fetchone()
+    return row["name"] if row else None
 
 
 # Returns however many there are: F01 declares six, but a company with no brand voice is a valid state and not an error.

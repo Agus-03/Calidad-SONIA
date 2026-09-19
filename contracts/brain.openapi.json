@@ -1,6 +1,31 @@
 {
   "components": {
     "schemas": {
+      "DraftComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "position": {
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Position",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PromptComponentType"
+          }
+        },
+        "required": [
+          "type",
+          "content",
+          "position"
+        ],
+        "title": "DraftComponent",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -35,6 +60,56 @@
         "title": "ModelsResponse",
         "type": "object"
       },
+      "PreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_agent_id": {
+            "format": "uuid",
+            "title": "Ai Agent Id",
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/DraftComponent"
+            },
+            "maxItems": 6,
+            "title": "Components",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ai_agent_id",
+          "components"
+        ],
+        "title": "PreviewRequest",
+        "type": "object"
+      },
+      "PreviewResponse": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/PromptComponentType"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "rules_version": {
+            "title": "Rules Version",
+            "type": "integer"
+          },
+          "system": {
+            "title": "System",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "rules_version",
+          "components"
+        ],
+        "title": "PreviewResponse",
+        "type": "object"
+      },
       "PricedModel": {
         "properties": {
           "model": {
@@ -52,6 +127,18 @@
         ],
         "title": "PricedModel",
         "type": "object"
+      },
+      "PromptComponentType": {
+        "enum": [
+          "objective",
+          "personality",
+          "behavior",
+          "tone",
+          "brand_voice",
+          "rules"
+        ],
+        "title": "PromptComponentType",
+        "type": "string"
       },
       "TransferProposal": {
         "properties": {
@@ -273,6 +360,59 @@
         "summary": "List Models",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/prompts/preview": {
+      "post": {
+        "operationId": "preview_prompts_preview_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Internal-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview",
+        "tags": [
+          "prompts"
         ]
       }
     },

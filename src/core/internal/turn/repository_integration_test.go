@@ -94,7 +94,7 @@ func TestTargetJoinsTheConversationToItsContact(t *testing.T) {
 
 // The pause and the removal are read from ai_agents at the moment of the turn, against real DDL: a stub cannot tell a NULL agent
 // from a NULL active, and the COALESCE is what keeps the first from scanning into a bool (ADR-0038).
-func TestTargetSaysWhetherTheAgentCanAnswer(t *testing.T) {
+func TestTargetSaysWhetherTheAIAgentCanAnswer(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
@@ -111,7 +111,7 @@ func TestTargetSaysWhetherTheAgentCanAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
 				conversationID, _ := conversation(t, ctx, exec)
-				agentID := ownAgent(t, ctx, exec, conversationID)
+				agentID := ownAIAgent(t, ctx, exec, conversationID)
 				if _, err := exec.Exec(ctx, tc.agent, agentID); err != nil {
 					t.Fatalf("set the agent up: %v", err)
 				}
@@ -120,8 +120,8 @@ func TestTargetSaysWhetherTheAgentCanAnswer(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Target: got %v, want no error", err)
 				}
-				if target.AgentAvailable != tc.want {
-					t.Fatalf("AgentAvailable = %v, want %v", target.AgentAvailable, tc.want)
+				if target.AIAgentAvailable != tc.want {
+					t.Fatalf("AIAgentAvailable = %v, want %v", target.AIAgentAvailable, tc.want)
 				}
 				return rollback
 			})
@@ -143,8 +143,8 @@ func TestTargetSaysWhetherTheAgentCanAnswer(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Target: got %v, want no error", err)
 			}
-			if target.AgentAvailable {
-				t.Fatal("AgentAvailable = true for a conversation with no agent")
+			if target.AIAgentAvailable {
+				t.Fatal("AIAgentAvailable = true for a conversation with no agent")
 			}
 			return rollback
 		})
@@ -154,8 +154,8 @@ func TestTargetSaysWhetherTheAgentCanAnswer(t *testing.T) {
 	})
 }
 
-// ownAgent gives the conversation an agent of its own, so a case that pauses or removes it never touches the demo agent.
-func ownAgent(t *testing.T, ctx context.Context, exec db.Executor, conversationID uuid.UUID) uuid.UUID {
+// ownAIAgent gives the conversation an agent of its own, so a case that pauses or removes it never touches the demo agent.
+func ownAIAgent(t *testing.T, ctx context.Context, exec db.Executor, conversationID uuid.UUID) uuid.UUID {
 	t.Helper()
 
 	agentID := id.New()

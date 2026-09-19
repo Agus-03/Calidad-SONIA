@@ -32,7 +32,7 @@ WHERE     c.id = $1 AND c.deleted_at IS NULL`
 func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AgentAvailable)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AIAgentAvailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrConversationNotFound
 	}

@@ -70,7 +70,7 @@ func TestTheIncomingMessageIsLinkedToTheBatch(t *testing.T) {
 }
 
 // A conversation with no agent has nobody to answer it, and the turn must not open a batch for a turn that will not happen.
-func TestATurnWithNoAgentDoesNothing(t *testing.T) {
+func TestATurnWithNoAIAgentDoesNothing(t *testing.T) {
 	h := conductor()
 
 	h.orchestrator.Start(context.Background(), uuid.New(), uuid.New(), nil)
@@ -99,9 +99,9 @@ func TestOnlyTheAutonomousModeAnswersOnItsOwn(t *testing.T) {
 
 // A paused or removed agent answers nothing, and like a conversation that is off it leaves no batch behind: a pause is a decision
 // of the administrator and not a failure to record (ADR-0038).
-func TestAnAgentThatIsPausedOrRemovedDoesNotAnswer(t *testing.T) {
+func TestAnAIAgentThatIsPausedOrRemovedDoesNotAnswer(t *testing.T) {
 	h := conductor()
-	h.store.target.AgentAvailable = false
+	h.store.target.AIAgentAvailable = false
 
 	h.turn()
 

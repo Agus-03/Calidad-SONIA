@@ -466,7 +466,11 @@ func TestAClosedWindowWritesNothing(t *testing.T) {
 func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
-		if _, err := exec.Exec(ctx, `UPDATE conversations SET ai_agent_id = (SELECT id FROM ai_agents LIMIT 1) WHERE id = $1`, w.mineConv); err != nil {
+		// One that can answer: since ADR-0038 a paused or removed agent refuses the switch, and the table may hold one.
+		if _, err := exec.Exec(ctx, `
+			UPDATE conversations
+			SET    ai_agent_id = (SELECT id FROM ai_agents WHERE active AND deleted_at IS NULL LIMIT 1)
+			WHERE  id = $1`, w.mineConv); err != nil {
 			t.Fatalf("give the conversation an agent: %v", err)
 		}
 		service := sendingDesk(exec, &stubSender{})
@@ -497,11 +501,53 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 			}
 		}
 
-		if _, err := service.SetMode(ctx, supervisor, w.pooledConv, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAgent) {
-			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAgent", err)
+		if _, err := service.SetMode(ctx, supervisor, w.pooledConv, enums.AgentModeAutonomous); !errors.Is(err, ErrNoAIAgent) {
+			t.Fatalf("turning on a conversation with no agent: got %v, want ErrNoAIAgent", err)
 		}
 		if _, _, holder := read(w.pooledConv); holder != nil {
 			t.Fatalf("a mode request took the pool for %v", *holder)
+		}
+
+		// The agent read through Target: once the admin pauses it, the switch is refused before the write (ADR-0038).
+		paused := id.New()
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO ai_agents (id, account_id, name, default_mode, llm_provider, llm_model, active)
+			VALUES ($1, $2, 'Agente pausado', 'autonomous', 'cohere', 'command-a-03-2025', false)`, paused, w.account); err != nil {
+			t.Fatalf("insert a paused agent: %v", err)
+		}
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET ai_agent_id = $1 WHERE id = $2`, paused, w.mineConv); err != nil {
+			t.Fatalf("give the conversation the paused agent: %v", err)
+		}
+		if _, err := service.SetMode(ctx, supervisor, w.mineConv, enums.AgentModeAutonomous); !errors.Is(err, ErrAIAgentUnavailable) {
+			t.Fatalf("turning on a conversation whose agent is paused: got %v, want ErrAIAgentUnavailable", err)
+		}
+		if mode, _, _ := read(w.mineConv); mode != enums.AgentModeOff {
+			t.Fatalf("the refused switch still wrote %q", mode)
+		}
+
+		// And the listing says so before anyone tries: the state of the bot F22 shows, read with the same three conditions.
+		available := func() bool {
+			t.Helper()
+			rows, err := NewRepository(exec).List(ctx, supervisor, nil, 1000)
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			for _, s := range rows {
+				if s.ID == w.mineConv {
+					return s.AIAgentAvailable
+				}
+			}
+			t.Fatalf("the listing does not show %v", w.mineConv)
+			return false
+		}
+		if available() {
+			t.Fatal("the listing says the paused agent can answer")
+		}
+		if _, err := exec.Exec(ctx, `UPDATE ai_agents SET active = true WHERE id = $1`, paused); err != nil {
+			t.Fatalf("resume the agent: %v", err)
+		}
+		if !available() {
+			t.Fatal("the listing says the resumed agent cannot answer")
 		}
 	})
 }

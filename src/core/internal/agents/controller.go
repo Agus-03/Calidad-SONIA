@@ -59,7 +59,7 @@ type listResponse struct {
 	Items []agentResponse `json:"items"`
 }
 
-func present(a Agent) agentResponse {
+func present(a AIAgent) agentResponse {
 	return agentResponse{
 		ID: a.ID.String(), Name: a.Name, Description: a.Description, LLMProvider: a.LLMProvider, LLMModel: a.LLMModel,
 		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active,
@@ -280,7 +280,9 @@ func translate(err error) error {
 	case errors.Is(err, ErrInvalidTemperature):
 		return soniahttp.BadRequest("invalid_temperature", "the temperature cannot be negative").WithCause(err)
 	case errors.Is(err, ErrInvalidMaxTokens):
-		return soniahttp.BadRequest("invalid_max_tokens", "max_tokens has to be a positive whole number").WithCause(err)
+		return soniahttp.BadRequest("invalid_max_tokens", "max_tokens has to be a whole number between 1 and 2147483647").WithCause(err)
+	case errors.Is(err, ErrChanged):
+		return soniahttp.Conflict("ai_agent_changed", "another save changed this ai agent: reload it and try again").WithCause(err)
 	case errors.Is(err, ErrModelsUnavailable):
 		return soniahttp.Unavailable("models_unavailable", "the brain could not confirm the model, try again").WithCause(err)
 	default:

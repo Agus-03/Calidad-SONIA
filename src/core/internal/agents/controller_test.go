@@ -49,10 +49,10 @@ func codeOf(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return body.Error.Code
 }
 
-const validAgent = `{"name":"Agente","llm_provider":"cohere","llm_model":"command-a-03-2025"}`
+const validAIAgent = `{"name":"Agente","llm_provider":"cohere","llm_model":"command-a-03-2025"}`
 
-// TestOnlyTheAdminManagesAgents is F17 read with Anexo B: the whole management is the admin panel's, reading included (ADR-0038).
-func TestOnlyTheAdminManagesAgents(t *testing.T) {
+// TestOnlyTheAdminManagesAIAgents is F17 read with Anexo B: the whole management is the admin panel's, reading included (ADR-0038).
+func TestOnlyTheAdminManagesAIAgents(t *testing.T) {
 	routes := []struct {
 		method string
 		path   string
@@ -60,7 +60,7 @@ func TestOnlyTheAdminManagesAgents(t *testing.T) {
 		want   int
 	}{
 		{http.MethodGet, "/ai-agents", "", http.StatusOK},
-		{http.MethodPost, "/ai-agents", validAgent, http.StatusCreated},
+		{http.MethodPost, "/ai-agents", validAIAgent, http.StatusCreated},
 		{http.MethodGet, "/ai-agents/", "", http.StatusOK},
 		{http.MethodPatch, "/ai-agents/", `{"name":"Otro"}`, http.StatusOK},
 		{http.MethodDelete, "/ai-agents/", "", http.StatusNoContent},
@@ -90,7 +90,7 @@ func TestOnlyTheAdminManagesAgents(t *testing.T) {
 }
 
 // The response carries what the administrator edits and nothing that has no effect yet: no default_mode, no extraction_enabled.
-func TestTheAgentIsAnsweredWithWhatCanBeEdited(t *testing.T) {
+func TestTheAIAgentIsAnsweredWithWhatCanBeEdited(t *testing.T) {
 	rec := call(mount(enums.OperatorRoleAdmin, newStubRepo(), priced()), http.MethodPost, "/ai-agents",
 		`{"name":"Agente","description":"Ventas","llm_provider":"cohere","llm_model":"command-a-03-2025","temperature":0.3,"max_tokens":512}`)
 	if rec.Code != http.StatusCreated {
@@ -139,6 +139,7 @@ func TestTheBodyIsReadFieldByField(t *testing.T) {
 		{"a blank name", http.MethodPatch, `{"name":"  "}`, "invalid_name"},
 		{"a negative temperature", http.MethodPatch, `{"temperature":-1}`, "invalid_temperature"},
 		{"zero tokens", http.MethodPatch, `{"max_tokens":0}`, "invalid_max_tokens"},
+		{"more tokens than the column holds", http.MethodPatch, `{"max_tokens":2147483648}`, "invalid_max_tokens"},
 		{"a model the brain cannot price", http.MethodPatch, `{"llm_model":"command-r-plus"}`, "unpriced_model"},
 		{"an empty model", http.MethodPatch, `{"llm_model":""}`, "invalid_model"},
 	}
@@ -184,13 +185,26 @@ func TestAPatchClearsWhatWasSentAsNullAndKeepsWhatWasNotSent(t *testing.T) {
 func TestTheBrainBeingDownIsAnswered503(t *testing.T) {
 	catalogue := &stubCatalogue{err: errors.New("brain: unreachable")}
 
-	rec := call(mount(enums.OperatorRoleAdmin, newStubRepo(), catalogue), http.MethodPost, "/ai-agents", validAgent)
+	rec := call(mount(enums.OperatorRoleAdmin, newStubRepo(), catalogue), http.MethodPost, "/ai-agents", validAIAgent)
 	if rec.Code != http.StatusServiceUnavailable || codeOf(t, rec) != "models_unavailable" {
 		t.Fatalf("got %d %q, want 503 models_unavailable - body %s", rec.Code, codeOf(t, rec), rec.Body)
 	}
 }
 
-func TestAnAgentIDThatIsNotAUUIDIsABadRequest(t *testing.T) {
+// A save that lost the race to another is a 409 the panel answers by reloading, and not a 400 about a model that may be priced.
+func TestASaveThatLostTheRaceIsAConflict(t *testing.T) {
+	existing := seeded("Agente")
+	repo := newStubRepo(existing)
+	repo.beforeLock = func(s *stubRepo) { s.rows[0].LLMModel = "claude-sonnet-4-5" }
+
+	rec := call(mount(enums.OperatorRoleAdmin, repo, priced()), http.MethodPatch, "/ai-agents/"+existing.ID.String(),
+		`{"name":"Otro","llm_model":"command-a-03-2025"}`)
+	if rec.Code != http.StatusConflict || codeOf(t, rec) != "ai_agent_changed" {
+		t.Fatalf("got %d %q, want 409 ai_agent_changed - body %s", rec.Code, codeOf(t, rec), rec.Body)
+	}
+}
+
+func TestAnAIAgentIDThatIsNotAUUIDIsABadRequest(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
 		rec := call(mount(enums.OperatorRoleAdmin, newStubRepo(), priced()), method, "/ai-agents/no-es-un-uuid", `{}`)
 		if rec.Code != http.StatusBadRequest || codeOf(t, rec) != "invalid_ai_agent_id" {
@@ -199,7 +213,7 @@ func TestAnAgentIDThatIsNotAUUIDIsABadRequest(t *testing.T) {
 	}
 }
 
-func TestAMissingAgentIsA404(t *testing.T) {
+func TestAMissingAIAgentIsA404(t *testing.T) {
 	missing := "/ai-agents/" + seeded("Nadie").ID.String()
 	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
 		rec := call(mount(enums.OperatorRoleAdmin, newStubRepo(), priced()), method, missing, `{"name":"Otro"}`)
@@ -210,7 +224,7 @@ func TestAMissingAgentIsA404(t *testing.T) {
 }
 
 // The listing is the account's agents and nobody else's, as a list and never a null.
-func TestTheListingIsTheAccountsAgents(t *testing.T) {
+func TestTheListingIsTheAccountsAIAgents(t *testing.T) {
 	mine, foreign := seeded("Mio"), seeded("Ajeno")
 	foreign.AccountID = uuid.New()
 

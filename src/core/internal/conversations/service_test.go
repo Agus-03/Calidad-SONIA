@@ -25,6 +25,7 @@ type fakeStore struct {
 	linked      map[uuid.UUID]uuid.UUID
 	sent        map[uuid.UUID]string
 	failed      map[uuid.UUID]string
+	turnedOff   []uuid.UUID
 
 	appendErr   error
 	touchOutErr error
@@ -40,6 +41,11 @@ func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode en
 	}
 	f.modes[conversationID] = mode
 	return nil
+}
+
+func (f *fakeStore) TurnOffAIAgent(_ context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	f.turnedOff = append(f.turnedOff, aiAgentID)
+	return []uuid.UUID{aiAgentID}, nil
 }
 
 func (f *fakeStore) TouchOutbound(context.Context, uuid.UUID) error {
@@ -126,6 +132,7 @@ func TestEnsureOpenHonoursTheInvariantOfADR0002(t *testing.T) {
 		name        string
 		store       *fakeStore
 		agent       *uuid.UUID
+		canAnswer   bool
 		wantCreated int
 		wantMode    enums.AgentMode
 	}{
@@ -133,14 +140,24 @@ func TestEnsureOpenHonoursTheInvariantOfADR0002(t *testing.T) {
 			name:        "an open conversation is reused instead of opening a second one",
 			store:       &fakeStore{open: &winner, appearsOn: 1},
 			agent:       &agent,
+			canAnswer:   true,
 			wantCreated: 0,
 		},
 		{
 			name:        "with no open conversation one is opened in autonomous mode",
 			store:       &fakeStore{},
 			agent:       &agent,
+			canAnswer:   true,
 			wantCreated: 1,
 			wantMode:    enums.AgentModeAutonomous,
+		},
+		{
+			name:        "with an agent that is paused or removed the conversation is born off, so its switch never says it answers",
+			store:       &fakeStore{},
+			agent:       &agent,
+			canAnswer:   false,
+			wantCreated: 1,
+			wantMode:    enums.AgentModeOff,
 		},
 		{
 			name:        "with no agent the conversation is born off, never autonomous over nothing",
@@ -153,6 +170,7 @@ func TestEnsureOpenHonoursTheInvariantOfADR0002(t *testing.T) {
 			name:        "losing the race re-reads the winner instead of failing the message",
 			store:       &fakeStore{open: &winner, appearsOn: 2, createErr: ErrAlreadyOpen},
 			agent:       &agent,
+			canAnswer:   true,
 			wantCreated: 0,
 		},
 	}
@@ -160,7 +178,7 @@ func TestEnsureOpenHonoursTheInvariantOfADR0002(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			at := time.Now().UTC()
-			got, err := NewService(tc.store, slog.Default()).EnsureOpen(context.Background(), contact, inbox, tc.agent, at)
+			got, err := NewService(tc.store, slog.Default()).EnsureOpen(context.Background(), contact, inbox, tc.agent, tc.canAnswer, at)
 			if err != nil {
 				t.Fatalf("EnsureOpen: got %v, want no error", err)
 			}
@@ -187,7 +205,7 @@ func TestEnsureOpenDoesNotSwallowARealFailure(t *testing.T) {
 	boom := errors.New("connection refused")
 	store := &fakeStore{openFailure: boom}
 
-	_, err := NewService(store, slog.Default()).EnsureOpen(context.Background(), uuid.New(), uuid.New(), nil, time.Now())
+	_, err := NewService(store, slog.Default()).EnsureOpen(context.Background(), uuid.New(), uuid.New(), nil, false, time.Now())
 	if !errors.Is(err, boom) {
 		t.Fatalf("EnsureOpen returned %v, want the underlying failure", err)
 	}
@@ -277,9 +295,9 @@ func TestTheAggregateExposesWhatTheTurnNeeds(t *testing.T) {
 	}
 }
 
-// TestAnOperatorAnswerNamesThePersonAndNoAgent is the sender check of messages seen from the service: a row naming both, or
+// TestAnOperatorAnswerNamesThePersonAndNoAIAgent is the sender check of messages seen from the service: a row naming both, or
 // neither, is refused by the database, and one naming the agent would credit the bot with a person's work (H-09, ADR-0025).
-func TestAnOperatorAnswerNamesThePersonAndNoAgent(t *testing.T) {
+func TestAnOperatorAnswerNamesThePersonAndNoAIAgent(t *testing.T) {
 	store := &fakeStore{}
 	operator, conversation := uuid.New(), uuid.New()
 
@@ -365,6 +383,21 @@ func TestSetModeReachesTheStore(t *testing.T) {
 	}
 	if store.modes[conversation] != enums.AgentModeOff {
 		t.Fatalf("the mode did not reach the store: %v", store.modes)
+	}
+}
+
+// TestTurningOffAnAIAgentReachesTheStore is the passthrough a pause needs: agents/ never writes the mode column itself (regla 1),
+// and the ids come back because the audit of the pause is the only record of them (ADR-0038).
+func TestTurningOffAnAIAgentReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	agent := uuid.New()
+
+	got, err := NewService(store, slog.Default()).TurnOffAIAgent(context.Background(), agent)
+	if err != nil {
+		t.Fatalf("TurnOffAIAgent: %v", err)
+	}
+	if len(store.turnedOff) != 1 || store.turnedOff[0] != agent || len(got) != 1 {
+		t.Fatalf("the store turned off %v and answered %v, want the agent asked for and its conversations back", store.turnedOff, got)
 	}
 }
 

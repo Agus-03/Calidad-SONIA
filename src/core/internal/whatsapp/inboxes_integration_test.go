@@ -53,9 +53,9 @@ func TestOneLiveInboxPerNumber(t *testing.T) {
 	}
 }
 
-// TestRemovingAnAgentClearsTheInboxesThatDefaultedToIt is the half of the removal whatsapp/ owns: after it, no new conversation
+// TestRemovingAnAIAgentClearsTheInboxesThatDefaultedToIt is the half of the removal whatsapp/ owns: after it, no new conversation
 // is born with the removed agent, and the inboxes that pointed elsewhere keep their own default (ADR-0038).
-func TestRemovingAnAgentClearsTheInboxesThatDefaultedToIt(t *testing.T) {
+func TestRemovingAnAIAgentClearsTheInboxesThatDefaultedToIt(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
 	account := seededAccount(t, pool)
@@ -85,9 +85,9 @@ func TestRemovingAnAgentClearsTheInboxesThatDefaultedToIt(t *testing.T) {
 		removed, kept := agent(), agent()
 		first, second, other := inbox(removed), inbox(removed), inbox(kept)
 
-		cleared, err := NewRepository(exec, testCipher(t)).ClearDefaultAgent(ctx, account, removed)
+		cleared, err := NewRepository(exec, testCipher(t)).ClearDefaultAIAgent(ctx, account, removed)
 		if err != nil {
-			t.Fatalf("ClearDefaultAgent: %v", err)
+			t.Fatalf("ClearDefaultAIAgent: %v", err)
 		}
 		if len(cleared) != 2 || !slices.Contains(cleared, first) || !slices.Contains(cleared, second) {
 			t.Fatalf("cleared = %v, want exactly %v and %v", cleared, first, second)

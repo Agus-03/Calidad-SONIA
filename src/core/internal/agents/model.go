@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// Agent is the live row. default_mode and extraction_enabled are deliberately not here: neither changes anything until Fase 9,
+// AIAgent is the live row. default_mode and extraction_enabled are deliberately not here: neither changes anything until Fase 9,
 // and a field that saves without effect tells the administrator something that is not true (ADR-0038).
-type Agent struct {
+type AIAgent struct {
 	ID          uuid.UUID
 	AccountID   uuid.UUID
 	Name        string
@@ -38,7 +38,7 @@ type Config struct {
 	Active      bool     `json:"active"`
 }
 
-func (a Agent) Config() Config {
+func (a AIAgent) Config() Config {
 	return Config{
 		Name: a.Name, Description: a.Description, LLMProvider: a.LLMProvider, LLMModel: a.LLMModel,
 		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active,
@@ -65,6 +65,8 @@ const (
 	actionDelete = "delete"
 
 	entityAIAgent = "ai_agents"
+	// Which agent answers a number is agent configuration too: it decides against which configuration a conversation is measured (OE2).
+	entityInbox = "inboxes"
 )
 
 // AuditEntry is one row of audit_logs. ip_address is left NULL on purpose: behind no trusted proxy the client address is whatever
@@ -78,10 +80,23 @@ type AuditEntry struct {
 	Changes    []byte
 }
 
+// inboxDefault is the one field of an inbox this package audits, in the same before and after shape as an agent's change.
+type inboxDefault struct {
+	DefaultAIAgentID *uuid.UUID `json:"default_ai_agent_id"`
+}
+
+type inboxChange struct {
+	Before inboxDefault `json:"before"`
+	After  inboxDefault `json:"after"`
+}
+
 // change is what changes_json holds: the configuration before and after, NULL on the side that did not exist.
 type change struct {
 	Before *Config `json:"before"`
 	After  *Config `json:"after"`
 	// Only on a removal: nothing else records which inboxes lost their default when the agent went away.
 	ClearedInboxIDs []uuid.UUID `json:"cleared_inbox_ids,omitempty"`
+	// Only on a pause or a removal that turned some bot off: resuming the agent turns none back on, so this is the one record of
+	// which conversations it left to their vendor (ADR-0038).
+	TurnedOffConversationIDs []uuid.UUID `json:"turned_off_conversation_ids,omitempty"`
 }

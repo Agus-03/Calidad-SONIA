@@ -30,7 +30,7 @@ func TestTheBoundAggregateWritesInsideTheTransaction(t *testing.T) {
 			t.Fatalf("insert contact: %v", err)
 		}
 		at := time.Now().UTC()
-		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, at)
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, at)
 		if err != nil {
 			t.Fatalf("EnsureOpen: %v", err)
 		}

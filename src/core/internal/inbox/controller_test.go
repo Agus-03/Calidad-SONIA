@@ -218,6 +218,10 @@ func TestThePoolAndAnEmptyConversationAreNullAndNotZero(t *testing.T) {
 	if string(raw.NextCursor) != "null" {
 		t.Fatalf("next_cursor is %s on the only page, want null", raw.NextCursor)
 	}
+	// And a conversation with no agent says its bot cannot answer, as false and never as a missing field (ADR-0038).
+	if string(raw.Items[0]["ai_agent_available"]) != "false" {
+		t.Fatalf("ai_agent_available is %s, want false", raw.Items[0]["ai_agent_available"])
+	}
 }
 
 // TestAQueryTheListingCannotHonourIsRefused names each malformed input: guessing a cursor would answer the first page again and the
@@ -687,6 +691,12 @@ func TestEachModeRefusalHasItsOwnCode(t *testing.T) {
 			d.store.targets[target.ConversationID] = target
 			return target.ConversationID.String()
 		}, `{"mode":"autonomous"}`, http.StatusConflict, "no_ai_agent"},
+		{"an agent paused or removed by the admin (ADR-0038)", func(d *desk) string {
+			target := d.open(nil)
+			target.Mode, target.AIAgentAvailable = enums.AgentModeOff, false
+			d.store.targets[target.ConversationID] = target
+			return target.ConversationID.String()
+		}, `{"mode":"autonomous"}`, http.StatusConflict, "ai_agent_unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDesk(&stubStore{})

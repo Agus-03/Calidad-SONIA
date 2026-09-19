@@ -129,14 +129,26 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	agentRepo := agents.NewRepository(pool)
 	identity := agents.NewService(agents.Options{
 		Repo: agentRepo,
-		// Binds the agent and the inboxes to one transaction: removing an agent and clearing the defaults that name it commit together (regla 5).
-		Tx: func(ctx context.Context, fn func(agents.Store, agents.Inboxes) error) error {
+		// Binds the agent, the inboxes and the conversations to one transaction: a pause or a removal and the bots it turns off
+		// commit together, and so do a removal and the defaults it clears (regla 5).
+		Tx: func(ctx context.Context, fn func(agents.Store, agents.Inboxes, agents.Conversations) error) error {
 			return db.InTx(ctx, pool, func(exec db.Executor) error {
-				return fn(agentRepo.WithExecutor(exec), channelRepo.WithExecutor(exec))
+				return fn(agentRepo.WithExecutor(exec), channelRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
 			})
 		},
 		Catalogue: adminBrain,
 		Logger:    log,
+	})
+
+	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
+		Repo: channelRepo,
+		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
+		Tx: func(ctx context.Context, fn func(whatsapp.SettingsStore, whatsapp.Auditor) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(channelRepo.WithExecutor(exec), agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
 	})
 
 	return wiring{
@@ -146,6 +158,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
 			agents.NewController(identity, log),
+			whatsapp.NewSettingsController(numbers, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

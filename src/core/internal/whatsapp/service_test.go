@@ -120,6 +120,56 @@ func TestAConversationNobodyHoldsGetsItsVendorWhenTheCustomerWrites(t *testing.T
 	}
 }
 
+// TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction is the birth rule of ADR-0038: the default of the inbox is read
+// again inside the webhook's transaction, a paused agent is named but born off, a removed one is not named at all, and a failed read
+// fails the webhook instead of guessing.
+func TestAConversationIsBornWithWhatTheAIAgentIsInsideTheTransaction(t *testing.T) {
+	boom := errors.New("connection reset")
+
+	for _, tc := range []struct {
+		name          string
+		paused        bool
+		removed       bool
+		noDefault     bool
+		birthErr      error
+		wantNamed     bool
+		wantCanAnswer bool
+		wantErr       error
+	}{
+		{name: "an agent that can answer is born on", wantNamed: true, wantCanAnswer: true},
+		{name: "a paused agent is still named, so resuming it lets the vendor turn it on, but it is born off", paused: true, wantNamed: true},
+		{name: "an agent removed since the inbox was read is not named at all, as the removal left the inbox", removed: true},
+		{name: "an inbox without an agent asks nothing and is born off", noDefault: true},
+		{name: "a failed read fails the webhook, and nothing is born on a guess", birthErr: boom, wantErr: boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, agg, cs := channel()
+			repo.aiAgentPaused, repo.aiAgentRemoved, repo.birthErr = tc.paused, tc.removed, tc.birthErr
+			if tc.noDefault {
+				repo.inbox.DefaultAIAgentID = nil
+			}
+
+			_, err := service(repo, agg, cs, slog.Default()).
+				Receive(context.Background(), []byte(metaTextPayload), sign(metaTextPayload, testAppSecret), time.Now().UTC())
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Receive: got %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr != nil {
+				if len(agg.messages) != 0 {
+					t.Fatalf("a message was stored after the read failed: %v", agg.messages)
+				}
+				return
+			}
+			if tc.noDefault && repo.birthAsked != 0 {
+				t.Fatalf("the agent was asked for %d times with no default, want 0", repo.birthAsked)
+			}
+			if named := agg.bornWith != nil; named != tc.wantNamed || agg.canAnswer != tc.wantCanAnswer {
+				t.Fatalf("born naming an agent %v and able to answer %v, want %v and %v", named, agg.canAnswer, tc.wantNamed, tc.wantCanAnswer)
+			}
+		})
+	}
+}
+
 // TestReceiveReadsMetaClockAndNotOurs protects C06: sent_at is the channel's clock, and only a broken one falls back to ours.
 func TestReceiveReadsMetaClockAndNotOurs(t *testing.T) {
 	repo, agg, cs := channel()

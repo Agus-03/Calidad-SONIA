@@ -29,8 +29,10 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // down leaves the inbox with its conversations, which stay in the database as history (ADR-0035, regla 1).
 //
 // The failed status travels as $2 and is not written in, so a renamed value in enums.yaml cannot silently count zero (C07).
+//
+// The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
-SELECT c.id, c.status, c.mode, c.ai_agent_id,
+SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false),
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -39,6 +41,7 @@ SELECT c.id, c.status, c.mode, c.ai_agent_id,
        c.last_inbound_at, c.window_expires_at, c.last_activity_at
 FROM   conversations c
 JOIN   contacts ct ON ct.id = c.contact_id
+LEFT   JOIN ai_agents a ON a.id = c.ai_agent_id
 LEFT   JOIN operators op ON op.id = c.operator_id
 LEFT   JOIN LATERAL (
        SELECT m.id, m.direction, m.sender_type, m.content_text, m.content_type, m.status, m.error_code, m.sent_at
@@ -103,17 +106,22 @@ func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit
 
 // Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists,
 // and one whose contact was taken down is one nobody answers any more (ADR-0035, regla 1).
+// The agent is joined for the switch of the bot, which needs the three conditions the turn reads: it exists, is active and was not
+// removed (ADR-0038). The ownership rule restricts writes and not reads.
 const targetSelect = `
-SELECT c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode
-FROM   conversations c
-JOIN   contacts ct ON ct.id = c.contact_id
-WHERE  c.deleted_at IS NULL AND ct.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
+SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode,
+          COALESCE(a.active AND a.deleted_at IS NULL, false)
+FROM      conversations c
+JOIN      contacts ct ON ct.id = c.contact_id
+LEFT JOIN ai_agents a ON a.id = c.ai_agent_id
+WHERE     c.deleted_at IS NULL AND ct.deleted_at IS NULL AND ct.account_id = $1 AND c.id = $2`
 
 // Target reads without the reach on purpose: whether this operator may send is a rule, and rules are the service's.
 func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, accountID, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt, &t.AIAgentID, &t.Mode)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt, &t.AIAgentID, &t.Mode,
+			&t.AIAgentAvailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrNotFound
 	}
@@ -251,7 +259,7 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID,
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,

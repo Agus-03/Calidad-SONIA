@@ -101,17 +101,114 @@ func (r *Repository) Connect(ctx context.Context, phoneNumberID, accessToken, ap
 	return inboxID, nil
 }
 
+// The columns of the admin panel and none of the three secrets: they never leave this file for that screen (ADR-0031, regla 11).
+const settingsSelect = `
+SELECT id, account_id, display_name, phone_number_id, status, default_ai_agent_id
+FROM   inboxes
+WHERE  deleted_at IS NULL AND account_id = $1`
+
+func scanSettings(row pgx.Row) (InboxSettings, error) {
+	var s InboxSettings
+	err := row.Scan(&s.ID, &s.AccountID, &s.DisplayName, &s.PhoneNumberID, &s.Status, &s.DefaultAIAgentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return InboxSettings{}, ErrInboxNotFound
+	}
+	if err != nil {
+		return InboxSettings{}, fmt.Errorf("whatsapp: scan inbox settings: %w", err)
+	}
+	return s, nil
+}
+
+// ListSettings has no page: an account connects a handful of numbers, the same reading as the agents of ADR-0038 regla 11.
+func (r *Repository) ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error) {
+	rows, err := r.exec.Query(ctx, settingsSelect+" ORDER BY lower(display_name), id", accountID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsapp: list inboxes: %w", err)
+	}
+	defer rows.Close()
+
+	out := []InboxSettings{}
+	for rows.Next() {
+		s, err := scanSettings(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.
+func (r *Repository) SettingsForUpdate(ctx context.Context, accountID, inboxID uuid.UUID) (InboxSettings, error) {
+	return scanSettings(r.exec.QueryRow(ctx, settingsSelect+" AND id = $2 FOR UPDATE", accountID, inboxID))
+}
+
+// FOR SHARE and not a plain read: the removal of an agent locks its row FOR UPDATE, so an assignment and a removal at once are
+// serialised, and whichever commits second sees the other (ADR-0038). A paused agent passes: a pause is not a removal.
+const aiAgentAssignable = `
+SELECT 1
+FROM   ai_agents
+WHERE  id = $1 AND account_id = $2 AND deleted_at IS NULL
+FOR SHARE`
+
+// AIAgentAssignable reads a table agents/ owns: the ownership rule restricts writes and not reads.
+func (r *Repository) AIAgentAssignable(ctx context.Context, accountID, aiAgentID uuid.UUID) error {
+	var one int
+	err := r.exec.QueryRow(ctx, aiAgentAssignable, aiAgentID, accountID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAIAgentNotAssignable
+	}
+	if err != nil {
+		return fmt.Errorf("whatsapp: read the agent to assign: %w", err)
+	}
+	return nil
+}
+
+// FOR SHARE, the same lock as an assignment: a pause or a removal holds the row while it turns the agent's bots off, so a birth at
+// that instant waits and reads what it committed, and is never born on after the pause turned the rest off (ADR-0038).
+const aiAgentForBirth = `
+SELECT active
+FROM   ai_agents
+WHERE  id = $1 AND account_id = $2 AND deleted_at IS NULL
+FOR SHARE`
+
+// AIAgentForBirth answers the agent a new conversation is born with and whether it can answer. A removed agent is none at all, the
+// state the removal leaves the inbox in once it commits; a paused one is still named, and born off (ADR-0038, regla 3).
+func (r *Repository) AIAgentForBirth(ctx context.Context, accountID, aiAgentID uuid.UUID) (*uuid.UUID, bool, error) {
+	var active bool
+	err := r.exec.QueryRow(ctx, aiAgentForBirth, aiAgentID, accountID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("whatsapp: read the agent a conversation is born with: %w", err)
+	}
+	return &aiAgentID, active, nil
+}
+
+const inboxSetDefaultAIAgent = `
+UPDATE inboxes
+SET    default_ai_agent_id = $3, updated_at = now()
+WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, account_id, display_name, phone_number_id, status, default_ai_agent_id`
+
+// SetDefaultAIAgent takes nil to leave the number without AI, which is a state ADR-0012 declares valid. Only the conversations born
+// after it get the new agent: the open ones keep the one that answered them (ADR-0038).
+func (r *Repository) SetDefaultAIAgent(ctx context.Context, accountID, inboxID uuid.UUID, aiAgentID *uuid.UUID) (InboxSettings, error) {
+	return scanSettings(r.exec.QueryRow(ctx, inboxSetDefaultAIAgent, accountID, inboxID, aiAgentID))
+}
+
 // Every inbox of the account and not only the live ones: a default naming a removed agent is wrong whether or not the inbox is.
-const inboxClearDefaultAgent = `
+const inboxClearDefaultAIAgent = `
 UPDATE inboxes
 SET    default_ai_agent_id = NULL, updated_at = now()
 WHERE  account_id = $1 AND default_ai_agent_id = $2
 RETURNING id`
 
-// ClearDefaultAgent runs inside the transaction that removes the agent, so no conversation is born with it after the removal
+// ClearDefaultAIAgent runs inside the transaction that removes the agent, so no conversation is born with it after the removal
 // commits (ADR-0038). It returns the inboxes it changed, because the audit of the removal is the only place that records them.
-func (r *Repository) ClearDefaultAgent(ctx context.Context, accountID, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := r.exec.Query(ctx, inboxClearDefaultAgent, accountID, aiAgentID)
+func (r *Repository) ClearDefaultAIAgent(ctx context.Context, accountID, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, inboxClearDefaultAIAgent, accountID, aiAgentID)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp: clear the default agent: %w", err)
 	}

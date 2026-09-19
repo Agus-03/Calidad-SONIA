@@ -56,8 +56,25 @@ type stubChannel struct {
 	contactID     uuid.UUID
 	lookupErr     error
 
+	// What the default agent of the inbox is at birth: paused still names it, removed names none (ADR-0038).
+	aiAgentPaused  bool
+	aiAgentRemoved bool
+	birthErr       error
+	birthAsked     int
+
 	events    []WebhookEvent
 	processed []uuid.UUID
+}
+
+func (s *stubChannel) AIAgentForBirth(_ context.Context, _, aiAgentID uuid.UUID) (*uuid.UUID, bool, error) {
+	s.birthAsked++
+	if s.birthErr != nil {
+		return nil, false, s.birthErr
+	}
+	if s.aiAgentRemoved {
+		return nil, false, nil
+	}
+	return &aiAgentID, !s.aiAgentPaused, nil
 }
 
 func (s *stubChannel) InboxByVerifyToken(_ context.Context, token string) (Inbox, error) {
@@ -100,10 +117,16 @@ type stubAggregate struct {
 	holder    *uuid.UUID
 	messages  []string
 	duplicate bool
+	// What the last conversation was born with, which is how a case sees the birth rule reach the aggregate.
+	bornWith  *uuid.UUID
+	canAnswer bool
 }
 
-func (s *stubAggregate) EnsureOpen(_ context.Context, contactID, inboxID uuid.UUID, agentID *uuid.UUID, _ time.Time) (conversations.Conversation, error) {
-	return conversations.Conversation{ID: s.conversationID, ContactID: contactID, InboxID: inboxID, AIAgentID: agentID, OperatorID: s.holder}, nil
+func (s *stubAggregate) EnsureOpen(
+	_ context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, canAnswer bool, _ time.Time,
+) (conversations.Conversation, error) {
+	s.bornWith, s.canAnswer = aiAgentID, canAnswer
+	return conversations.Conversation{ID: s.conversationID, ContactID: contactID, InboxID: inboxID, AIAgentID: aiAgentID, OperatorID: s.holder}, nil
 }
 
 // stubAssigner records whose conversation it was asked to give a vendor, so a case can tell a new conversation from a held one.

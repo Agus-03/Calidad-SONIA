@@ -22,9 +22,9 @@ var (
 	// ErrTaken is the pool race lost: somebody else answered first and the conversation is theirs (ADR-0004, ADR-0035 regla 8).
 	ErrTaken = errors.New("conversations: the conversation is already assigned to an operator")
 
-	// ErrNoAgent refuses to turn on a bot that does not exist: a conversation born without an agent has nobody to answer it
-	// (ADR-0035, regla 12).
-	ErrNoAgent = errors.New("conversations: the conversation has no agent to turn on")
+	// ErrNoAIAgent refuses to turn on a bot that cannot answer: a conversation born without an agent, or whose agent was paused or
+	// removed, has nobody to answer it. The caller, which read the conversation first, tells the two apart (ADR-0035 regla 12, ADR-0038).
+	ErrNoAIAgent = errors.New("conversations: the conversation has no agent that can answer")
 )
 
 // ServiceWindow is Meta's, not ours: outside it a free form answer is refused and only a template may be sent.
@@ -39,6 +39,7 @@ type store interface {
 	TouchOutbound(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
+	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
@@ -57,7 +58,13 @@ func NewService(repo store, log *slog.Logger) *Service {
 }
 
 // EnsureOpen resolves the conversation an inbound message belongs to, opening one when ADR-0002 says the previous is closed.
-func (s *Service) EnsureOpen(ctx context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, at time.Time) (Conversation, error) {
+//
+// canAnswer is whether that agent is active and not removed, read by the caller inside its transaction. An agent that cannot answer
+// is still named, so the vendor can turn the bot on once it is resumed, but the conversation is born off: born on, its switch would
+// say the bot answers while the turn skips it (ADR-0038).
+func (s *Service) EnsureOpen(
+	ctx context.Context, contactID, inboxID uuid.UUID, aiAgentID *uuid.UUID, canAnswer bool, at time.Time,
+) (Conversation, error) {
 	existing, err := s.repo.OpenByContact(ctx, contactID)
 	if err == nil {
 		return existing, nil
@@ -68,7 +75,7 @@ func (s *Service) EnsureOpen(ctx context.Context, contactID, inboxID uuid.UUID, 
 
 	mode := enums.AgentModeOff
 	// Without an agent the conversation is born off: a mode naming a bot that does not exist would be read as one that is silent.
-	if aiAgentID != nil {
+	if aiAgentID != nil && canAnswer {
 		mode = enums.AgentModeAutonomous
 	}
 
@@ -174,6 +181,12 @@ func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUI
 // loss of the agent, or it could never be turned back on (F27, ADR-0035 regla 12). Which modes a caller may ask for is the caller's rule.
 func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
 	return s.repo.SetMode(ctx, conversationID, mode)
+}
+
+// TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),
+// and whoever conducts the pause holds the transaction (ADR-0038).
+func (s *Service) TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	return s.repo.TurnOffAIAgent(ctx, aiAgentID)
 }
 
 // LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.

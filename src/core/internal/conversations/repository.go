@@ -197,15 +197,52 @@ func (r *Repository) Claim(ctx context.Context, conversationID, operatorID uuid.
 	return nil
 }
 
-// Any mode but off needs an agent, and that is in the predicate and not in an earlier read, the same as the invariant EnsureOpen
-// keeps when it opens a conversation with none: a mode naming a bot that does not exist would read as one that is silent. The off
-// value travels as $3 and is not written, so a renamed value in enums.yaml cannot silently stop matching (C07).
+// Any mode but off needs an agent that can answer —there, active and not removed, the same three conditions the turn reads— and
+// that is in the predicate and not in an earlier read, so a pause or a removal committed after the caller's read still wins: a mode
+// naming a bot that cannot answer would read as one that is silent (ADR-0035 regla 12, ADR-0038). The off value travels as $3 and
+// is not written, so a renamed value in enums.yaml cannot silently stop matching (C07).
+//
+// FOR SHARE on the agent: a pause holds its row while it turns every bot of it off, so a switch turned on at the same instant waits
+// for the pause and then reads it, instead of reading the agent as it was and leaving one bot on after the pause (ADR-0038).
 const conversationSetMode = `
 UPDATE conversations
 SET    mode = $2, updated_at = now()
-WHERE  id = $1 AND deleted_at IS NULL AND ($2 = $3 OR ai_agent_id IS NOT NULL)`
+WHERE  id = $1 AND deleted_at IS NULL
+  AND  ($2 = $3 OR EXISTS (
+           SELECT 1 FROM ai_agents a
+           WHERE  a.id = conversations.ai_agent_id AND a.active AND a.deleted_at IS NULL
+           FOR SHARE))`
 
-// SetMode answers ErrNoAgent when nothing matched a mode that needs one: the caller read the conversation first, so a missing row
+// Every conversation the agent holds and not only the open ones, the same as the switch of each: a resolved conversation still
+// shows its switch, and one that says the bot answers would be the only one telling the truth wrong (ADR-0038). The off value
+// travels as $2, for the reason SetMode gives.
+const conversationTurnOffAIAgent = `
+UPDATE conversations
+SET    mode = $2, updated_at = now()
+WHERE  ai_agent_id = $1 AND mode <> $2 AND deleted_at IS NULL
+RETURNING id`
+
+// TurnOffAIAgent answers the conversations it turned off, because the audit of the pause or the removal is the one place that
+// records them: resuming the agent turns none back on.
+func (r *Repository) TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, conversationTurnOffAIAgent, aiAgentID, enums.AgentModeOff)
+	if err != nil {
+		return nil, fmt.Errorf("conversations: turn off the bots of an ai agent: %w", err)
+	}
+	defer rows.Close()
+
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var conversationID uuid.UUID
+		if err := rows.Scan(&conversationID); err != nil {
+			return nil, fmt.Errorf("conversations: scan a conversation turned off: %w", err)
+		}
+		out = append(out, conversationID)
+	}
+	return out, rows.Err()
+}
+
+// SetMode answers ErrNoAIAgent when nothing matched a mode that needs one: the caller read the conversation first, so a missing row
 // here is the rarer case, and turning off can only miss for that reason.
 func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
 	tag, err := r.exec.Exec(ctx, conversationSetMode, conversationID, mode, enums.AgentModeOff)
@@ -218,5 +255,5 @@ func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode
 	if mode == enums.AgentModeOff {
 		return ErrNotFound
 	}
-	return ErrNoAgent
+	return ErrNoAIAgent
 }

@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 
@@ -28,6 +29,7 @@ func TestCreateRefusesAConfigurationNoTurnCouldRun(t *testing.T) {
 		{"an agent with no model has nothing to answer with", func(c *Config) { c.LLMModel = "" }, ErrEmptyModel},
 		{"no provider accepts a negative temperature", func(c *Config) { c.Temperature = ptr(-0.1) }, ErrInvalidTemperature},
 		{"zero tokens is an answer that can never be written", func(c *Config) { c.MaxTokens = ptr(0) }, ErrInvalidMaxTokens},
+		{"more tokens than the integer column holds is the client's mistake and not a 500", func(c *Config) { c.MaxTokens = ptr(math.MaxInt32 + 1) }, ErrInvalidMaxTokens},
 	}
 
 	for _, tc := range cases {
@@ -78,7 +80,7 @@ func TestCreateRefusesWhenTheBrainCannotSayWhatIsPriced(t *testing.T) {
 }
 
 // Every change of configuration leaves who, what and when, in the same transaction as the change (ADR-0007).
-func TestCreateAuditsTheAgentItWrote(t *testing.T) {
+func TestCreateAuditsTheAIAgentItWrote(t *testing.T) {
 	repo := newStubRepo()
 	c := config("  Agente de ventas  ")
 	c.Description = ptr("   ")
@@ -156,7 +158,7 @@ func TestUpdateRefusesAModelTheBrainCannotPrice(t *testing.T) {
 }
 
 // A pause is an edit like any other and audits its before and after, which is how OE2 learns when the agent stopped answering.
-func TestPausingAnAgentIsAuditedWithItsBeforeAndAfter(t *testing.T) {
+func TestPausingAnAIAgentIsAuditedWithItsBeforeAndAfter(t *testing.T) {
 	existing := seeded("Agente")
 	existing.Description = ptr("vieja")
 	repo := newStubRepo(existing)
@@ -182,8 +184,81 @@ func TestPausingAnAgentIsAuditedWithItsBeforeAndAfter(t *testing.T) {
 	}
 }
 
+// A pause turns off the bot of every conversation the agent held, in its transaction, and its audit is the one record of which:
+// resuming turns none back on. An edit that is not a pause, and a resume, turn nothing off (ADR-0038).
+func TestPausingAnAIAgentTurnsOffItsBots(t *testing.T) {
+	existing := seeded("Agente")
+	repo := newStubRepo(existing)
+	conversations := &stubConversations{turnedOff: []uuid.UUID{id.New(), id.New()}}
+	service := serviceWith(repo, &stubInboxes{}, conversations, priced())
+
+	if _, err := service.Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) { c.Name = "Otro" }); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if len(conversations.asked) != 0 {
+		t.Fatalf("a rename turned off the bots of %v", conversations.asked)
+	}
+
+	if _, err := service.Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) { c.Active = false }); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if !slices.Equal(conversations.asked, []uuid.UUID{existing.ID}) {
+		t.Fatalf("bots turned off for %v, want exactly %v", conversations.asked, existing.ID)
+	}
+	if _, ch := repo.lastChange(); !slices.Equal(ch.TurnedOffConversationIDs, conversations.turnedOff) {
+		t.Fatalf("the audit of the pause says %v, want the conversations turned off %v", ch.TurnedOffConversationIDs, conversations.turnedOff)
+	}
+
+	if _, err := service.Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) { c.Active = true }); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if len(conversations.asked) != 1 {
+		t.Fatalf("a resume asked to turn off bots again: %v", conversations.asked)
+	}
+	if _, ch := repo.lastChange(); ch.TurnedOffConversationIDs != nil {
+		t.Fatalf("the audit of the resume names %v, want no conversations", ch.TurnedOffConversationIDs)
+	}
+}
+
+// A pause that cannot turn the bots off does not commit: a pause with its bots still on is the switch that lies (ADR-0038).
+func TestAPauseThatCannotTurnTheBotsOffDoesNotHappen(t *testing.T) {
+	existing := seeded("Agente")
+	repo := newStubRepo(existing)
+	boom := errors.New("postgres: gone")
+
+	_, err := serviceWith(repo, &stubInboxes{}, &stubConversations{err: boom}, priced()).
+		Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) { c.Active = false })
+	if !errors.Is(err, boom) {
+		t.Fatalf("Update: got %v, want the failure of turning the bots off", err)
+	}
+	if len(repo.audits) != 0 {
+		t.Fatalf("a pause that failed was audited: %+v", repo.audits)
+	}
+}
+
+// A save that kept the model while another save changed it in between is refused as what happened, and not as an unpriced model:
+// the brain was never asked, so saying the model has no tariff would be a guess (ADR-0038).
+func TestAModelMovedByAnotherSaveIsAConflictAndNotAnUnpricedModel(t *testing.T) {
+	existing := seeded("Agente")
+	repo := newStubRepo(existing)
+	repo.beforeLock = func(s *stubRepo) { s.rows[0].LLMProvider, s.rows[0].LLMModel = "anthropic", "claude-sonnet-4-5" }
+	catalogue := priced()
+
+	_, err := serviceOver(repo, &stubInboxes{}, catalogue).
+		Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) {
+			c.Name = "Otro"
+			c.LLMProvider, c.LLMModel = "cohere", "command-a-03-2025"
+		})
+	if !errors.Is(err, ErrChanged) {
+		t.Fatalf("Update: got %v, want ErrChanged", err)
+	}
+	if len(repo.writes) != 0 || catalogue.calls != 0 {
+		t.Fatalf("a lost race wrote %v and asked the brain %d times", repo.writes, catalogue.calls)
+	}
+}
+
 // Another account's agent is missing and not forbidden, and so is a removed one (C09).
-func TestAnAgentOutOfReachIsNotFound(t *testing.T) {
+func TestAnAIAgentOutOfReachIsNotFound(t *testing.T) {
 	foreign := seeded("Ajeno")
 	foreign.AccountID = id.New()
 	removed := seeded("Borrado")
@@ -209,12 +284,13 @@ func TestAnAgentOutOfReachIsNotFound(t *testing.T) {
 
 // The removal clears the inboxes that default to the agent in the same transaction, and the audit is the one place that says which
 // (ADR-0038).
-func TestRemovingAnAgentClearsItsInboxesAndSaysWhich(t *testing.T) {
+func TestRemovingAnAIAgentClearsItsInboxesAndSaysWhich(t *testing.T) {
 	existing := seeded("Agente")
 	repo := newStubRepo(existing)
 	inboxes := &stubInboxes{cleared: []uuid.UUID{id.New(), id.New()}}
+	conversations := &stubConversations{turnedOff: []uuid.UUID{id.New()}}
 
-	if err := serviceOver(repo, inboxes, priced()).Delete(context.Background(), testAccount, testOperator, existing.ID); err != nil {
+	if err := serviceWith(repo, inboxes, conversations, priced()).Delete(context.Background(), testAccount, testOperator, existing.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if !slices.Equal(inboxes.asked, []uuid.UUID{existing.ID}) {
@@ -230,6 +306,11 @@ func TestRemovingAnAgentClearsItsInboxesAndSaysWhich(t *testing.T) {
 	}
 	if ch.Before == nil || ch.After != nil || !slices.Equal(ch.ClearedInboxIDs, inboxes.cleared) {
 		t.Fatalf("changes = %+v, want the configuration before, nothing after and the cleared inboxes %v", ch, inboxes.cleared)
+	}
+	// The removal turns the bots off too: a removed agent answers nobody, and a switch still on would say it does (ADR-0038).
+	if !slices.Equal(conversations.asked, []uuid.UUID{existing.ID}) || !slices.Equal(ch.TurnedOffConversationIDs, conversations.turnedOff) {
+		t.Fatalf("bots turned off for %v and audited %v, want %v and %v",
+			conversations.asked, ch.TurnedOffConversationIDs, existing.ID, conversations.turnedOff)
 	}
 
 	if list, _ := serviceOver(repo, inboxes, priced()).List(context.Background(), testAccount); len(list) != 0 {

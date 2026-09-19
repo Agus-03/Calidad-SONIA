@@ -14,16 +14,18 @@ import (
 // stubRepo answers from memory and plays both halves of the repository, so the service is tested against its own rules and not
 // against the SQL that enforces them.
 type stubRepo struct {
-	rows    []Agent
+	rows    []AIAgent
 	removed map[uuid.UUID]bool
 	audits  []AuditEntry
 	// Every write in the order it happened, which is how a case sees that a no-op save wrote nothing.
 	writes []string
 	// Set to make a write fail, which is how a test sees the transaction give up before the audit.
 	err error
+	// Runs as the lock is taken, which is how a case plays a save that committed between the first read and the lock.
+	beforeLock func(*stubRepo)
 }
 
-func newStubRepo(rows ...Agent) *stubRepo {
+func newStubRepo(rows ...AIAgent) *stubRepo {
 	return &stubRepo{rows: rows, removed: map[uuid.UUID]bool{}}
 }
 
@@ -36,8 +38,8 @@ func (s *stubRepo) find(accountID, agentID uuid.UUID) (int, bool) {
 	return 0, false
 }
 
-func (s *stubRepo) List(_ context.Context, accountID uuid.UUID) ([]Agent, error) {
-	out := []Agent{}
+func (s *stubRepo) List(_ context.Context, accountID uuid.UUID) ([]AIAgent, error) {
+	out := []AIAgent{}
 	for _, a := range s.rows {
 		if a.AccountID == accountID && !s.removed[a.ID] {
 			out = append(out, a)
@@ -46,21 +48,24 @@ func (s *stubRepo) List(_ context.Context, accountID uuid.UUID) ([]Agent, error)
 	return out, nil
 }
 
-func (s *stubRepo) ByID(_ context.Context, accountID, agentID uuid.UUID) (Agent, error) {
+func (s *stubRepo) ByID(_ context.Context, accountID, agentID uuid.UUID) (AIAgent, error) {
 	i, ok := s.find(accountID, agentID)
 	if !ok {
-		return Agent{}, ErrNotFound
+		return AIAgent{}, ErrNotFound
 	}
 	return s.rows[i], nil
 }
 
-func (s *stubRepo) ByIDForUpdate(ctx context.Context, accountID, agentID uuid.UUID) (Agent, error) {
+func (s *stubRepo) ByIDForUpdate(ctx context.Context, accountID, agentID uuid.UUID) (AIAgent, error) {
+	if s.beforeLock != nil {
+		s.beforeLock(s)
+	}
 	return s.ByID(ctx, accountID, agentID)
 }
 
-func (s *stubRepo) Create(_ context.Context, a Agent) (Agent, error) {
+func (s *stubRepo) Create(_ context.Context, a AIAgent) (AIAgent, error) {
 	if s.err != nil {
-		return Agent{}, s.err
+		return AIAgent{}, s.err
 	}
 	a.Active, a.CreatedAt, a.UpdatedAt = true, time.Now().UTC(), time.Now().UTC()
 	s.rows = append(s.rows, a)
@@ -68,13 +73,13 @@ func (s *stubRepo) Create(_ context.Context, a Agent) (Agent, error) {
 	return a, nil
 }
 
-func (s *stubRepo) Update(_ context.Context, accountID, agentID uuid.UUID, c Config) (Agent, error) {
+func (s *stubRepo) Update(_ context.Context, accountID, agentID uuid.UUID, c Config) (AIAgent, error) {
 	if s.err != nil {
-		return Agent{}, s.err
+		return AIAgent{}, s.err
 	}
 	i, ok := s.find(accountID, agentID)
 	if !ok {
-		return Agent{}, ErrNotFound
+		return AIAgent{}, ErrNotFound
 	}
 	a := &s.rows[i]
 	a.Name, a.Description, a.LLMProvider, a.LLMModel = c.Name, c.Description, c.LLMProvider, c.LLMModel
@@ -114,9 +119,21 @@ type stubInboxes struct {
 	asked   []uuid.UUID
 }
 
-func (s *stubInboxes) ClearDefaultAgent(_ context.Context, _, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+func (s *stubInboxes) ClearDefaultAIAgent(_ context.Context, _, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
 	s.asked = append(s.asked, aiAgentID)
 	return s.cleared, nil
+}
+
+// stubConversations records which agents had their bots turned off and answers the conversations a case says it turned off.
+type stubConversations struct {
+	turnedOff []uuid.UUID
+	asked     []uuid.UUID
+	err       error
+}
+
+func (s *stubConversations) TurnOffAIAgent(_ context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
+	s.asked = append(s.asked, aiAgentID)
+	return s.turnedOff, s.err
 }
 
 type stubCatalogue struct {
@@ -143,10 +160,15 @@ func priced() *stubCatalogue {
 
 // The transaction is a plain call here: what the test checks is which writes happen, and binding them is the pool's job.
 func serviceOver(repo *stubRepo, inboxes *stubInboxes, catalogue *stubCatalogue) *Service {
+	return serviceWith(repo, inboxes, &stubConversations{}, catalogue)
+}
+
+// serviceWith is serviceOver with the conversations in the case's hands, for the cases about the bots a pause turns off.
+func serviceWith(repo *stubRepo, inboxes *stubInboxes, conversations *stubConversations, catalogue *stubCatalogue) *Service {
 	return NewService(Options{
 		Repo: repo,
-		Tx: func(_ context.Context, fn func(Store, Inboxes) error) error {
-			return fn(repo, inboxes)
+		Tx: func(_ context.Context, fn func(Store, Inboxes, Conversations) error) error {
+			return fn(repo, inboxes, conversations)
 		},
 		Catalogue: catalogue,
 	})
@@ -157,8 +179,8 @@ var (
 	testOperator = id.New()
 )
 
-func seeded(name string) Agent {
-	return Agent{
+func seeded(name string) AIAgent {
+	return AIAgent{
 		ID: id.New(), AccountID: testAccount, Name: name, LLMProvider: "cohere", LLMModel: "command-a-03-2025", Active: true,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}

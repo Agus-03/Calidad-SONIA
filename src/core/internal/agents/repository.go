@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
 type Repository struct{ exec db.Executor }
@@ -27,30 +29,30 @@ SELECT ` + agentColumns + `
 FROM   ai_agents
 WHERE  deleted_at IS NULL`
 
-func scanAgent(row pgx.Row) (Agent, error) {
-	var a Agent
+func scanAIAgent(row pgx.Row) (AIAgent, error) {
+	var a AIAgent
 	err := row.Scan(&a.ID, &a.AccountID, &a.Name, &a.Description, &a.LLMProvider, &a.LLMModel,
 		&a.Temperature, &a.MaxTokens, &a.Active, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Agent{}, ErrNotFound
+		return AIAgent{}, ErrNotFound
 	}
 	if err != nil {
-		return Agent{}, fmt.Errorf("agents: scan agent: %w", err)
+		return AIAgent{}, fmt.Errorf("agents: scan agent: %w", err)
 	}
 	return a, nil
 }
 
 // List has no page: an account configures a handful of agents, and a page number over five rows is a control nobody uses (ADR-0038).
-func (r *Repository) List(ctx context.Context, accountID uuid.UUID) ([]Agent, error) {
+func (r *Repository) List(ctx context.Context, accountID uuid.UUID) ([]AIAgent, error) {
 	rows, err := r.exec.Query(ctx, agentSelect+" AND account_id = $1 ORDER BY lower(name), id", accountID)
 	if err != nil {
 		return nil, fmt.Errorf("agents: list agents: %w", err)
 	}
 	defer rows.Close()
 
-	out := []Agent{}
+	out := []AIAgent{}
 	for rows.Next() {
-		a, err := scanAgent(rows)
+		a, err := scanAIAgent(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -60,13 +62,16 @@ func (r *Repository) List(ctx context.Context, accountID uuid.UUID) ([]Agent, er
 }
 
 // ByID is scoped by account and not only by id, so an identifier guessed from another account reads as missing.
-func (r *Repository) ByID(ctx context.Context, accountID, agentID uuid.UUID) (Agent, error) {
-	return scanAgent(r.exec.QueryRow(ctx, agentSelect+" AND account_id = $1 AND id = $2", accountID, agentID))
+func (r *Repository) ByID(ctx context.Context, accountID, agentID uuid.UUID) (AIAgent, error) {
+	return scanAIAgent(r.exec.QueryRow(ctx, agentSelect+" AND account_id = $1 AND id = $2", accountID, agentID))
 }
 
 // ByIDForUpdate locks the row for the transaction that edits it, so two saves at once audit a before that each of them really saw.
-func (r *Repository) ByIDForUpdate(ctx context.Context, accountID, agentID uuid.UUID) (Agent, error) {
-	return scanAgent(r.exec.QueryRow(ctx, agentSelect+" AND account_id = $1 AND id = $2 FOR UPDATE", accountID, agentID))
+// NO KEY UPDATE and not UPDATE: the id never changes, and a full lock would stop every foreign key check on the agent —a message
+// the turn writes, a generation the brain writes, a conversation born— while a save or a pause is open. It still conflicts with the
+// FOR SHARE of an assignment and of a birth, which is what serialises them (ADR-0038).
+func (r *Repository) ByIDForUpdate(ctx context.Context, accountID, agentID uuid.UUID) (AIAgent, error) {
+	return scanAIAgent(r.exec.QueryRow(ctx, agentSelect+" AND account_id = $1 AND id = $2 FOR NO KEY UPDATE", accountID, agentID))
 }
 
 // default_mode has no default in 0001 and is not part of the API until Fase 9, so every agent is born with the mode the conversation
@@ -77,8 +82,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING ` + agentColumns
 
 // Create returns the row as PostgreSQL wrote it, because the clock and the default of active are the database's (C06).
-func (r *Repository) Create(ctx context.Context, a Agent) (Agent, error) {
-	return scanAgent(r.exec.QueryRow(ctx, agentInsert,
+func (r *Repository) Create(ctx context.Context, a AIAgent) (AIAgent, error) {
+	return scanAIAgent(r.exec.QueryRow(ctx, agentInsert,
 		a.ID, a.AccountID, a.Name, a.Description, enums.AgentModeAutonomous,
 		a.LLMProvider, a.LLMModel, a.Temperature, a.MaxTokens))
 }
@@ -91,8 +96,8 @@ WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING ` + agentColumns
 
 // Update writes the whole configuration: the service already merged what was sent into what the locked row said.
-func (r *Repository) Update(ctx context.Context, accountID, agentID uuid.UUID, c Config) (Agent, error) {
-	return scanAgent(r.exec.QueryRow(ctx, agentUpdate, accountID, agentID,
+func (r *Repository) Update(ctx context.Context, accountID, agentID uuid.UUID, c Config) (AIAgent, error) {
+	return scanAIAgent(r.exec.QueryRow(ctx, agentUpdate, accountID, agentID,
 		c.Name, c.Description, c.LLMProvider, c.LLMModel, c.Temperature, c.MaxTokens, c.Active))
 }
 
@@ -124,4 +129,16 @@ func (r *Repository) RecordAudit(ctx context.Context, e AuditEntry) error {
 		return fmt.Errorf("agents: insert audit log: %w", err)
 	}
 	return nil
+}
+
+// RecordInboxDefault is how whatsapp/ audits the agent it names for a number: audit_logs is this package's table, so it is written
+// here, inside the caller's transaction (regla 1, ADR-0038). Plain ids, so whatsapp/ does not import this package.
+func (r *Repository) RecordInboxDefault(ctx context.Context, operatorID, inboxID uuid.UUID, before, after *uuid.UUID) error {
+	changes, err := json.Marshal(inboxChange{Before: inboxDefault{DefaultAIAgentID: before}, After: inboxDefault{DefaultAIAgentID: after}})
+	if err != nil {
+		return fmt.Errorf("agents: encode the audit of an inbox default: %w", err)
+	}
+	return r.RecordAudit(ctx, AuditEntry{
+		ID: id.New(), OperatorID: operatorID, Action: actionUpdate, EntityType: entityInbox, EntityID: inboxID, Changes: changes,
+	})
 }

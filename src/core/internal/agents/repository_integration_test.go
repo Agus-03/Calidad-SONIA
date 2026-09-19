@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -59,6 +60,49 @@ func seededOperator(t *testing.T, ctx context.Context, exec db.Executor, account
 	return operator
 }
 
+// seededConversation opens a conversation of the agent with its bot on, the state a pause or a removal has to leave off. Its contact
+// and inbox are the case's own, so the rollback takes all three.
+func seededConversation(t *testing.T, ctx context.Context, exec db.Executor, account, inboxID, aiAgentID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	contact := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
+		VALUES ($1, $2, $3, 'Prueba', 'Agentes', 'client', 'direct', now())`, contact, account, "549351"+digitsOf(contact.String())); err != nil {
+		t.Fatalf("seed a contact: %v", err)
+	}
+	conversation := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO conversations (id, contact_id, inbox_id, ai_agent_id, status, mode, last_inbound_at, window_expires_at)
+		VALUES ($1, $2, $3, $4, 'active', 'autonomous', now(), now() + interval '24 hours')`,
+		conversation, contact, inboxID, aiAgentID); err != nil {
+		t.Fatalf("seed a conversation: %v", err)
+	}
+	return conversation
+}
+
+// digitsOf keeps every digit of the id: the head of a UUID v7 is its timestamp, and two contacts of one case would share it.
+func digitsOf(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			out = append(out, s[i])
+		}
+	}
+	return string(out)
+}
+
+func modeOf(t *testing.T, ctx context.Context, exec db.Executor, conversationID uuid.UUID) (string, *uuid.UUID) {
+	t.Helper()
+
+	var mode string
+	var aiAgentID *uuid.UUID
+	if err := exec.QueryRow(ctx, `SELECT mode, ai_agent_id FROM conversations WHERE id = $1`, conversationID).Scan(&mode, &aiAgentID); err != nil {
+		t.Fatalf("read the conversation: %v", err)
+	}
+	return mode, aiAgentID
+}
+
 func inTx(t *testing.T, fn func(ctx context.Context, exec db.Executor, account uuid.UUID)) {
 	t.Helper()
 	ctx := context.Background()
@@ -78,7 +122,7 @@ func inTx(t *testing.T, fn func(ctx context.Context, exec db.Executor, account u
 // F31 toggle off (ADR-0038). And the temperature crosses numeric and back without drifting.
 func TestCreateWritesTheRowTheTurnAndTheBrainRead(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor, account uuid.UUID) {
-		created, err := NewRepository(exec).Create(ctx, Agent{
+		created, err := NewRepository(exec).Create(ctx, AIAgent{
 			ID: id.New(), AccountID: account, Name: "Agente de integracion",
 			LLMProvider: "cohere", LLMModel: "command-a-03-2025", Temperature: ptr(0.3), MaxTokens: ptr(512),
 		})
@@ -105,10 +149,10 @@ func TestCreateWritesTheRowTheTurnAndTheBrainRead(t *testing.T) {
 }
 
 // A removal is absence for every read of the package, and removing twice says so instead of moving the timestamp (C09).
-func TestARemovedAgentIsGoneForEveryRead(t *testing.T) {
+func TestARemovedAIAgentIsGoneForEveryRead(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor, account uuid.UUID) {
 		repo := NewRepository(exec)
-		created, err := repo.Create(ctx, Agent{ID: id.New(), AccountID: account, Name: "Agente a borrar",
+		created, err := repo.Create(ctx, AIAgent{ID: id.New(), AccountID: account, Name: "Agente a borrar",
 			LLMProvider: "cohere", LLMModel: "command-a-03-2025"})
 		if err != nil {
 			t.Fatalf("Create: %v", err)
@@ -141,14 +185,15 @@ func TestARemovedAgentIsGoneForEveryRead(t *testing.T) {
 	})
 }
 
-// The removal of ADR-0038 against the real DDL, through the real repositories of the two packages and in one transaction: the agent
-// goes away, the inbox that defaulted to it stops naming it, and audit_logs holds a jsonb a query can read.
-func TestRemovingAnAgentIsOneTransactionAcrossTheTwoOwners(t *testing.T) {
+// The removal of ADR-0038 against the real DDL, through the real repositories of the three packages and in one transaction: the
+// agent goes away, the inbox that defaulted to it stops naming it, its conversation is left with the bot off and the agent kept as
+// who answered it, and audit_logs holds a jsonb a query can read.
+func TestRemovingAnAIAgentIsOneTransactionAcrossTheTwoOwners(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor, account uuid.UUID) {
 		operator := seededOperator(t, ctx, exec, account)
 		agents, inboxes := NewRepository(exec), whatsapp.NewRepository(exec, testCipher(t))
 
-		created, err := agents.Create(ctx, Agent{ID: id.New(), AccountID: account, Name: "Agente de una bandeja",
+		created, err := agents.Create(ctx, AIAgent{ID: id.New(), AccountID: account, Name: "Agente de una bandeja",
 			LLMProvider: "cohere", LLMModel: "command-a-03-2025"})
 		if err != nil {
 			t.Fatalf("Create: %v", err)
@@ -160,55 +205,76 @@ func TestRemovingAnAgentIsOneTransactionAcrossTheTwoOwners(t *testing.T) {
 			inboxID, account, created.ID, "it-"+id.New().String(), "it-"+id.New().String()); err != nil {
 			t.Fatalf("seed an inbox: %v", err)
 		}
+		conversation := seededConversation(t, ctx, exec, account, inboxID, created.ID)
 
+		aggregate := conversations.NewService(conversations.NewRepository(exec), nil)
 		service := NewService(Options{
 			Repo: agents,
 			// The case's own transaction plays the one the service would open, so the rollback undoes all of it.
-			Tx:        func(_ context.Context, fn func(Store, Inboxes) error) error { return fn(agents, inboxes) },
+			Tx: func(_ context.Context, fn func(Store, Inboxes, Conversations) error) error {
+				return fn(agents, inboxes, aggregate)
+			},
 			Catalogue: priced(),
 		})
 		if err := service.Delete(ctx, account, operator, created.ID); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
-		var defaultAgent *uuid.UUID
-		if err := exec.QueryRow(ctx, `SELECT default_ai_agent_id FROM inboxes WHERE id = $1`, inboxID).Scan(&defaultAgent); err != nil {
+		var defaultAIAgent *uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT default_ai_agent_id FROM inboxes WHERE id = $1`, inboxID).Scan(&defaultAIAgent); err != nil {
 			t.Fatalf("read the inbox: %v", err)
 		}
-		if defaultAgent != nil {
-			t.Fatalf("the inbox still defaults to %v after the removal", *defaultAgent)
+		if defaultAIAgent != nil {
+			t.Fatalf("the inbox still defaults to %v after the removal", *defaultAIAgent)
+		}
+		if mode, aiAgentID := modeOf(t, ctx, exec, conversation); mode != "off" || aiAgentID == nil || *aiAgentID != created.ID {
+			t.Fatalf("after the removal the conversation is %q with agent %v, want off and the agent kept", mode, aiAgentID)
 		}
 
-		var action, name, cleared string
+		var action, name, cleared, turnedOff string
 		var auditOperator uuid.UUID
 		if err := exec.QueryRow(ctx, `
-			SELECT action, operator_id, changes_json->'before'->>'name', changes_json->'cleared_inbox_ids'->>0
+			SELECT action, operator_id, changes_json->'before'->>'name', changes_json->'cleared_inbox_ids'->>0,
+			       changes_json->'turned_off_conversation_ids'->>0
 			FROM   audit_logs
 			WHERE  entity_type = 'ai_agents' AND entity_id = $1`, created.ID).
-			Scan(&action, &auditOperator, &name, &cleared); err != nil {
+			Scan(&action, &auditOperator, &name, &cleared, &turnedOff); err != nil {
 			t.Fatalf("read the audit: %v", err)
 		}
-		if action != "delete" || auditOperator != operator || name != "Agente de una bandeja" || cleared != inboxID.String() {
-			t.Fatalf("audit = %s by %v, before %q, cleared %q; want delete by %v of the agent and %v",
-				action, auditOperator, name, cleared, operator, inboxID)
+		if action != "delete" || auditOperator != operator || name != "Agente de una bandeja" || cleared != inboxID.String() ||
+			turnedOff != conversation.String() {
+			t.Fatalf("audit = %s by %v, before %q, cleared %q, turned off %q; want delete by %v of the agent, %v and %v",
+				action, auditOperator, name, cleared, turnedOff, operator, inboxID, conversation)
 		}
 	})
 }
 
-// An update through the real repository audits the jsonb diff and leaves the row with the new configuration.
+// An update through the real repository audits the jsonb diff and leaves the row with the new configuration. Being a pause, it
+// also turns off the bot of the conversation the agent held, keeping the agent on it so the vendor can turn it on after a resume.
 func TestUpdateThroughTheServiceAuditsItsDiff(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor, account uuid.UUID) {
 		operator := seededOperator(t, ctx, exec, account)
 		repo := NewRepository(exec)
-		created, err := repo.Create(ctx, Agent{ID: id.New(), AccountID: account, Name: "Agente a pausar",
+		created, err := repo.Create(ctx, AIAgent{ID: id.New(), AccountID: account, Name: "Agente a pausar",
 			LLMProvider: "cohere", LLMModel: "command-a-03-2025"})
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
+		inboxID := id.New()
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO inboxes (id, account_id, default_ai_agent_id, phone_number_id, waba_id, display_name, verify_token, status)
+			VALUES ($1, $2, $3, $4, 'it-waba', 'Numero de integracion', $5, 'active')`,
+			inboxID, account, created.ID, "it-"+id.New().String(), "it-"+id.New().String()); err != nil {
+			t.Fatalf("seed an inbox: %v", err)
+		}
+		conversation := seededConversation(t, ctx, exec, account, inboxID, created.ID)
 
+		aggregate := conversations.NewService(conversations.NewRepository(exec), nil)
 		service := NewService(Options{
-			Repo:      repo,
-			Tx:        func(_ context.Context, fn func(Store, Inboxes) error) error { return fn(repo, nil) },
+			Repo: repo,
+			Tx: func(_ context.Context, fn func(Store, Inboxes, Conversations) error) error {
+				return fn(repo, nil, aggregate)
+			},
 			Catalogue: priced(),
 		})
 		paused, err := service.Update(ctx, account, operator, created.ID, func(c *Config) {
@@ -233,6 +299,17 @@ func TestUpdateThroughTheServiceAuditsItsDiff(t *testing.T) {
 		}
 		if !before || after || model != "claude-sonnet-4-5" {
 			t.Fatalf("audit before %v after %v model %q, want active before, paused after on the new model", before, after, model)
+		}
+		if mode, aiAgentID := modeOf(t, ctx, exec, conversation); mode != "off" || aiAgentID == nil || *aiAgentID != created.ID {
+			t.Fatalf("after the pause the conversation is %q with agent %v, want off and the agent kept", mode, aiAgentID)
+		}
+
+		// The resume turns nothing back on: which conversations the bot answers again is the vendor's to decide (ADR-0038).
+		if _, err := service.Update(ctx, account, operator, created.ID, func(c *Config) { c.Active = true }); err != nil {
+			t.Fatalf("resume: %v", err)
+		}
+		if mode, _ := modeOf(t, ctx, exec, conversation); mode != "off" {
+			t.Fatalf("after the resume the conversation is %q, want it still off", mode)
 		}
 	})
 }

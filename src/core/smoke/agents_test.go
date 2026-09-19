@@ -33,10 +33,10 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 	adminID := id.New()
 	email := "agents-" + adminID.String() + "@coop.test"
 
-	// Armed before the first row exists, children first: audit_logs points at the operator, the inbox at the agent, and the agents
-	// and the inbox are this case's own, so the demo inbox the other cases answer through is never touched.
+	// Armed before the first row exists, children first: audit_logs points at the operator, the conversation at the inbox, the
+	// contact and the agent, and all of them are this case's own, so the demo inbox the other cases answer through is never touched.
 	var created []uuid.UUID
-	inboxID := id.New()
+	inboxID, contactID := id.New(), id.New()
 	t.Cleanup(func() {
 		for _, step := range []struct {
 			what string
@@ -44,6 +44,8 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 			args []any
 		}{
 			{"the audit", `DELETE FROM audit_logs WHERE operator_id = $1`, []any{adminID}},
+			{"the conversation", `DELETE FROM conversations WHERE inbox_id = $1`, []any{inboxID}},
+			{"the contact", `DELETE FROM contacts WHERE id = $1`, []any{contactID}},
 			{"the inbox", `DELETE FROM inboxes WHERE id = $1`, []any{inboxID}},
 			{"the agents", `DELETE FROM ai_agents WHERE id = ANY($1)`, []any{created}},
 			{"the admin", `DELETE FROM operators WHERE id = $1`, []any{adminID}},
@@ -120,6 +122,68 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 		}
 		if _, leaked := keysOf(t, body)["verify_token"]; leaked {
 			t.Fatalf("the inbox answered with its verify token: %s", body)
+		}
+	})
+
+	// A conversation of this case's own with the bot on, written by hand because it is born from a customer writing to Meta.
+	conversationID := id.New()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
+		VALUES ($1, $2, $3, 'Cliente', 'Recorrido', 'client', 'direct', now())`,
+		contactID, account, "549351"+onlyDigits(contactID.String())); err != nil {
+		t.Fatalf("seeding the contact: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO conversations (id, contact_id, inbox_id, ai_agent_id, status, mode, last_inbound_at, window_expires_at)
+		VALUES ($1, $2, $3, $4, 'active', 'autonomous', now(), now() + interval '24 hours')`,
+		conversationID, contactID, inboxID, created[0]); err != nil {
+		t.Fatalf("seeding the conversation: %v", err)
+	}
+
+	// What the inbox says of this conversation: its mode and whether its bot could answer (ADR-0038, regla 16).
+	botOf := func(t *testing.T) (string, bool) {
+		t.Helper()
+		status, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", token, "")
+		if status != http.StatusOK {
+			t.Fatalf("listing the inbox: got %d - %s", status, body)
+		}
+		var page struct {
+			Items []struct {
+				ID               string `json:"id"`
+				Mode             string `json:"mode"`
+				AIAgentAvailable bool   `json:"ai_agent_available"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &page); err != nil {
+			t.Fatalf("decoding the inbox: %v", err)
+		}
+		for _, c := range page.Items {
+			if c.ID == conversationID.String() {
+				return c.Mode, c.AIAgentAvailable
+			}
+		}
+		t.Fatalf("the inbox does not show %v - %s", conversationID, body)
+		return "", false
+	}
+
+	t.Run("la pausa apaga el bot y la bandeja muestra que no se puede prender", func(t *testing.T) {
+		if status, body := call(t, core, http.MethodPatch, "/api/v1/ai-agents/"+agentID, token, `{"active":true}`); status != http.StatusOK {
+			t.Fatalf("resuming: got %d - %s", status, body)
+		}
+		if mode, available := botOf(t); mode != "autonomous" || !available {
+			t.Fatalf("before the pause the bot is %q and available %v, want autonomous and true", mode, available)
+		}
+
+		if status, body := call(t, core, http.MethodPatch, "/api/v1/ai-agents/"+agentID, token, `{"active":false}`); status != http.StatusOK {
+			t.Fatalf("pausing: got %d - %s", status, body)
+		}
+		if mode, available := botOf(t); mode != "off" || available {
+			t.Fatalf("after the pause the bot is %q and available %v, want off and false", mode, available)
+		}
+
+		status, body := call(t, core, http.MethodPatch, "/api/v1/conversations/"+conversationID.String()+"/mode", token, `{"mode":"autonomous"}`)
+		if code, _ := refusal(t, body); status != http.StatusConflict || code != "ai_agent_unavailable" {
+			t.Fatalf("turning the bot on during the pause: got %d %q, want 409 ai_agent_unavailable", status, code)
 		}
 	})
 

@@ -34,6 +34,7 @@ Quedaban tres preguntas abiertas:
 | 7 | **Dos rutas.** En el núcleo, `POST /api/v1/ai-agents/:id/preview`, sólo para `admin`. En el cerebro, `POST /prompts/preview`, con el token interno. Es un `POST` porque los borradores viajan en el cuerpo |
 | 8 | **El núcleo comprueba que el agente IA esté a su alcance antes de preguntar**, porque el cerebro no sabe de cuentas. Un agente IA pausado se previsualiza: pausado es justo cuando el administrador lo corrige ([ADR-0039](0039-componentes-del-prompt-y-su-versionado.md), regla 8). Uno dado de baja es un 404 |
 | 9 | **Timeout corto y sin reintentos.** La llamada usa `BRAIN_PREVIEW_TIMEOUT_MS` (3 s), no los 10 s del turno. Un cerebro que no responde es un 503 `preview_unavailable`, y la próxima tecla vuelve a preguntar |
+| 10 | **La previsualización no escribe en el log que faltan componentes.** Esa línea la escribe sólo el turno: `assemble()` dejó de loguear, porque la previsualización lo ejecuta a medida que el administrador tipea |
 
 ## 3. Justificación
 
@@ -55,7 +56,7 @@ Quedaban tres preguntas abiertas:
 - **Cada tecla es una llamada al cerebro** (o cada pausa, si el panel espera a que se deje de tipear). No hay caché, porque el pedido cambia con cada tecla.
 - **Al no mostrar el sobre, la previsualización no es todo lo que recibe el modelo.** El historial y el mensaje del cliente no se ven. OE1 habla del *"prompt ensamblado"*, y lo que se arma a partir de los componentes es el `system`.
 - **Las reglas de un guardado viven en tres lugares**: el servicio del núcleo, los índices de `0001` y el esquema del cerebro. Cambiarlas exige cambiar los tres.
-- **Cada previsualización con menos de seis componentes escribe una línea de log** en el cerebro, la misma que escribe un turno. Con una tecla por llamada, son muchas líneas.
+- **Quien llame a `assemble()` fuera del turno tiene que decidir por su cuenta si avisa que faltan componentes** (regla 10): el aviso ya no viene con el ensamblador.
 
 ## 5. Alternativas descartadas
 

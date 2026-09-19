@@ -111,9 +111,9 @@ sonia/
 │   │   ├── internal/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
-│   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y lo de la Fase 9 se rechaza por nombre (ADR-0038)
+│   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y rechaza por nombre lo que no expone (ADR-0038, regla 7)
 │   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038)
-│   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas
+│   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
 │   │   │   │   ├── repository.go       ai_agents y audit_logs · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
@@ -132,7 +132,7 @@ sonia/
 │   │   │   │                           persiste también los atributos de F31
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
-│   │   │   │   ├── service.go          turn/, inbox/ y whatsapp/ escriben por acá
+│   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038)
 │   │   │   │   ├── repository.go       recibe el Executor de quien conduce
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
@@ -150,7 +150,7 @@ sonia/
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
 │   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje y sus fallidos · escribe conversation_assignments
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · escribe conversation_assignments
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
@@ -203,7 +203,7 @@ sonia/
 │   │   │       ├── controller.go       entrada del webhook · lee la firma y responde a Meta antes del turno
 │   │   │       ├── settings_controller.go  el panel de los números, bajo /api/v1 · sin ningún secreto en la respuesta (ADR-0038)
 │   │   │       ├── routes.go           GET y POST /webhooks/whatsapp, fuera de /api/v1: Meta no es un operador · GET y PATCH /inboxes, sólo admin
-│   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja
+│   │   │       ├── service.go          valida la firma HMAC-SHA256 con el app secret de la bandeja · relee el agente IA por defecto dentro de la transacción (ADR-0038)
 │   │   │       ├── settings.go         qué agente IA atiende cada número · audita por el repositorio de agents/ (ADR-0038)
 │   │   │       ├── repository.go       descifra los dos secretos de inboxes (ADR-0031) · vacía el default de un agente IA dado de baja (ADR-0038)
 │   │   │       ├── model.go
@@ -242,7 +242,7 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 |---|---|---|
 | `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente (ADR-0007) |
 | `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
-| `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/` y `whatsapp/` escriben por acá |
+| `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/`, `whatsapp/` y `agents/` escriben por acá |
 | `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |
 | `inbox/` | `conversation_assignments` · `internal_notes` · `conversation_labels` | |
 | `labels/` | `labels` | El catálogo; las dos tablas de unión son de quien etiqueta |

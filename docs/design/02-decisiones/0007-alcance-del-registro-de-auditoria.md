@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 13: las modificaciones de configuración de agentes IA incluyen qué agente IA atiende cada número |
 | **Fecha** | 2026-08-06 |
 | **Etapa** | Diseño — Paso 3 |
 | **Requisitos afectados** | F26, OE2 · secciones 7.3 y Anexo B |

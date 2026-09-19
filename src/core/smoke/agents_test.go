@@ -2,6 +2,7 @@ package smoke
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -12,10 +13,10 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
-// TestTheAdminManagesAnAgentThroughTheRealProcess is the one case where the check of ADR-0038 meets the real brain: the package tests
+// TestTheAdminManagesAnAIAgentThroughTheRealProcess is the one case where the check of ADR-0038 meets the real brain: the package tests
 // answer the priced list from a stub, and none of them can fail if the core is not asking the deployed brain, or the brain is not
 // reading its own pricing.yaml.
-func TestTheAdminManagesAnAgentThroughTheRealProcess(t *testing.T) {
+func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 	core, _, pool := stack(t)
 	ctx := context.Background()
 	waitForHealth(t, core)
@@ -32,8 +33,10 @@ func TestTheAdminManagesAnAgentThroughTheRealProcess(t *testing.T) {
 	adminID := id.New()
 	email := "agents-" + adminID.String() + "@coop.test"
 
-	// Armed before the first row exists, children first: audit_logs points at the operator, and the agents are this case's own.
+	// Armed before the first row exists, children first: audit_logs points at the operator, the inbox at the agent, and the agents
+	// and the inbox are this case's own, so the demo inbox the other cases answer through is never touched.
 	var created []uuid.UUID
+	inboxID := id.New()
 	t.Cleanup(func() {
 		for _, step := range []struct {
 			what string
@@ -41,6 +44,7 @@ func TestTheAdminManagesAnAgentThroughTheRealProcess(t *testing.T) {
 			args []any
 		}{
 			{"the audit", `DELETE FROM audit_logs WHERE operator_id = $1`, []any{adminID}},
+			{"the inbox", `DELETE FROM inboxes WHERE id = $1`, []any{inboxID}},
 			{"the agents", `DELETE FROM ai_agents WHERE id = ANY($1)`, []any{created}},
 			{"the admin", `DELETE FROM operators WHERE id = $1`, []any{adminID}},
 		} {
@@ -100,13 +104,54 @@ func TestTheAdminManagesAnAgentThroughTheRealProcess(t *testing.T) {
 		}
 	})
 
-	t.Run("la baja la saca de toda lectura", func(t *testing.T) {
+	// A number of this case's own, written by hand because connecting one is --connect-inbox and not an endpoint (ADR-0033).
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO inboxes (id, account_id, phone_number_id, waba_id, display_name, verify_token, status)
+		VALUES ($1, $2, $3, 'smoke-waba', 'Numero del recorrido', $4, 'active')`,
+		inboxID, account, "smoke-"+id.New().String(), "smoke-"+id.New().String()); err != nil {
+		t.Fatalf("seeding the inbox: %v", err)
+	}
+	inboxPath := "/api/v1/inboxes/" + inboxID.String()
+
+	t.Run("un agente pausado se asigna a un numero y el numero no muestra secretos", func(t *testing.T) {
+		status, body := call(t, core, http.MethodPatch, inboxPath, token, fmt.Sprintf(`{"default_ai_agent_id":%q}`, agentID))
+		if status != http.StatusOK || stringField(t, body, "default_ai_agent_id") != agentID {
+			t.Fatalf("assigning the paused agent: got %d, want 200 naming it - %s", status, body)
+		}
+		if _, leaked := keysOf(t, body)["verify_token"]; leaked {
+			t.Fatalf("the inbox answered with its verify token: %s", body)
+		}
+	})
+
+	t.Run("la baja la saca de toda lectura y del numero que la tenia", func(t *testing.T) {
 		if status, body := call(t, core, http.MethodDelete, "/api/v1/ai-agents/"+agentID, token, ""); status != http.StatusNoContent {
 			t.Fatalf("removing: got %d, want 204 - %s", status, body)
 		}
 		status, body := call(t, core, http.MethodGet, "/api/v1/ai-agents/"+agentID, token, "")
 		if code, _ := refusal(t, body); status != http.StatusNotFound || code != "ai_agent_not_found" {
 			t.Fatalf("reading a removed agent: got %d %q, want 404 ai_agent_not_found", status, code)
+		}
+
+		status, body = call(t, core, http.MethodGet, "/api/v1/inboxes", token, "")
+		if status != http.StatusOK || !listed(t, body, inboxID.String()) {
+			t.Fatalf("listing the inboxes: got %d without %v - %s", status, inboxID, body)
+		}
+		var page struct {
+			Items []struct {
+				ID               string  `json:"id"`
+				DefaultAIAgentID *string `json:"default_ai_agent_id"`
+			} `json:"items"`
+		}
+		_ = json.Unmarshal([]byte(body), &page)
+		for _, in := range page.Items {
+			if in.ID == inboxID.String() && in.DefaultAIAgentID != nil {
+				t.Fatalf("the number still names %s after its agent was removed", *in.DefaultAIAgentID)
+			}
+		}
+
+		status, body = call(t, core, http.MethodPatch, inboxPath, token, fmt.Sprintf(`{"default_ai_agent_id":%q}`, agentID))
+		if code, _ := refusal(t, body); status != http.StatusBadRequest || code != "ai_agent_not_assignable" {
+			t.Fatalf("assigning a removed agent: got %d %q, want 400 ai_agent_not_assignable", status, code)
 		}
 	})
 }

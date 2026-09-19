@@ -1,6 +1,7 @@
 # The preview of F03 without PostgreSQL: the same assembler as the turn, over the drafts the panel sends (ADR-0040).
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -176,6 +177,6 @@ async def test_a_draft_never_becomes_evidence() -> None:
     client = FakeClient()
 
     with pytest.raises(UnversionedComponent):
-        await generate(client=client, turn=turn(), prompt=prompt)
+        await generate(client=client, turn=turn(), prompt=prompt, assembled_at=datetime.now(UTC))
 
     assert client.calls == [], "the turn paid for a call it could not leave evidence of"

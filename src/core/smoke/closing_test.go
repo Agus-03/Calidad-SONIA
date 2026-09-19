@@ -222,13 +222,17 @@ func generationOf(ctx context.Context, t *testing.T, pool db.Pool, wamid string)
 	t.Helper()
 	var generation, agent uuid.UUID
 	var prompt string
-	var at time.Time
+	var at, assembled time.Time
 	if err := pool.QueryRow(ctx, `
-		SELECT g.id, g.ai_agent_id, g.prompt_rendered, g.created_at
+		SELECT g.id, g.ai_agent_id, g.prompt_rendered, g.created_at, g.assembled_at
 		FROM   messages i
 		JOIN   generations g ON g.message_batch_id = i.message_batch_id
-		WHERE  i.wamid = $1`, wamid).Scan(&generation, &agent, &prompt, &at); err != nil {
+		WHERE  i.wamid = $1`, wamid).Scan(&generation, &agent, &prompt, &at, &assembled); err != nil {
 		t.Fatalf("reading the generation of %s: %v", wamid, err)
+	}
+	// The components are read before the model is called, so their instant can never come after the row's (ADR-0039, regla 10).
+	if assembled.After(at) {
+		t.Fatalf("assembled_at %v comes after created_at %v: it is not the instant of the read", assembled, at)
 	}
 	return generation, agent, prompt, at
 }

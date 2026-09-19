@@ -365,8 +365,8 @@ func evidence(t *testing.T, ctx context.Context, exec db.Executor, conversationI
 	_, err := exec.Exec(ctx,
 		`INSERT INTO generations (id, conversation_id, ai_agent_id, message_batch_id, llm_provider, llm_model,
 		                          prompt_rendered, completion_text, prompt_tokens, completion_tokens,
-		                          latency_ms, cost, currency, status)
-		 SELECT $1, c.id, c.ai_agent_id, $2, 'double', 'command-a-03-2025', 'system', 'hola', 10, 5, 120, 0.000075, 'USD', $3
+		                          latency_ms, cost, currency, status, assembled_at)
+		 SELECT $1, c.id, c.ai_agent_id, $2, 'double', 'command-a-03-2025', 'system', 'hola', 10, 5, 120, 0.000075, 'USD', $3, now()
 		 FROM   conversations c WHERE c.id = $4`,
 		generationID, batchID, enums.GenerationStatusAutoSent, conversationID)
 	if err != nil {

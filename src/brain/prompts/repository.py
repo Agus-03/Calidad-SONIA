@@ -1,6 +1,7 @@
 # The read of layer 1 (03-capa-prompts 1): prompt_components belongs to the core, so the brain only reads it (regla 3).
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -11,7 +12,7 @@ from infra.enums import PromptComponentType
 # The newest version travels with the text so the generation can name what it assembled (OE1). The core writes both in one
 # transaction (ADR-0039, regla 3), so this one statement never sees a text without its version.
 _COMPONENTS = """
-SELECT c.type, c.content, c.position, v.id AS version_id
+SELECT c.type, c.content, c.position, v.id AS version_id, statement_timestamp() AS read_at
 FROM   prompt_components c
 JOIN   LATERAL (
            SELECT pv.id
@@ -50,15 +51,33 @@ async def read_agent_name(conn: AsyncConnection, ai_agent_id: UUID) -> str | Non
     return row["name"] if row else None
 
 
+# What was read and when, by the database's clock (C06): OE1 asks which versions were current at the instant of this read, not at
+# the instant the generation is written seconds later (ADR-0039, regla 10).
+@dataclass(frozen=True)
+class Assembly:
+    components: tuple[Component, ...]
+    read_at: datetime
+
+
 # Returns however many there are: F01 declares six, but a company with no brand voice is a valid state and not an error.
-async def read_components(conn: AsyncConnection, ai_agent_id: UUID) -> tuple[Component, ...]:
+async def read_components(conn: AsyncConnection, ai_agent_id: UUID) -> Assembly:
     cursor = await conn.execute(_COMPONENTS, {"agent": ai_agent_id})
-    return tuple(
-        Component(
-            type=PromptComponentType(row["type"]),
-            content=row["content"],
-            position=row["position"],
-            version_id=row["version_id"],
-        )
-        for row in await cursor.fetchall()
+    rows = await cursor.fetchall()
+    if rows:
+        # The instant of the statement that read them, the closest the clock gets to the snapshot the texts came from.
+        read_at = rows[0]["read_at"]
+    else:
+        cursor = await conn.execute("SELECT statement_timestamp() AS read_at")
+        read_at = (await cursor.fetchone())["read_at"]
+    return Assembly(
+        components=tuple(
+            Component(
+                type=PromptComponentType(row["type"]),
+                content=row["content"],
+                position=row["position"],
+                version_id=row["version_id"],
+            )
+            for row in rows
+        ),
+        read_at=read_at,
     )

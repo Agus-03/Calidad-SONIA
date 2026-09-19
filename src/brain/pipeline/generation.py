@@ -2,6 +2,7 @@
 
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -127,7 +128,8 @@ def cost_of(rate: Rate, prompt_tokens: int, completion_tokens: int) -> Decimal:
 
 
 # Takes no connection: the call takes seconds, and holding a pool connection through it starves the next turn.
-async def generate(*, client: LLMClient, turn: Turn, prompt: Prompt) -> Generation:
+# assembled_at is when the components were read, which the caller knows and this step does not (ADR-0039, regla 10).
+async def generate(*, client: LLMClient, turn: Turn, prompt: Prompt, assembled_at: datetime) -> Generation:
     # Priced before the call and not after: failing afterwards spends the money and still writes no evidence of it.
     rate = rate_for(turn.agent.llm_provider, turn.agent.llm_model)
     versions = tuple(c.version_id for c in prompt.assembled if c.version_id is not None)
@@ -163,6 +165,7 @@ async def generate(*, client: LLMClient, turn: Turn, prompt: Prompt) -> Generati
         # Written once and already with its verdict (07-secuencia 4.2): pending_review and blocked have no path here yet.
         status=GenerationStatus.AUTO_SENT,
         component_version_ids=versions,
+        assembled_at=assembled_at,
     )
 
 

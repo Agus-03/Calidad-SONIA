@@ -175,6 +175,8 @@ class Generation:
     status: GenerationStatus
     # The version of each component that went in, in the order it went in: the "assembled" side of OE1 (ADR-0015).
     component_version_ids: tuple[UUID, ...]
+    # When those versions were read, which is the instant OE1 measures against (ADR-0039, regla 10).
+    assembled_at: datetime
 
 
 # message_id is absent on purpose: the core links it inside the transaction of section 2 (ADR-0017 (i).2).
@@ -182,11 +184,11 @@ _GENERATION = """
 INSERT INTO generations (
     id, conversation_id, ai_agent_id, message_batch_id,
     llm_provider, llm_model, prompt_rendered, completion_text,
-    prompt_tokens, completion_tokens, latency_ms, cost, currency, status
+    prompt_tokens, completion_tokens, latency_ms, cost, currency, status, assembled_at
 ) VALUES (
     %(id)s, %(conversation_id)s, %(ai_agent_id)s, %(message_batch_id)s,
     %(llm_provider)s, %(llm_model)s, %(prompt_rendered)s, %(completion_text)s,
-    %(prompt_tokens)s, %(completion_tokens)s, %(latency_ms)s, %(cost)s, %(currency)s, %(status)s
+    %(prompt_tokens)s, %(completion_tokens)s, %(latency_ms)s, %(cost)s, %(currency)s, %(status)s, %(assembled_at)s
 )
 """
 
@@ -217,6 +219,7 @@ async def write_generation(conn: AsyncConnection, generation: Generation) -> Non
             "cost": generation.cost,
             "currency": generation.currency,
             "status": generation.status,
+            "assembled_at": generation.assembled_at,
         },
     )
     # One statement per component and not executemany: they are six at most, and the order of the rows is the order of the prompt.

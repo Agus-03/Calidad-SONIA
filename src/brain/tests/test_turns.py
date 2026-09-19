@@ -83,8 +83,8 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
         "messages": [message("hola")],
         # The six of F01: without them the agent reaches the model with no instructions at all (Regla 1).
         "prompt_components": [
-            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4()},
-            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4()},
+            {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4(), "read_at": datetime.now(UTC)},
+            {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4(), "read_at": datetime.now(UTC)},
         ],
         # Declared so the fake connection records the INSERTs: the two writes are the only ones the brain makes in a turn.
         "generations": [],

@@ -1,5 +1,6 @@
 # The assembler of F03: the structure is fixed and the content is the agent's, which is what Regla 1 of 03-capa-prompts declares.
 
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -172,15 +173,26 @@ class FakeCursor:
     async def fetchall(self) -> list[dict]:
         return self._rows
 
+    async def fetchone(self) -> dict | None:
+        return self._rows[0] if self._rows else None
 
+
+# Answers the components query with its rows and the clock query alone with CLOCK, and keeps the components query in sql.
 class FakeConnection:
     def __init__(self, rows: list[dict]) -> None:
         self.rows = rows
         self.sql = ""
+        self.asked_the_clock = False
 
     async def execute(self, sql: str, params: dict | None = None) -> FakeCursor:
+        if "prompt_components" not in sql:
+            self.asked_the_clock = True
+            return FakeCursor([{"read_at": CLOCK}])
         self.sql = sql
         return FakeCursor(self.rows)
+
+
+CLOCK = datetime(2026, 9, 19, 12, 0, tzinfo=UTC)
 
 
 # active is F01's ablation switch and deleted_at is the definitive removal (C09): the query has to filter both.
@@ -188,12 +200,13 @@ async def test_read_components_asks_for_the_active_ones_in_order() -> None:
     tone, rules_version = uuid4(), uuid4()
     connection = FakeConnection(
         [
-            {"type": "tone", "content": "Formal.", "position": 3, "version_id": tone},
-            {"type": "rules", "content": "Sin pagos.", "position": 6, "version_id": rules_version},
+            {"type": "tone", "content": "Formal.", "position": 3, "version_id": tone, "read_at": CLOCK},
+            {"type": "rules", "content": "Sin pagos.", "position": 6, "version_id": rules_version, "read_at": CLOCK},
         ]
     )
 
-    components = await read_components(connection, AGENT_ID)
+    read = await read_components(connection, AGENT_ID)
+    components = read.components
 
     assert [c.type for c in components] == [PromptComponentType.TONE, PromptComponentType.RULES]
     assert "c.active" in connection.sql
@@ -202,7 +215,18 @@ async def test_read_components_asks_for_the_active_ones_in_order() -> None:
     # The newest version, which is the one the core wrote with this text (ADR-0039, regla 3).
     assert "ORDER  BY pv.version_number DESC" in connection.sql
     assert [c.version_id for c in components] == [tone, rules_version]
+    # The instant of the same statement that read the texts, by the database's clock: what OE1 compares against (ADR-0039).
+    assert "statement_timestamp()" in connection.sql
+    assert read.read_at == CLOCK
+    assert not connection.asked_the_clock, "the clock was asked apart although the read already carried it"
 
 
+# No rows carry no instant, so the clock is asked on its own: a generation still needs its assembled_at.
 async def test_read_components_returns_nothing_for_an_agent_with_no_components() -> None:
-    assert await read_components(FakeConnection([]), AGENT_ID) == ()
+    connection = FakeConnection([])
+
+    read = await read_components(connection, AGENT_ID)
+
+    assert read.components == ()
+    assert read.read_at == CLOCK
+    assert connection.asked_the_clock

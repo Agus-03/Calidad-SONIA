@@ -31,10 +31,10 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
                 detail={"code": "turn_not_found", "message": str(err)},
             ) from err
 
-        components = await read_components(conn, body.ai_agent_id)
+        read = await read_components(conn, body.ai_agent_id)
 
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
-    prompt = assemble(agent_name=turn.agent.name, components=components, message=_incoming(turn))
+    prompt = assemble(agent_name=turn.agent.name, components=read.components, message=_incoming(turn))
     if prompt.components < len(PromptComponentType):
         # Logged and not refused: F01 declares six, and an agent whose administrator has not written them all still answers.
         logger.info(
@@ -59,7 +59,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     client = resolve(turn.agent.llm_provider, request.app.state.settings)
     try:
-        generation = await generate(client=client, turn=turn, prompt=prompt)
+        generation = await generate(client=client, turn=turn, prompt=prompt, assembled_at=read.read_at)
     except (LLMError, UnpricedModel) as err:
         # failed and a 200: neither an unusable provider nor an unpriced model improves on a retry, so the core must not try again.
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})

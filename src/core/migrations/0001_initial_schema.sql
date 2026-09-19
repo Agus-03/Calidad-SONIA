@@ -301,6 +301,9 @@ CREATE TABLE generations (
     status                          varchar       NOT NULL CHECK (status IN ('auto_sent', 'pending_review', 'accepted', 'edited', 'rejected', 'blocked')),
     reviewed_by_operator_id         uuid          REFERENCES operators (id),
     reviewed_at                     timestamptz,
+    -- OE1 compares against this and not created_at: the components are read seconds before the row is written, and an edit in between
+    -- would count as missing what was assembled right (ADR-0039). No default, so a writer that forgets it fails instead of lying.
+    assembled_at                    timestamptz   NOT NULL,
     created_at                      timestamptz   NOT NULL DEFAULT now()
 );
 

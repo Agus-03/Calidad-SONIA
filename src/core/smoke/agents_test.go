@@ -47,6 +47,9 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 			{"the conversation", `DELETE FROM conversations WHERE inbox_id = $1`, []any{inboxID}},
 			{"the contact", `DELETE FROM contacts WHERE id = $1`, []any{contactID}},
 			{"the inbox", `DELETE FROM inboxes WHERE id = $1`, []any{inboxID}},
+			{"the versions", `DELETE FROM prompt_component_versions WHERE prompt_component_id IN
+				(SELECT id FROM prompt_components WHERE ai_agent_id = ANY($1))`, []any{created}},
+			{"the components", `DELETE FROM prompt_components WHERE ai_agent_id = ANY($1)`, []any{created}},
 			{"the agents", `DELETE FROM ai_agents WHERE id = ANY($1)`, []any{created}},
 			{"the admin", `DELETE FROM operators WHERE id = $1`, []any{adminID}},
 		} {
@@ -184,6 +187,40 @@ func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
 		status, body := call(t, core, http.MethodPatch, "/api/v1/conversations/"+conversationID.String()+"/mode", token, `{"mode":"autonomous"}`)
 		if code, _ := refusal(t, body); status != http.StatusConflict || code != "ai_agent_unavailable" {
 			t.Fatalf("turning the bot on during the pause: got %d %q, want 409 ai_agent_unavailable", status, code)
+		}
+	})
+
+	t.Run("un componente se versiona en cada cambio y su historial dice quien", func(t *testing.T) {
+		components := "/api/v1/ai-agents/" + agentID + "/components"
+		status, body := call(t, core, http.MethodPost, components, token, `{"type":"tone","content":"Formal.","position":3}`)
+		if status != http.StatusCreated {
+			t.Fatalf("creating the tone: got %d - %s", status, body)
+		}
+		one := components + "/" + stringField(t, body, "id")
+
+		if status, body := call(t, core, http.MethodPost, components, token, `{"type":"tone","content":"Otro.","position":4}`); status != http.StatusConflict {
+			t.Fatalf("a second tone: got %d, want 409 - %s", status, body)
+		}
+		status, body = call(t, core, http.MethodPatch, one, token, `{"content":"Cálido.","change_note":"más cercano"}`)
+		if status != http.StatusOK || string(keysOf(t, body)["version"]) != "2" {
+			t.Fatalf("editing the tone: got %d, want 200 at version 2 - %s", status, body)
+		}
+
+		status, body = call(t, core, http.MethodGet, one+"/versions", token, "")
+		var history struct {
+			Items []struct {
+				Version     int     `json:"version"`
+				ChangedByID *string `json:"changed_by_operator_id"`
+				ChangeNote  *string `json:"change_note"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &history); err != nil || status != http.StatusOK || len(history.Items) != 2 {
+			t.Fatalf("the history: got %d, %v - %s", status, err, body)
+		}
+		newest := history.Items[0]
+		if newest.Version != 2 || newest.ChangedByID == nil || *newest.ChangedByID != adminID.String() ||
+			newest.ChangeNote == nil || *newest.ChangeNote != "más cercano" {
+			t.Fatalf("the newest version = %+v, want 2 by %v with its note", newest, adminID)
 		}
 	})
 

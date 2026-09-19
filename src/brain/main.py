@@ -43,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="SONIA — cerebro",
         description="API interna del cerebro: la consume el núcleo, desplegable 1 de ADR-0017.",
         # The version of the contract and not of the deployment: it moves when brain.openapi.json changes shape, never alone.
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.state.settings = settings

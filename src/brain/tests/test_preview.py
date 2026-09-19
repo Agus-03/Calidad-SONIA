@@ -122,6 +122,14 @@ def test_a_blank_draft_leaves_its_section_out(settings: Settings) -> None:
     assert rules().headings[PromptComponentType.RULES] not in response.json()["system"]
 
 
+# The shortfall is news in a turn and noise in a preview, which runs on every keystroke (ADR-0040).
+def test_a_preview_with_fewer_than_six_logs_nothing(settings: Settings, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("INFO", logger="sonia"):
+        ask(settings, [draft("objective", "Ayudar.", 1)])
+
+    assert not [r for r in caplog.records if "fewer components" in r.getMessage()]
+
+
 # A preview is not evidence: it reads the agent's name and writes nothing (regla 3).
 def test_the_preview_only_reads(settings: Settings) -> None:
     _, connection = ask(settings, [draft("objective", "Ayudar.", 1)])

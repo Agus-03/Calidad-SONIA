@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from adapters.llm.base import LLMError
 from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
+from infra.enums import PromptComponentType
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation
 from prompts.assembler import assemble
@@ -34,6 +35,18 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
     prompt = assemble(agent_name=turn.agent.name, components=components, message=_incoming(turn))
+    if prompt.components < len(PromptComponentType):
+        # Logged and not refused: F01 declares six, and an agent whose administrator has not written them all still answers.
+        logger.info(
+            "prompt assembled with fewer components than F01 declares",
+            extra={
+                "context": {
+                    "conversation_id": str(turn.conversation_id),
+                    "components": prompt.components,
+                    "declared": len(PromptComponentType),
+                }
+            },
+        )
 
     context = {
         "conversation_id": str(turn.conversation_id),

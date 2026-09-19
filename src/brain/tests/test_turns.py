@@ -170,6 +170,16 @@ def test_turns_generates_when_a_provider_answers() -> None:
     assert connection.seen.count("generation_components") == 2, "the generation does not name what it assembled"
 
 
+# The fixture has two of the six: the turn answers anyway, and says so in the log.
+def test_a_turn_with_fewer_than_six_components_says_so(settings: Settings, caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(tables())
+
+    with caplog.at_level("INFO", logger="sonia"), client(connection, settings) as http:
+        http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert [r for r in caplog.records if "fewer components" in r.getMessage()]
+
+
 def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) -> None:
     connection = FakeConnection(tables())
 

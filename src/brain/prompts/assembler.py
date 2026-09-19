@@ -1,6 +1,5 @@
 # The assembler of F03: the structure comes from rules/generation.yaml and the content from prompt_components.
 
-import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -10,8 +9,6 @@ import yaml
 
 from infra.enums import PromptComponentType
 from prompts.repository import Component
-
-logger = logging.getLogger("sonia.prompts.assembler")
 
 # Anchored to the package and not to the working directory: the brain runs in a container, where neither is the repository.
 _RULES_FILE = Path(__file__).resolve().parent.parent / "rules" / "generation.yaml"
@@ -123,15 +120,8 @@ def assemble(
             continue
         blocks.append(f"{spec.headings[component.type]}\n\n{component.content.strip()}")
         assembled.append(component)
-    written = len(assembled)
+    # Not logged here: the preview runs this on every keystroke, and a shortfall is news only in a turn (ADR-0040).
     blocks.append(spec.closing)
-
-    if written < len(PromptComponentType):
-        # Logged and not refused: F01 declares six, and an agent whose administrator has not written them all still answers.
-        logger.info(
-            "prompt assembled with fewer components than F01 declares",
-            extra={"context": {"components": written, "declared": len(PromptComponentType)}},
-        )
 
     return Prompt(
         system="\n\n".join(blocks),

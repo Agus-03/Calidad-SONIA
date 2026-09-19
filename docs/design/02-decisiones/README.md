@@ -32,7 +32,7 @@ Dos reglas que conviene sostener:
 | [0004](0004-asignacion-de-conversaciones.md) | Asignación de conversaciones: pool con autoasignación | H-15 | Aceptada · §2 enmendada por [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) |
 | [0005](0005-base-de-conocimiento.md) | Base de conocimiento: una por agente, con múltiples documentos | H-06 | Aceptada |
 | [0006](0006-anonimizacion-de-pii.md) | Anonimización de PII antes del envío al LLM externo | — | Aceptada |
-| [0007](0007-alcance-del-registro-de-auditoria.md) | Alcance del registro de auditoría | — | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) |
+| [0007](0007-alcance-del-registro-de-auditoria.md) | Alcance del registro de auditoría | — | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) y acotado por [ADR-0039](0039-componentes-del-prompt-y-su-versionado.md) |
 | [0008](0008-ventana-de-24-horas.md) | Ventana de 24 horas de WhatsApp: incorporación al anteproyecto | — | Aceptada |
 | [0009](0009-horario-de-atencion.md) | Horario de atención del agente: fuera del alcance | — | Aceptada |
 | [0010](0010-qdrant-como-base-vectorial.md) | Qdrant como base vectorial, una colección por agente | — | Aceptada |
@@ -42,7 +42,7 @@ Dos reglas que conviene sostener:
 | [0014](0014-medicion-de-oe3-y-oe4.md) | Cómo se miden OE3 y OE4 | H-18 | Aceptada |
 | [0015](0015-medicion-de-oe1.md) | Cómo se mide OE1 | H-20, H-21 | Aceptada |
 | [0016](0016-rastro-del-pipeline-de-respuesta.md) | Rastro del pipeline de respuesta | H-23 | Aceptada |
-| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | Aceptada · revisada 2026-08-22 · firmada 2026-09-05 |
+| [0017](0017-decomposicion-en-despliegues-y-lenguajes.md) | Decomposición en despliegues y reparto de lenguajes | 8.4 y 8.5 sin decidir | Aceptada · revisada 2026-08-22 · firmada 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md) |
 | [0018](0018-proveedor-de-llm-y-embeddings.md) | Proveedor de LLM primario y de respaldo, y modelo de embeddings | 8.4 sin decidir | Aceptada |
 | [0019](0019-almacenamiento-de-objetos.md) | Almacenamiento de objetos: Supabase Storage | H-31 | Aceptada |
 | [0020](0020-idempotencia-de-los-mensajes-salientes.md) | Idempotencia de los mensajes salientes: *at-most-once* | H-29 | Aceptada |
@@ -64,8 +64,8 @@ Dos reglas que conviene sostener:
 | [0036](0036-paginacion-por-cursor-en-la-bandeja.md) | La bandeja y el hilo paginan por cursor, no por número de página | Fase 5 | Aceptada · regla 9 ampliada por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) |
 | [0037](0037-toda-conversacion-nace-con-vendedor.md) | Toda conversación nace con un vendedor, y el vendedor maneja el bot de las suyas | Fase 5 · enmienda ADR-0004 §2 y ADR-0035 reglas 10 y 15 | Aceptada |
 | [0038](0038-alta-baja-y-pausa-del-agente-ia.md) | Alta, baja y pausa del agente IA | Fase 6 · F17 · enmienda ADR-0035 regla 12, ADR-0036 regla 9 y ADR-0007 §2 | Aceptada · revisada dos veces antes del merge: regla 5 y reglas 12 a 14; después, regla 4 invertida y reglas 15 y 16 |
-| [0039](0039-componentes-del-prompt-y-su-versionado.md) | Los componentes del prompt y su versionado | Fase 6 · F01 | Aceptada |
-| [0040](0040-previsualizacion-del-prompt.md) | La previsualización del prompt | Fase 6 · F03 | Aceptada |
+| [0039](0039-componentes-del-prompt-y-su-versionado.md) | Los componentes del prompt y su versionado | Fase 6 · F01 · enmienda ADR-0007 §2 | Aceptada · revisada antes del merge: historial paginado, `assembled_at` y la enmienda declarada |
+| [0040](0040-previsualizacion-del-prompt.md) | La previsualización del prompt | Fase 6 · F03 · enmienda ADR-0017 (k) | Aceptada · revisada antes del merge: regla 2 justificada y la enmienda declarada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

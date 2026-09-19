@@ -87,9 +87,13 @@
 --       entero de ADR-0015: antes de `prompt_component_versions.active` el único
 --       registro de ambos lados era `generation_components`, la consulta se
 --       comparaba consigo misma y sólo podía devolver 100 %.
---   S2. "En ese instante" = `generations.created_at`. La versión vigente de cada
---       componente es la última creada en o antes de ese momento; el desempate
---       entre dos versiones del mismo instante es por `version_number`.
+--   S2. "En ese instante" = `generations.assembled_at`, el momento en que el
+--       cerebro leyó los componentes, y no `created_at`, que se escribe segundos
+--       después, cuando el modelo ya respondió: una edición en el medio contaba
+--       como faltante lo que se ensambló bien (ADR-0039, regla 10). La versión
+--       vigente de cada componente es la última creada en o antes de ese
+--       momento; el desempate entre dos versiones del mismo instante es por
+--       `version_number`. La ventana de la medición sigue siendo `created_at`.
 --   S3. Una generación de un agente sin ningún componente activo no aparece en
 --       el denominador. Es correcto —no había nada que incorporar— pero conviene
 --       vigilar que ese conteo sea cero (control C1 abajo).
@@ -103,13 +107,13 @@ WITH activos_al_momento AS (          -- A: lo que SE DEBÍA ensamblar
     FROM   generations g
     JOIN   prompt_components pc
            ON  pc.ai_agent_id = g.ai_agent_id
-           AND pc.created_at <= g.created_at
-           AND (pc.deleted_at IS NULL OR pc.deleted_at > g.created_at)
+           AND pc.created_at <= g.assembled_at
+           AND (pc.deleted_at IS NULL OR pc.deleted_at > g.assembled_at)
     CROSS  JOIN LATERAL (             -- la versión vigente en ese instante (S2)
         SELECT v.active
         FROM   prompt_component_versions v
         WHERE  v.prompt_component_id = pc.id
-          AND  v.created_at <= g.created_at
+          AND  v.created_at <= g.assembled_at
         ORDER  BY v.created_at DESC, v.version_number DESC
         LIMIT  1
     ) vigente
@@ -146,11 +150,11 @@ WITH activos_al_momento AS ( /* … idéntico al bloque anterior … */
     FROM   generations g
     JOIN   prompt_components pc
            ON  pc.ai_agent_id = g.ai_agent_id
-           AND pc.created_at <= g.created_at
-           AND (pc.deleted_at IS NULL OR pc.deleted_at > g.created_at)
+           AND pc.created_at <= g.assembled_at
+           AND (pc.deleted_at IS NULL OR pc.deleted_at > g.assembled_at)
     CROSS  JOIN LATERAL (
         SELECT v.active FROM prompt_component_versions v
-        WHERE  v.prompt_component_id = pc.id AND v.created_at <= g.created_at
+        WHERE  v.prompt_component_id = pc.id AND v.created_at <= g.assembled_at
         ORDER  BY v.created_at DESC, v.version_number DESC LIMIT 1
     ) vigente
     WHERE  vigente.active
@@ -176,8 +180,8 @@ FROM   generations g
 WHERE  NOT EXISTS (
     SELECT 1 FROM prompt_components pc
     WHERE  pc.ai_agent_id = g.ai_agent_id
-      AND  pc.created_at <= g.created_at
-      AND  (pc.deleted_at IS NULL OR pc.deleted_at > g.created_at)
+      AND  pc.created_at <= g.assembled_at
+      AND  (pc.deleted_at IS NULL OR pc.deleted_at > g.assembled_at)
       AND  pc.active
 );
 

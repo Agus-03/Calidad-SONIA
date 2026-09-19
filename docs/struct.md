@@ -6,7 +6,7 @@
 | **Autoridad** | Detalla [`08-structure-rules.md`](design/08-structure-rules.md) (las 12 reglas) y el resumen de *Estructura del código* en [`CLAUDE.md`](../CLAUDE.md), que son la fuente. **Detalla a [ADR-0017](design/02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) §6.1**, cuyo árbol se actualizó al firmarse el ADR el 2026-09-05 |
 | **Qué no es** | No contiene decisiones ni su justificación. El *por qué* de cada corte está en ADR-0017; las convenciones de nombres, en [`00-convenciones.md`](design/00-convenciones.md); el estado de avance del diseño, en [`ESTADO.md`](../z_helps/ESTADO.md) |
 | **Orden** | **Las carpetas están en orden alfabético en todos los niveles.** Las listas de archivos conservan su orden cuando ese orden significa algo: los pasos de `pipeline/` van en el orden en que se ejecutan (ADR-0016), las migraciones por número, y los archivos de un paquete en el orden del pedido (`controller` → `routes` → `service` → `repository` → `model`) |
-| **Última revisión** | 2026-09-13 |
+| **Última revisión** | 2026-09-19 |
 
 ---
 
@@ -80,7 +80,7 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
-│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente · escribe la generación con lo que ensambló (ADR-0039, regla 10)
+│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente IA · escribe la generación con lo que ensambló (ADR-0039, regla 10)
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
@@ -112,7 +112,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── agents/                 identidad del agente IA · F01, F02, F17
 │   │   │   │   ├── controller.go       lee el cuerpo por claves: null limpia, y rechaza por nombre lo que no expone (ADR-0038, regla 7)
-│   │   │   │   ├── components_controller.go  los seis bloques de F01, bajo el agente IA · tipo y posición no se editan (ADR-0039)
+│   │   │   │   ├── components_controller.go  los seis bloques de F01, bajo el agente IA · tipo y posición no se editan · el historial pagina por número (ADR-0039)
 │   │   │   │   ├── preview_controller.go  POST /ai-agents/:id/preview: los borradores viajan en el cuerpo (ADR-0040)
 │   │   │   │   ├── routes.go           sólo admin, también la lectura (F17, ADR-0038) · las de componentes y la previsualización también (ADR-0039, ADR-0040)
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
@@ -244,7 +244,7 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 
 | Paquete | Tablas | Nota |
 |---|---|---|
-| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente (ADR-0007) |
+| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt (ADR-0007, ADR-0038, ADR-0039) |
 | `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
 | `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/`, `whatsapp/` y `agents/` escriben por acá |
 | `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |

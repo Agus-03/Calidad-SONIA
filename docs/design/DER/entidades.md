@@ -189,7 +189,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `content` | text | Contenido vigente |
 | `position` | smallint | Orden de ensamblado |
 | `active` | boolean | OE1 exige el concepto de componente **activo**; habilita ablación. **Distinto de `deleted_at`**: `active = false` es ablación —el componente existe y se puede volver a encender—, `deleted_at` es baja definitiva |
-| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Lo exige el índice único parcial** de [relaciones.md §9](relaciones.md), que filtra por `active AND deleted_at IS NULL` |
+| `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09. **Lo exigen los dos índices únicos parciales** de [relaciones.md §9](relaciones.md), sobre `(ai_agent_id, type)` y `(ai_agent_id, position)`, que filtran por `deleted_at IS NULL`: un componente apagado sigue ocupando su tipo y su posición ([ADR-0039](../02-decisiones/0039-componentes-del-prompt-y-su-versionado.md)) |
 
 ### `prompt_component_versions`
 
@@ -367,6 +367,7 @@ Una fila por respuesta generada por la IA.
 | `status` | `GenerationStatus` | F02 — modo sugerencia |
 | `reviewed_by_operator_id` | uuid | Nullable. F02 |
 | `reviewed_at` | timestamptz | Nullable |
+| `assembled_at` | timestamptz | **Cuándo se leyeron los componentes que se ensamblaron**, con el reloj de la base. OE1 compara contra este instante y no contra `created_at`, que se escribe segundos después, cuando el modelo ya respondió ([ADR-0039](../02-decisiones/0039-componentes-del-prompt-y-su-versionado.md), regla 10) |
 | `created_at` | timestamptz | |
 
 > **Por qué `ai_agent_id` acá y no por join con `conversations`.** Parece duplicar un dato que ya se alcanza por `generations → conversations.ai_agent_id`, pero **no son el mismo dato**: el de `conversations` es el agente **actual** de la conversación y es mutable —F27 permite cambiarlo o apagarlo, y [relaciones.md §9](relaciones.md) lo dice textual—, mientras que éste es el agente que **efectivamente produjo esta generación**, congelado. Es la misma distinción que hay entre `transfer_policies.threshold` y el `threshold_used` de `signal_evaluations`: configuración mutable contra instantánea del momento del hecho.
@@ -779,7 +780,7 @@ Una fila **por cada señal evaluada en cada bloque procesado**, haya disparado l
 
 ### `audit_logs`
 
-> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**
+> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**, que incluyen qué agente IA atiende cada número (ADR-0038, regla 13, `entity_type = inboxes`) y excluyen los componentes del prompt, auditados en `prompt_component_versions` (ADR-0039, regla 5)
 
 | Atributo | Tipo | Notas |
 |---|---|---|

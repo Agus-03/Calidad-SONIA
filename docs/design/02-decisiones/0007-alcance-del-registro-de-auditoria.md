@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 13: las modificaciones de configuración de agentes IA incluyen qué agente IA atiende cada número |
+| **Estado** | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 13: las modificaciones de configuración de agentes IA incluyen qué agente IA atiende cada número · §2 acotado por [ADR-0039](0039-componentes-del-prompt-y-su-versionado.md), regla 5: los cambios de los componentes del prompt se auditan en `prompt_component_versions`, no en `audit_logs` |
 | **Fecha** | 2026-08-06 |
 | **Etapa** | Diseño — Paso 3 |
 | **Requisitos afectados** | F26, OE2 · secciones 7.3 y Anexo B |

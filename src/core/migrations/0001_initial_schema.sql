@@ -194,6 +194,10 @@ CREATE TABLE messages (
 -- ADR-0036, regla 10: the thread and the last message of each inbox row read one conversation newest first; the same declared exception.
 CREATE INDEX idx_messages_conversation_id_created_at_id ON messages (conversation_id, created_at, id);
 
+-- ADR-0041, reglas 4 y 5: how many messages a batch holds is counted from here and never kept in a column, once on every inbound
+-- message and once more when the batch closes. Partial because an answer belongs to no batch, and that is half of what grows here.
+CREATE INDEX idx_messages_message_batch_id ON messages (message_batch_id) WHERE message_batch_id IS NOT NULL;
+
 -- Bloque 2 - the six components of F01; the admin edits them and they are not in rules/ (regla 9).
 CREATE TABLE prompt_components (
     id          uuid        PRIMARY KEY,

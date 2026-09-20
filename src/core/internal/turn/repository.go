@@ -43,9 +43,10 @@ func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Targ
 }
 
 // The unique index of ADR-0022 is the arbiter of the turn number, not the read that preceded it.
+// expires_at takes the same instant as the other two: this batch opens and closes at once, so no timer ever waits for it (ADR-0041).
 const batchInsert = `
-INSERT INTO message_batches (id, conversation_id, messages_count, turn_number, timer_ms_used, opened_at, closed_at)
-SELECT $1, $2, 1, COALESCE(MAX(b.turn_number), 0) + 1, 0, $3, $3
+INSERT INTO message_batches (id, conversation_id, messages_count, turn_number, timer_ms_used, opened_at, expires_at, closed_at)
+SELECT $1, $2, 1, COALESCE(MAX(b.turn_number), 0) + 1, 0, $3, $3, $3
 FROM   message_batches b
 WHERE  b.conversation_id = $2
 RETURNING turn_number`

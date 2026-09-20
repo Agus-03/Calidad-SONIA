@@ -174,8 +174,9 @@ PK  id
 FK  conversation_id       → conversations       ⇄ B1
     messages_count, timer_ms_used, closed_reason «BatchCloseReason»,
     error_message NULL,
-    opened_at, closed_at, processed_at
+    opened_at, expires_at, closed_at, processed_at
 ```
+> **Inmutable una vez cerrado** (ADR-0041). `expires_at` es la espera de F10 y se reinicia con cada mensaje; anotar en el diagrama el índice único parcial de un solo bloque abierto por conversación.
 
 ### `detected_intents`  — inmutable
 ```

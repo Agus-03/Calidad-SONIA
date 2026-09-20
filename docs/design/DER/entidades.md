@@ -242,8 +242,11 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `timer_ms_used` | integer | **Lo que permite defender que el timer es "adaptativo"** y no una constante |
 | `closed_reason` | `BatchCloseReason` | |
 | `error_message` | text | Nullable — **por qué falló el turno**, cuando falló. Ver la nota |
-| `opened_at` / `closed_at` / `processed_at` | timestamptz | **Inmutable: sin `created_at` genérico, sin `updated_at` ni `deleted_at`** (C09). `opened_at` cumple la función de `created_at` que exige C06 |
+| `expires_at` | timestamptz | **Cuándo vence la espera de F10** ([ADR-0041](../02-decisiones/0041-temporizador-del-turno-por-poller.md), regla 1). Se reinicia con cada mensaje que entra al bloque, y es lo único que cambia mientras el bloque está abierto |
+| `opened_at` / `closed_at` / `processed_at` | timestamptz | **Inmutable una vez cerrado: sin `created_at` genérico, sin `updated_at` ni `deleted_at`** (C09). `opened_at` cumple la función de `created_at` que exige C06 |
 
+> **El bloque es inmutable *una vez cerrado*, no desde que se abre.** [ADR-0041](../02-decisiones/0041-temporizador-del-turno-por-poller.md) enmienda acá a [ADR-0022](../02-decisiones/0022-el-turno-vive-en-message-batches.md) §4: mientras el bloque espera, cada mensaje nuevo reescribe `expires_at`, que es lo que hace que el temporizador se reinicie. El resto de la fila se escribe una sola vez —`turn_number` al abrir; `messages_count`, `timer_ms_used`, `closed_reason` y `closed_at` al cerrar—, y **una conversación tiene a lo sumo un bloque abierto**, garantizado por un índice único parcial y no por una regla de aplicación.
+>
 > **`error_message` no rompe la inmutabilidad del bloque.** Se llena en la misma escritura en la que el núcleo declara el turno fallido, después de agotar los reintentos, y nunca se sobreescribe. Sin él, un turno caído deja únicamente `closed_at IS NOT NULL AND processed_at IS NULL`: alcanza para **contar** turnos fallidos, no para **diagnosticarlos**. En la Fase 4, con despliegue en producción real, distinguir *"el cerebro no respondió"* de *"el proveedor de LLM devolvió 429"* son dos acciones correctivas distintas.
 >
 > **Es texto libre y no una enumeración, a propósito.** Sigue el precedente de `webhook_events.error_message`, que existe por el mismo motivo (F20). La contrapartida hay que decirla: **sirve para diagnosticar un turno, no para agregar por causa.** Si la Fase 4 pidiera contar fallas por tipo, eso pide una enumeración y es decisión del Paso 11, no de ahora.

@@ -131,7 +131,8 @@ CREATE INDEX idx_conversations_last_activity_at_id ON conversations (last_activi
 -- partial over the open ones and cannot answer it.
 CREATE INDEX idx_conversations_contact_id_created_at_id ON conversations (contact_id, created_at, id) WHERE deleted_at IS NULL;
 
--- Bloque 3 - the turn lives here (ADR-0022); immutable, so opened_at plays the part of created_at.
+-- Bloque 3 - the turn lives here (ADR-0022); opened_at plays the part of created_at.
+-- Immutable once closed (ADR-0041, regla 1): while it is open, expires_at is the one column a new message rewrites.
 CREATE TABLE message_batches (
     id              uuid        PRIMARY KEY,
     conversation_id uuid        NOT NULL REFERENCES conversations (id),
@@ -141,12 +142,20 @@ CREATE TABLE message_batches (
     closed_reason   varchar     CHECK (closed_reason IN ('silence', 'max_messages', 'max_duration')),
     error_message   text,
     opened_at       timestamptz NOT NULL DEFAULT now(),
+    -- The timer of F10 lives here and not in the memory of the process: a restart loses nothing and the poller asks the same as always.
+    expires_at      timestamptz NOT NULL,
     closed_at       timestamptz,
     processed_at    timestamptz
 );
 
 -- ADR-0022 makes this the source of truth of the turn number, and three tables copy it from here.
 CREATE UNIQUE INDEX uq_message_batches_conversation_id_turn_number ON message_batches (conversation_id, turn_number);
+
+-- ADR-0041, regla 3: a second open batch splits one turn in two, each answering half of what the customer said.
+CREATE UNIQUE INDEX uq_message_batches_conversation_id_open ON message_batches (conversation_id) WHERE closed_at IS NULL;
+
+-- ADR-0041, regla 4: the poller reads this every second, so it is the third declared exception to waiting for a slow query.
+CREATE INDEX idx_message_batches_expires_at ON message_batches (expires_at) WHERE closed_at IS NULL;
 
 -- No deleted_at of any kind: messages are the record F34 to F36 and OE7 are computed on (C09).
 CREATE TABLE messages (

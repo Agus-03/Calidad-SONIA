@@ -1,5 +1,6 @@
 # The contract of 07-secuencia section 1, exercised without PostgreSQL: ADR-0028 asks for doubled dependencies from day one.
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -7,6 +8,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from adapters.llm.base import LLMUnavailable
 from infra.config import Settings
 from main import create_app
 from pipeline.repository import TurnNotFound, read_turn
@@ -86,7 +88,8 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
             {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4(), "read_at": datetime.now(UTC)},
             {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4(), "read_at": datetime.now(UTC)},
         ],
-        # Declared so the fake connection records the INSERTs: the two writes are the only ones the brain makes in a turn.
+        # Declared so the fake connection records the INSERTs: these are the only writes the brain makes in a turn.
+        "detected_intents": [],
         "generations": [],
         "generation_components": [],
     }
@@ -287,3 +290,70 @@ def test_turns_fails_when_the_model_has_no_tariff() -> None:
     assert response.status_code == 200, "a configuration error is not a reason to tell the core to retry"
     assert response.json()["outcome"] == "failed"
     assert "generations" not in connection.seen, "a turn that never ran left evidence saying it did"
+
+
+# doubled is the whole of F11 against the doubled adapter: the classifier answers two intentions, they are written as evidence,
+# and they reach the model that reads the message (ADR-0041, regla 12).
+def doubled() -> Settings:
+    return Settings(
+        _env_file=None,
+        database_url="postgresql://sonia:sonia@127.0.0.1:5432/sonia",
+        brain_internal_token="test-token",
+        environment="test",
+        llm_use_double=True,
+    )
+
+
+def test_the_intents_of_the_batch_are_written_and_travel_to_the_prompt() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    # One DELETE plus one INSERT per intention: a second run of the same batch leaves one classification and not two.
+    assert connection.seen.count("detected_intents") == 3, "the intents of F11 left no evidence"
+    # The double echoes the envelope, so the answer is what proves the list reached the model and not only the database.
+    assert "[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]" in payload["completion_text"]
+    assert "1. consulta_disponibilidad" in payload["completion_text"]
+    assert "2. consulta_precio" in payload["completion_text"]
+
+
+# The evidence belongs to the turn that used it: intents written after the generation would survive a turn that never answered.
+def test_the_intents_are_written_before_the_generation() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert connection.seen.index("detected_intents") < connection.seen.index("generations")
+
+
+# The customer is owed an answer: a classifier that could not run is a gap in the evidence, not a turn that fails.
+def test_a_classifier_that_cannot_run_does_not_stop_the_turn(caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(tables())
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def refusing(self, **kwargs: object):
+        if kwargs.get("system") and double_module.INTENT_MARKER in str(kwargs["system"]):
+            raise LLMUnavailable("double: the classifier is down")
+        return await original(self, **kwargs)
+
+    double_module.DoubleClient.complete = refusing
+    try:
+        with caplog.at_level(logging.WARNING, logger="sonia.api.turns"):
+            with client(connection, doubled()) as http:
+                response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    payload = response.json()
+    assert payload["outcome"] == "generated", "a classifier that fell over took the customer's answer with it"
+    assert "intents not classified" in caplog.text, "the gap in the evidence was not reported"
+    # The DELETE still runs, so a retry of a batch that had intents does not keep the old ones.
+    assert connection.seen.count("detected_intents") == 1
+    assert "[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]" not in payload["completion_text"]

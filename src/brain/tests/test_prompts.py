@@ -230,3 +230,31 @@ async def test_read_components_returns_nothing_for_an_agent_with_no_components()
     assert read.components == ()
     assert read.read_at == CLOCK
     assert connection.asked_the_clock
+
+
+# The second half of F11: the labels the classifier read reach the model that answers, in the order the customer asked them.
+def test_the_requests_of_f11_reach_the_prompt_in_order() -> None:
+    prompt = build(intents=["consulta_disponibilidad", "consulta_precio"])
+    heading = rules().user_headings["intents"]
+
+    assert heading in prompt.user
+    assert prompt.user.index("1. consulta_disponibilidad") < prompt.user.index("2. consulta_precio")
+    # Right before the literal message, so the model has the list fresh when it writes the one answer that covers all of it.
+    assert prompt.user.index(heading) < prompt.user.index(rules().user_headings["message"])
+
+
+# Detecting them and not using them would leave F11 half done, so the closing has to tell the model to answer all of them.
+def test_the_closing_asks_for_one_answer_that_covers_every_request() -> None:
+    assert "sin dejar nada afuera" in build().system
+
+
+# An empty list left in would tell the model the customer asked for nothing, which is the opposite of "we could not read it".
+def test_a_batch_with_no_intents_prints_no_heading() -> None:
+    prompt = build()
+
+    assert rules().user_headings["intents"] not in prompt.user
+
+
+# regla 9 exists so a measurement can name the version that produced it, and adding a section changed what gets produced.
+def test_the_scaffolding_declares_the_version_that_carries_the_requests() -> None:
+    assert rules().version == 2

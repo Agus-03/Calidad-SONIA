@@ -4,12 +4,13 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from adapters.llm.base import LLMError
+from adapters.llm.base import LLMClient, LLMError
 from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
+from classifiers.intent import Intent, classify
 from infra.enums import PromptComponentType
 from pipeline.generation import UnpricedModel, generate
-from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation
+from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation, write_intents
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -33,8 +34,20 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
         read = await read_components(conn, body.ai_agent_id)
 
+    client = resolve(turn.agent.llm_provider, request.app.state.settings)
+    message = _incoming(turn)
+
+    # First half of F11: how many different things the customer asked for in this batch. Before the assembly, because the
+    # second half is handing that list to the model that answers (ADR-0041, regla 12).
+    intents = await _intents(client, turn, message)
+
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
-    prompt = assemble(agent_name=turn.agent.name, components=read.components, message=_incoming(turn))
+    prompt = assemble(
+        agent_name=turn.agent.name,
+        components=read.components,
+        message=message,
+        intents=[i.label for i in intents],
+    )
     if prompt.components < len(PromptComponentType):
         # Logged and not refused: F01 declares six, and an agent whose administrator has not written them all still answers.
         logger.info(
@@ -55,9 +68,9 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "llm_model": turn.agent.llm_model,
         "prompt_components": prompt.components,
         "prompt_rules_version": prompt.rules_version,
+        "detected_intents": len(intents),
     }
 
-    client = resolve(turn.agent.llm_provider, request.app.state.settings)
     try:
         generation = await generate(client=client, turn=turn, prompt=prompt, assembled_at=read.read_at)
     except (LLMError, UnpricedModel) as err:
@@ -67,6 +80,9 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     # A new connection and not the first one held open: the call above takes seconds and the pool is shared.
     async with request.app.state.database.connection() as conn:
+        # Before the generation and in the same transaction: the evidence of F11 belongs to the turn that used it, and a
+        # generation whose intents were lost would read as a turn that answered a list nobody can see.
+        await write_intents(conn, turn.message_batch_id, intents)
         await write_generation(conn, generation)
 
     logger.info(
@@ -94,3 +110,22 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).
 def _incoming(turn: Turn) -> str:
     return "\n".join(m.content_text for m in turn.incoming)
+
+
+# Never lets the classifier end the turn: the customer is owed an answer, and a batch whose intents were not read is answered
+# the way every batch was answered until F11 existed. The gap is logged, which is what makes it countable later.
+async def _intents(client: LLMClient, turn: Turn, message: str) -> tuple[Intent, ...]:
+    try:
+        return await classify(client=client, model=turn.agent.llm_model, message=message)
+    except LLMError as err:
+        logger.warning(
+            "intents not classified",
+            extra={
+                "context": {
+                    "conversation_id": str(turn.conversation_id),
+                    "message_batch_id": str(turn.message_batch_id),
+                    "error": str(err),
+                }
+            },
+        )
+        return ()

@@ -54,6 +54,10 @@ func Load() (Config, error) {
 		// Bounds how long one turn goroutine can live, and with it how long a deployment waits before cutting (ADR-0029).
 		TurnBudget: 30 * time.Second,
 
+		// A starting point and not a measurement: the right window is the one the customers' own rhythm shows (ADR-0041, regla 10).
+		TurnBatchWindow:      10 * time.Second,
+		TurnBatchMaxMessages: 10,
+
 		MetaGraphBaseURL: env("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
 		// Pinned and never floating: Meta versions the path, and an unpinned one changes the contract without a deploy.
 		MetaAPIVersion: env("META_API_VERSION", "v21.0"),
@@ -120,6 +124,12 @@ func Load() (Config, error) {
 		problems = append(problems, err.Error())
 	}
 	if cfg.TurnBudget, err = durationMS("TURN_BUDGET_MS", cfg.TurnBudget); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.TurnBatchWindow, err = durationMS("TURN_BATCH_WINDOW_MS", cfg.TurnBatchWindow); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.TurnBatchMaxMessages, err = positiveInt("TURN_BATCH_MAX_MESSAGES", cfg.TurnBatchMaxMessages); err != nil {
 		problems = append(problems, err.Error())
 	}
 

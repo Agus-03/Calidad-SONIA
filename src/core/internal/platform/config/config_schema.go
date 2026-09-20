@@ -38,6 +38,11 @@ type Config struct {
 	TurnRetryBackoff time.Duration
 	TurnBudget       time.Duration
 
+	// The two halves of the timer of F10: how long the batch waits for the next message, and how many it takes before it stops
+	// waiting at all (ADR-0041, regla 10).
+	TurnBatchWindow      time.Duration
+	TurnBatchMaxMessages int
+
 	// The access token is not here: it belongs to the inbox row, because one account can connect several numbers (F29).
 	MetaGraphBaseURL  string
 	MetaAPIVersion    string

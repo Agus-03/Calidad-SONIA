@@ -30,6 +30,7 @@ var newID = id.New
 // The collaborators are declared here because this is the side that uses them, and none of them names a concrete type.
 type Store interface {
 	Target(ctx context.Context, conversationID uuid.UUID) (Target, error)
+	Append(ctx context.Context, conversationID uuid.UUID, window time.Duration, maxMessages int) (Batch, error)
 	OpenBatch(ctx context.Context, conversationID uuid.UUID, at time.Time) (Batch, error)
 	MarkProcessed(ctx context.Context, batchID uuid.UUID, at time.Time) error
 	MarkFailed(ctx context.Context, batchID uuid.UUID, reason string) error

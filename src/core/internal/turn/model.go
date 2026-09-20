@@ -15,6 +15,8 @@ type Batch struct {
 	ConversationID uuid.UUID
 	TurnNumber     int
 	OpenedAt       time.Time
+	// The whole timer of F10: every message pushes it forward, and the poller closes the batch once it is past (ADR-0041, regla 1).
+	ExpiresAt time.Time
 }
 
 // Target is what answering needs and the four ids do not carry: which number sends, which number receives, and in what mode.

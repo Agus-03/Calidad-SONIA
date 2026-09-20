@@ -25,11 +25,33 @@ type stubStore struct {
 	processedErr error
 	linkErr      error
 
+	// One per call and consumed in order, which is the only way to play a race: the first Append loses and the second wins.
+	appendErrs []error
+
 	batch     Batch
+	appended  []uuid.UUID
 	processed []uuid.UUID
 	failed    map[uuid.UUID]string
 	linked    map[uuid.UUID]uuid.UUID
 	steps     *[]string
+}
+
+func (s *stubStore) Append(_ context.Context, conversationID uuid.UUID, window time.Duration, _ int) (Batch, error) {
+	s.mu.Lock()
+	if len(s.appendErrs) > 0 {
+		err := s.appendErrs[0]
+		s.appendErrs = s.appendErrs[1:]
+		if err != nil {
+			s.mu.Unlock()
+			return Batch{}, err
+		}
+	}
+	s.appended = append(s.appended, conversationID)
+	s.mu.Unlock()
+
+	s.record("append")
+	s.batch = Batch{ID: uuid.New(), ConversationID: conversationID, TurnNumber: 1, ExpiresAt: time.Now().UTC().Add(window)}
+	return s.batch, nil
 }
 
 func (s *stubStore) Target(context.Context, uuid.UUID) (Target, error) {

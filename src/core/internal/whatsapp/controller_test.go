@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,23 +15,23 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// recordingStarter proves the handoff happened without pretending to be turn/, which does not exist yet.
-type recordingStarter struct {
-	mu      sync.Mutex
-	started []uuid.UUID
-	done    chan struct{}
+// recordingCollector proves the handoff happened without pretending to be turn/, whose batch is none of the channel's business.
+type recordingCollector struct {
+	mu        sync.Mutex
+	collected []uuid.UUID
+	err       error
 }
 
-func (r *recordingStarter) Start(_ context.Context, conversationID, _ uuid.UUID, _ *uuid.UUID) {
+func (r *recordingCollector) Collect(_ context.Context, conversationID, _ uuid.UUID, _ *uuid.UUID) error {
 	r.mu.Lock()
-	r.started = append(r.started, conversationID)
-	r.mu.Unlock()
-	close(r.done)
+	defer r.mu.Unlock()
+	r.collected = append(r.collected, conversationID)
+	return r.err
 }
 
-func mount(starter TurnStarter) (*stubChannel, *stubAggregate, http.Handler) {
+func mount(collector MessageCollector) (*stubChannel, *stubAggregate, http.Handler) {
 	repo, agg, cs := channel()
-	controller := NewController(service(repo, agg, cs, slog.Default()), starter, slog.Default())
+	controller := NewController(service(repo, agg, cs, slog.Default()), collector, slog.Default())
 	return repo, agg, soniahttp.NewRouter(soniahttp.RouterOptions{
 		PublicControllers: []soniahttp.Controller{controller},
 	})
@@ -74,10 +75,11 @@ func TestVerifyAnswersMetaWithoutCredentials(t *testing.T) {
 	}
 }
 
-// TestReceiveAnswersMetaAndThenStartsTheTurn protects the rule that Meta is not kept waiting for Cohere (07-secuencia).
-func TestReceiveAnswersMetaAndThenStartsTheTurn(t *testing.T) {
-	starter := &recordingStarter{done: make(chan struct{})}
-	_, agg, engine := mount(starter)
+// TestReceiveStoresTheMessageAndAddsItToItsBatchBeforeAnswering protects both halves of what the 200 now stands for: the message
+// is stored, and it reached a batch (ADR-0041, regla 2). What Meta is still not kept waiting for is Cohere (ADR-0029).
+func TestReceiveStoresTheMessageAndAddsItToItsBatchBeforeAnswering(t *testing.T) {
+	collector := &recordingCollector{}
+	_, agg, engine := mount(collector)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, testAppSecret)))
@@ -89,12 +91,27 @@ func TestReceiveAnswersMetaAndThenStartsTheTurn(t *testing.T) {
 		t.Fatalf("the message was not stored before the answer went out")
 	}
 
-	// The turn is handed off outside the request, so the wait is on the handoff and not on the response.
-	<-starter.done
-	starter.mu.Lock()
-	defer starter.mu.Unlock()
-	if len(starter.started) != 1 || starter.started[0] != agg.conversationID {
-		t.Fatalf("the turn was started for %v, want the conversation just written", starter.started)
+	collector.mu.Lock()
+	defer collector.mu.Unlock()
+	if len(collector.collected) != 1 || collector.collected[0] != agg.conversationID {
+		t.Fatalf("the message was collected for %v, want the conversation just written", collector.collected)
+	}
+}
+
+// A message that reached no batch is one nobody will ever answer, and a 5xx would not recover it either: Meta's redelivery is
+// skipped as a duplicate wamid and would batch nothing. So it is logged and Meta is told the delivery arrived, which it did.
+func TestReceiveStillAnswers200WhenTheBatchCouldNotBeWritten(t *testing.T) {
+	collector := &recordingCollector{err: errors.New("db: down")}
+	_, agg, engine := mount(collector)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, testAppSecret)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: a retry would be skipped as a redelivery and store nothing", rec.Code)
+	}
+	if len(agg.messages) != 1 {
+		t.Fatal("the message was not stored, and it is the one thing that must survive a failed batch")
 	}
 }
 
@@ -113,8 +130,8 @@ func TestReceiveWithoutATurnStillStores(t *testing.T) {
 // TestReceiveAnswersAForgeryWithA200AndStartsNoTurn protects the decision of F20 through the real router: the forgery gets the
 // same answer as a delivery, so whoever sent it learns nothing, and the turn never hears of it.
 func TestReceiveAnswersAForgeryWithA200AndStartsNoTurn(t *testing.T) {
-	starter := &recordingStarter{done: make(chan struct{})}
-	repo, agg, engine := mount(starter)
+	collector := &recordingCollector{}
+	repo, agg, engine := mount(collector)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, webhook(metaTextPayload, sign(metaTextPayload, "no-soy-meta")))
@@ -129,11 +146,11 @@ func TestReceiveAnswersAForgeryWithA200AndStartsNoTurn(t *testing.T) {
 		t.Fatalf("the forgery left no discarded trace: %v", repo.events)
 	}
 
-	// Start is called inside the handler, so by the time ServeHTTP returns a turn would already have been handed off.
-	starter.mu.Lock()
-	defer starter.mu.Unlock()
-	if len(starter.started) != 0 {
-		t.Fatalf("a turn was started for a payload nobody signed")
+	// Collect runs inside the handler, so by the time ServeHTTP returns the forgery would already have reached a batch.
+	collector.mu.Lock()
+	defer collector.mu.Unlock()
+	if len(collector.collected) != 0 {
+		t.Fatalf("a payload nobody signed was added to a batch")
 	}
 }
 

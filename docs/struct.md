@@ -197,7 +197,7 @@ sonia/
 │   │   │   ├── sales/                  registro de ventas · F14
 │   │   │   │
 │   │   │   ├── turn/                   orquestador del turno · ABRE LA TRANSACCIÓN
-│   │   │   │   ├── timer.go            agrupa mensajes fragmentados · F10
+│   │   │   │   ├── collector.go        agrupa mensajes fragmentados · F10 (ADR-0041)
 │   │   │   │   ├── orchestrator.go     conduce: cerebro → persistir → enviar
 │   │   │   │   ├── retry.go            reintentos configurables por entorno
 │   │   │   │   ├── repository.go       sus tablas · más generations.message_id

@@ -229,6 +229,143 @@ func TestTheTurnNumberAdvancesWithEachBatch(t *testing.T) {
 	}
 }
 
+// The whole of regla 2 against real DDL: the second message joins the turn the first opened instead of starting one of its own,
+// and the wait starts over, which is what F10 calls resetting the timer.
+func TestASecondMessageJoinsTheOpenBatchAndPushesTheWaitForward(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		first, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		inbound(t, ctx, exec, conversationID, first.ID)
+
+		// A window twice as long, so what is compared is the expiry and not the clock: the reset has to be visible in the row.
+		second, err := repo.Append(ctx, conversationID, 2*time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+
+		if second.ID != first.ID || second.TurnNumber != first.TurnNumber {
+			t.Fatalf("the second message opened batch %v turn %d, want %v turn %d",
+				second.ID, second.TurnNumber, first.ID, first.TurnNumber)
+		}
+		if !second.ExpiresAt.After(first.ExpiresAt) {
+			t.Fatalf("expires_at went from %v to %v: the timer did not start over", first.ExpiresAt, second.ExpiresAt)
+		}
+
+		var open int
+		if err := exec.QueryRow(ctx,
+			`SELECT count(*) FROM message_batches WHERE conversation_id = $1 AND closed_at IS NULL`, conversationID).
+			Scan(&open); err != nil {
+			t.Fatalf("count the open batches: %v", err)
+		}
+		if open != 1 {
+			t.Fatalf("%d open batches, want 1: a second one splits the turn in two (regla 3)", open)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// The message that reaches the cap does not close anything: it leaves the batch due, and the poller picks it up on the next
+// tick like any other (ADR-0041, regla 5). One writer of closed_at is what makes the close a fact and not a race.
+func TestTheMessageThatReachesTheCapLeavesTheBatchDue(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		// A cap of two: the first message is below it and the second is the one that reaches it.
+		batch, err := repo.Append(ctx, conversationID, time.Hour, 2)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		if !batch.ExpiresAt.After(batch.OpenedAt) {
+			t.Fatalf("the first message left the batch due at %v, opened at %v", batch.ExpiresAt, batch.OpenedAt)
+		}
+		inbound(t, ctx, exec, conversationID, batch.ID)
+
+		capped, err := repo.Append(ctx, conversationID, time.Hour, 2)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		if capped.ExpiresAt.After(batch.OpenedAt.Add(time.Minute)) {
+			t.Fatalf("expires_at = %v, want an instant already past: the cap has to stop the wait", capped.ExpiresAt)
+		}
+
+		var closedAt *time.Time
+		if err := exec.QueryRow(ctx, `SELECT closed_at FROM message_batches WHERE id = $1`, batch.ID).
+			Scan(&closedAt); err != nil {
+			t.Fatalf("read back the batch: %v", err)
+		}
+		if closedAt != nil {
+			t.Fatal("the message that reached the cap closed the batch, and only the poller may write closed_at")
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A closed batch is never extended: the message that arrives after the poller cut has to start the next turn (regla 2, regla 3).
+func TestAMessageAfterTheCloseOpensTheNextTurn(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		first, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		if _, err := exec.Exec(ctx,
+			`UPDATE message_batches SET closed_at = now(), closed_reason = 'silence' WHERE id = $1`, first.ID); err != nil {
+			t.Fatalf("close the batch: %v", err)
+		}
+
+		second, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		if second.ID == first.ID {
+			t.Fatal("the message joined a batch that was already closed, which rewrites a turn that was already answered")
+		}
+		if second.TurnNumber != first.TurnNumber+1 {
+			t.Fatalf("turn numbers %d then %d, want consecutive", first.TurnNumber, second.TurnNumber)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// inbound is what conversations/ writes on every customer message, done here with SQL because this case is about the batch:
+// what Append counts for the cap is exactly what is already linked.
+func inbound(t *testing.T, ctx context.Context, exec db.Executor, conversationID, batchID uuid.UUID) {
+	t.Helper()
+
+	if _, err := exec.Exec(ctx,
+		`INSERT INTO messages (id, conversation_id, message_batch_id, direction, sender_type, content_text, content_type, sent_at)
+		 VALUES ($1, $2, $3, 'inbound', 'contact', 'hola', 'text', now())`,
+		id.New(), conversationID, batchID); err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+}
+
 // A batch with closed_at and no processed_at means one thing only: nobody finished it (07-secuencia section 5).
 func TestAFailedBatchKeepsItsReasonAndStaysUnprocessed(t *testing.T) {
 	ctx := context.Background()

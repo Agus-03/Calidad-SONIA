@@ -11,6 +11,9 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 # Read so the integration DSN is assembled here and nobody has to type a password into a shell.
 -include .env
 
+# Windows refuses to run a test binary built under AppData\Local\Temp, so every go test builds inside the repository instead.
+export GOTMPDIR := $(CURDIR)/.gotmp
+
 .DEFAULT_GOAL := help
 .PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin connect-inbox pgadmin pgadmin-down dbhub dbhub-down
 
@@ -51,6 +54,7 @@ test: test-core test-brain
 
 # Reports the number without judging it: with no database the SQL half of the core never runs, and the figure would refuse a healthy tree.
 test-core:
+	@mkdir -p $(GOTMPDIR)
 	cd src/core && go test -coverprofile=coverage.out ./... && grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); printf "core coverage %s%%\n", $$3 }'
 
 # The threshold is in pyproject.toml, so running pytest by hand enforces the same number the CI does.
@@ -114,6 +118,7 @@ smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
 # The core's own key, so the smoke can encrypt the demo inbox's app secret and sign its webhooks with it (ADR-0031, F20).
 smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
 smoke:
+	@mkdir -p $(GOTMPDIR)
 	$(COMPOSE_SMOKE) up -d --build --wait
 	$(MAKE) seed
 	cd src/core && go test ./smoke/... -count=1 -v

@@ -12,6 +12,7 @@ __pycache__/
 
 # Go
 /src/core/bin/
+/.gotmp/
 
 # Build
 /deploy/.docker/

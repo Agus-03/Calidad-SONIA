@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -158,7 +158,9 @@ Una clienta ("Lucía", ejemplo) escribe tres mensajes en 40 segundos:
 2. "Vi el depto de 2 ambientes en Jesús María que publicaron"
 3. "Mi DNI es 33445566 y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil"
 
-El agregador los agrupa en un `message_batch` (`closed_reason = silence`, `timer_ms_used ≈ 12000`, `messages_count = 3`).
+El agregador los agrupa en un `message_batch`: los tres entran al mismo bloque porque **cada uno reinicia la ventana de diez segundos**, y el bloque cierra diez segundos después del último (`closed_reason = silence`, `timer_ms_used = 10000`, `messages_count = 3`).
+
+> **Corregido el 2026-09-20** ([ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md), regla 6). Este ejemplo decía `timer_ms_used ≈ 12000`, un número aproximado que sugería que la columna guarda lo que el bloque esperó. Guarda **la ventana que se aplicó**, que es un valor exacto de configuración: con `TURN_BATCH_WINDOW_MS = 10000` no puede valer otra cosa. Lo que el bloque duró —unos cincuenta segundos acá— es `closed_at - opened_at`, y **es esa distancia contra los diez segundos de ventana lo que muestra el reinicio de la regla 2**.
 
 ### 4.3. Checkpoint de redacción (Regla 4)
 

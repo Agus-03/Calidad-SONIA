@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` |
+| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` · **§3, §4, §5 y §6 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md) (2026-09-20)**: el timer de F10 deja de ser *"estado en memoria del proceso"* y pasa a una columna con un poller, así que **deja de valer como argumento para elegir Go** —§3, y el descarte del monolito Python en §5—, deja de ser el motivo por el que el núcleo no escala horizontalmente —§4, donde el techo real pasa a ser el fan-out de WebSockets de F21—, y `turn/` ya no es *"time.Timer + canales"* —§6—. **La decisión no se revierte**: Go sigue por el gateway, F21 y el interés declarado del equipo |
 | **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) · **firmada 2026-09-05** |
 | **Etapa** | Diseño — antes del Paso 7 (nivel físico) |
 | **Resuelve** | La sección 8.4 deja el lenguaje sin decidir (*"Python o GO"*, *"Go o Python"*) y 8.5 no dice si los módulos son procesos separados |

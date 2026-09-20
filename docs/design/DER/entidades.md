@@ -239,7 +239,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `conversation_id` | uuid | FK |
 | `messages_count` | smallint | |
 | `turn_number` | integer | Correlativo por conversación. **Fuente de verdad del número de turno** (ADR-0022, H-19): `conversation_contexts`, `conversation_context_versions` y `transfer_events` lo **copian** desde acá, nunca lo calculan por su cuenta |
-| `timer_ms_used` | integer | **Lo que permite defender que el timer es "adaptativo"** y no una constante |
+| `timer_ms_used` | integer | **La ventana que se aplicó al cerrar el bloque**, en milisegundos ([ADR-0041](../02-decisiones/0041-temporizador-del-turno-por-poller.md), regla 6) — no cuánto duró el bloque, que es `closed_at - opened_at`. Mientras `TURN_BATCH_WINDOW_MS` no cambie, vale lo mismo en todas las filas: **sirve para comparar bloques cerrados con ventanas distintas**, no para demostrar que el timer es adaptativo. Lo adaptativo es el reinicio de la ventana (regla 2), y la evidencia de eso es `closed_at - opened_at` contra `timer_ms_used` |
 | `closed_reason` | `BatchCloseReason` | |
 | `error_message` | text | Nullable — **por qué falló el turno**, cuando falló. Ver la nota |
 | `expires_at` | timestamptz | **Cuándo vence la espera de F10** ([ADR-0041](../02-decisiones/0041-temporizador-del-turno-por-poller.md), regla 1). Se reinicia con cada mensaje que entra al bloque, y es lo único que cambia mientras el bloque está abierto |

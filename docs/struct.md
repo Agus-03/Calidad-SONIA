@@ -198,6 +198,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── turn/                   orquestador del turno · ABRE LA TRANSACCIÓN
 │   │   │   │   ├── collector.go        agrupa mensajes fragmentados · F10 (ADR-0041)
+│   │   │   │   ├── poller.go           cierra los bloques vencidos y arranca el turno · F10 (ADR-0041)
 │   │   │   │   ├── orchestrator.go     conduce: cerebro → persistir → enviar
 │   │   │   │   ├── retry.go            reintentos configurables por entorno
 │   │   │   │   ├── repository.go       sus tablas · más generations.message_id

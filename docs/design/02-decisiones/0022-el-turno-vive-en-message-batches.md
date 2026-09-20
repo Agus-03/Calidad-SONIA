@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · §4 enmendada por [ADR-0041](0041-temporizador-del-turno-por-poller.md), regla 1: el bloque es inmutable **una vez cerrado**, no desde que se abre — mientras está abierto, su `expires_at` se reinicia con cada mensaje. `turn_number` sigue escribiéndose una sola vez, al abrir |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 6 (pendiente abierto por ADR-0014) |
 | **Resuelve** | **H-19** — `message_batches` no tiene `turn_number` pese a ser el turno |

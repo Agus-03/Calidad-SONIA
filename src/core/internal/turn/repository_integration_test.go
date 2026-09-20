@@ -545,20 +545,24 @@ func TestCloseTakesTheDueBatchesAndLeavesTheOnesStillWaiting(t *testing.T) {
 
 // The three values of BatchCloseReason, in the order that decides them: the cap first, because attributing to silence a wait the
 // cap deliberately cut would hide the one case F10 does not describe (ADR-0041, regla 5).
+// The two cases that open with an hour-long window are the ones that prove a cap closes: their wait is nowhere near over, so a
+// reason coming back at all means something other than silence took the batch.
 func TestCloseWritesTheReasonThatStoppedTheWait(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name     string
+		name string
+		// The window the batch opens with. An hour means its wait is nowhere near over, so what closes it can only be a cap.
+		window   time.Duration
 		messages int
 		// How long ago the batch was opened, which is what max_duration is measured against.
 		age  time.Duration
 		want enums.BatchCloseReason
 	}{
-		{"the wait ran out with nobody writing", 1, 0, enums.BatchCloseReasonSilence},
-		{"the customer sent more than the batch takes", 3, 0, enums.BatchCloseReasonMaxMessages},
-		{"the customer kept writing past the maximum a batch may last", 1, 2 * time.Hour, enums.BatchCloseReasonMaxDuration},
-		{"over both at once, and the cap is the one that must show", 3, 2 * time.Hour, enums.BatchCloseReasonMaxMessages},
+		{"the wait ran out with nobody writing", 0, 1, 0, enums.BatchCloseReasonSilence},
+		{"the customer sent more than the batch takes", 0, 3, 0, enums.BatchCloseReasonMaxMessages},
+		{"the customer kept writing past the maximum a batch may last", time.Hour, 1, 2 * time.Hour, enums.BatchCloseReasonMaxDuration},
+		{"over both at once, and the cap is the one that must show", time.Hour, 3, 2 * time.Hour, enums.BatchCloseReasonMaxMessages},
 	}
 
 	for _, tc := range cases {
@@ -567,7 +571,7 @@ func TestCloseWritesTheReasonThatStoppedTheWait(t *testing.T) {
 				conversationID, _ := conversation(t, ctx, exec)
 				repo := NewRepository(exec)
 
-				batch, err := repo.Append(ctx, conversationID, 0, 100)
+				batch, err := repo.Append(ctx, conversationID, tc.window, 100)
 				if err != nil {
 					t.Fatalf("Append: got %v, want no error", err)
 				}
@@ -603,6 +607,56 @@ func TestCloseWritesTheReasonThatStoppedTheWait(t *testing.T) {
 
 // A batch closed twice is a customer answered twice, which cannot be taken back (ADR-0020). What prevents it is the statement
 // itself: closed_at is written where it was NULL, so the second caller finds nothing due.
+// The case ADR-0041 regla 5 exists for, written the way it happens: someone who sends another message just before the window
+// runs out pushes expires_at forward every time, so silence never arrives. Without max_duration closing on its own, that batch
+// stays open forever and the customer is never answered.
+func TestCloseCutsTheCustomerWhoNeverStopsWriting(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		// Three messages, each one restarting a ten-second window, so the wait is never over.
+		var batch Batch
+		for range 3 {
+			var err error
+			if batch, err = repo.Append(ctx, conversationID, 10*time.Second, 100); err != nil {
+				t.Fatalf("Append: got %v, want no error", err)
+			}
+			inbound(t, ctx, exec, conversationID, batch.ID)
+		}
+		if !batch.ExpiresAt.After(time.Now()) {
+			t.Fatalf("expires_at = %v, want a wait that is still running", batch.ExpiresAt)
+		}
+
+		// The conversation has been going on for two hours, which is what the maximum duration is measured against.
+		if _, err := exec.Exec(ctx,
+			`UPDATE message_batches SET opened_at = now() - interval '2 hours' WHERE id = $1`, batch.ID); err != nil {
+			t.Fatalf("age the batch: %v", err)
+		}
+
+		closed, err := repo.Close(ctx, 10*time.Second, time.Hour, 100, 10)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+		if len(closed) != 1 {
+			t.Fatalf("closed %d batches, want the one that outlived its maximum duration", len(closed))
+		}
+		if closed[0].ClosedReason != enums.BatchCloseReasonMaxDuration {
+			t.Fatalf("closed_reason = %q, want %q", closed[0].ClosedReason, enums.BatchCloseReasonMaxDuration)
+		}
+		if closed[0].MessagesCount != 3 {
+			t.Fatalf("messages_count = %d, want 3", closed[0].MessagesCount)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
 func TestCloseNeverTakesTheSameBatchTwice(t *testing.T) {
 	ctx := context.Background()
 

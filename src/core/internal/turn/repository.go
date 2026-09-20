@@ -105,11 +105,15 @@ func (r *Repository) Append(ctx context.Context, conversationID uuid.UUID, windo
 // so a tick that ran long and the next one never fight over the same row, and so two instances would not close it twice.
 // The reasons are ordered, not exclusive: a batch can be over the cap and over the maximum duration at once, and attributing to
 // silence a wait the cap deliberately cut would hide the one case F10 does not describe (regla 5).
+// A batch is due for either reason, and the second one is why max_duration is a cap and not just a label: whoever writes every
+// nine seconds never lets expires_at pass, so without it that batch stays open forever and never gets answered (regla 5).
 const batchClose = `
 WITH due AS (
     SELECT b.id
     FROM   message_batches b
-    WHERE  b.closed_at IS NULL AND b.expires_at <= now()
+    WHERE  b.closed_at IS NULL
+    AND    (b.expires_at <= now()
+            OR b.opened_at + ($4 * interval '1 millisecond') <= now())
     ORDER  BY b.expires_at
     LIMIT  $1
     FOR    UPDATE SKIP LOCKED

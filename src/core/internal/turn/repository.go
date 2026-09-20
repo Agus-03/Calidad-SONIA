@@ -23,7 +23,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // Reads three tables this package does not own: the ownership rule of regla 1 restricts writes and not reads.
 // The agent is read here and not trusted from the webhook: a pause or a removal after the message arrived still has to win (ADR-0038).
 const targetSelect = `
-SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.mode,
+SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.mode, c.ai_agent_id,
           COALESCE(a.active AND a.deleted_at IS NULL, false)
 FROM      conversations c
 JOIN      contacts ct ON ct.id = c.contact_id
@@ -33,7 +33,7 @@ WHERE     c.id = $1 AND c.deleted_at IS NULL`
 func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AIAgentAvailable)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AIAgentID, &t.AIAgentAvailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrConversationNotFound
 	}
@@ -101,24 +101,53 @@ func (r *Repository) Append(ctx context.Context, conversationID uuid.UUID, windo
 	return batch, nil
 }
 
-// The unique index of ADR-0022 is the arbiter of the turn number, not the read that preceded it.
-// expires_at takes the same instant as the other two: this batch opens and closes at once, so no timer ever waits for it (ADR-0041).
-const batchInsert = `
-INSERT INTO message_batches (id, conversation_id, messages_count, turn_number, timer_ms_used, opened_at, expires_at, closed_at)
-SELECT $1, $2, 1, COALESCE(MAX(b.turn_number), 0) + 1, 0, $3, $3, $3
-FROM   message_batches b
-WHERE  b.conversation_id = $2
-RETURNING turn_number`
+// One statement for the whole close, which is what makes a closed batch a fact and not a race (ADR-0041, regla 4). SKIP LOCKED
+// so a tick that ran long and the next one never fight over the same row, and so two instances would not close it twice.
+// The reasons are ordered, not exclusive: a batch can be over the cap and over the maximum duration at once, and attributing to
+// silence a wait the cap deliberately cut would hide the one case F10 does not describe (regla 5).
+const batchClose = `
+WITH due AS (
+    SELECT b.id
+    FROM   message_batches b
+    WHERE  b.closed_at IS NULL AND b.expires_at <= now()
+    ORDER  BY b.expires_at
+    LIMIT  $1
+    FOR    UPDATE SKIP LOCKED
+)
+UPDATE message_batches b
+SET    closed_at      = now(),
+       messages_count = counted.total,
+       timer_ms_used  = $2,
+       closed_reason  = CASE
+           WHEN counted.total >= $3                                      THEN 'max_messages'
+           WHEN b.opened_at + ($4 * interval '1 millisecond') <= now()   THEN 'max_duration'
+           ELSE                                                               'silence'
+       END
+FROM   due, LATERAL (SELECT count(*) FROM messages m WHERE m.message_batch_id = due.id) AS counted (total)
+WHERE  b.id = due.id
+RETURNING b.id, b.conversation_id, b.turn_number, b.opened_at, b.expires_at,
+          b.messages_count, b.timer_ms_used, b.closed_reason`
 
-// closed_reason stays NULL on purpose: its three values all describe a timer, and there is none to describe yet (F10).
-func (r *Repository) OpenBatch(ctx context.Context, conversationID uuid.UUID, at time.Time) (Batch, error) {
-	batch := Batch{ID: newID(), ConversationID: conversationID, OpenedAt: at}
-
-	err := r.exec.QueryRow(ctx, batchInsert, batch.ID, conversationID, at).Scan(&batch.TurnNumber)
+// Close takes at most limit batches per tick. ADR-0029 asks for one goroutine per turn and no queue, and this adds none: it only
+// bounds how many a single tick may open, so a core that was down for an hour drains its backlog over several ticks instead of
+// calling the LLM a hundred times in the same second.
+func (r *Repository) Close(ctx context.Context, window, maxDuration time.Duration, maxMessages, limit int) ([]Batch, error) {
+	rows, err := r.exec.Query(ctx, batchClose, limit, window.Milliseconds(), maxMessages, maxDuration.Milliseconds())
 	if err != nil {
-		return Batch{}, fmt.Errorf("turn: insert message batch: %w", err)
+		return nil, fmt.Errorf("turn: close the due batches: %w", err)
 	}
-	return batch, nil
+	defer rows.Close()
+
+	closed := []Batch{}
+	for rows.Next() {
+		var b Batch
+		if err := rows.Scan(&b.ID, &b.ConversationID, &b.TurnNumber, &b.OpenedAt, &b.ExpiresAt,
+			&b.MessagesCount, &b.TimerMsUsed, &b.ClosedReason); err != nil {
+			return nil, fmt.Errorf("turn: scan a closed batch: %w", err)
+		}
+		closed = append(closed, b)
+	}
+	return closed, rows.Err()
 }
 
 // MarkProcessed is what closes the turn, and 07-secuencia requires it in the same transaction as the outbound message.

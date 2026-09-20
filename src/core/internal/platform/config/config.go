@@ -56,7 +56,10 @@ func Load() (Config, error) {
 
 		// A starting point and not a measurement: the right window is the one the customers' own rhythm shows (ADR-0041, regla 10).
 		TurnBatchWindow:      10 * time.Second,
+		TurnPollInterval:     time.Second,
 		TurnBatchMaxMessages: 10,
+		TurnBatchMaxDuration: 60 * time.Second,
+		TurnPollLimit:        10,
 
 		MetaGraphBaseURL: env("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
 		// Pinned and never floating: Meta versions the path, and an unpinned one changes the contract without a deploy.
@@ -129,8 +132,27 @@ func Load() (Config, error) {
 	if cfg.TurnBatchWindow, err = durationMS("TURN_BATCH_WINDOW_MS", cfg.TurnBatchWindow); err != nil {
 		problems = append(problems, err.Error())
 	}
+	if cfg.TurnPollInterval, err = durationMS("TURN_POLL_INTERVAL_MS", cfg.TurnPollInterval); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if cfg.TurnBatchMaxMessages, err = positiveInt("TURN_BATCH_MAX_MESSAGES", cfg.TurnBatchMaxMessages); err != nil {
 		problems = append(problems, err.Error())
+	}
+	if cfg.TurnBatchMaxDuration, err = durationMS("TURN_BATCH_MAX_DURATION_MS", cfg.TurnBatchMaxDuration); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if cfg.TurnPollLimit, err = positiveInt("TURN_POLL_LIMIT", cfg.TurnPollLimit); err != nil {
+		problems = append(problems, err.Error())
+	}
+	// The two configurations that mean nothing, refused at boot (ADR-0041, regla 10): a poller slower than the window turns the
+	// tick into the real window, and a maximum duration below it closes every batch by max_duration before it ever waits.
+	if cfg.TurnPollInterval > cfg.TurnBatchWindow {
+		problems = append(problems, fmt.Sprintf("TURN_POLL_INTERVAL_MS=%d is longer than TURN_BATCH_WINDOW_MS=%d, which makes the tick the real window",
+			cfg.TurnPollInterval.Milliseconds(), cfg.TurnBatchWindow.Milliseconds()))
+	}
+	if cfg.TurnBatchMaxDuration < cfg.TurnBatchWindow {
+		problems = append(problems, fmt.Sprintf("TURN_BATCH_MAX_DURATION_MS=%d is shorter than TURN_BATCH_WINDOW_MS=%d, so every batch would close by max_duration",
+			cfg.TurnBatchMaxDuration.Milliseconds(), cfg.TurnBatchWindow.Milliseconds()))
 	}
 
 	if cfg.WhatsAppTimeout, err = durationMS("WHATSAPP_TIMEOUT_MS", cfg.WhatsAppTimeout); err != nil {

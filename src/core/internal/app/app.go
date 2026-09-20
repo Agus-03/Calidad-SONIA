@@ -76,6 +76,12 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
+	// Its own context and not ctx: the shutdown below has to stop the ticker before it waits for the turns, and cancelling ctx
+	// there would take the server with it (ADR-0041, regla 11).
+	pollerCtx, stopPoller := context.WithCancel(context.Background())
+	defer stopPoller()
+	deps.poller.Start(pollerCtx)
+
 	select {
 	case err := <-serverErr:
 		return err
@@ -86,9 +92,15 @@ func Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// The server first, so no new turn starts, and only then the ones already running (ADR-0029).
+	// The server first, so no message joins a batch from here on (ADR-0029).
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return err
+	}
+
+	// Then the poller, because a tick that ran while we waited would add turns to what this shutdown has to wait for (regla 11).
+	stopPoller()
+	if err := deps.poller.Wait(shutdownCtx); err != nil {
+		log.Warn("shutdown cut the turn poller", slog.String("cause", err.Error()))
 	}
 
 	// A turn cut in half leaves the customer without an answer, and with the 200 already sent Meta will not send it again.

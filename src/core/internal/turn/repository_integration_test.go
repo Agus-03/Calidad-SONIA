@@ -45,7 +45,9 @@ func conversation(t *testing.T, ctx context.Context, exec db.Executor) (conversa
 	}
 
 	contact := id.New()
-	phone = "549351" + contact.String()[:7]
+	// The tail and not the head: a UUID v7 starts with the timestamp, so two contacts built in the same millisecond would
+	// collide on uq_contacts_phone_whatsapp, and a case that needs two conversations builds them one after the other.
+	phone = "549351" + contact.String()[24:]
 	if _, err := exec.Exec(ctx,
 		`INSERT INTO contacts (id, account_id, phone_whatsapp, name, lastname, type, source_channel, consent_given_at)
 		 VALUES ($1, $2, $3, 'Prueba', 'Turno', 'client', 'direct', now())`, contact, account, phone); err != nil {
@@ -178,48 +180,6 @@ func TestTargetReportsAConversationThatIsNotThere(t *testing.T) {
 	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
 		if _, err := NewRepository(exec).Target(ctx, id.New()); !errors.Is(err, ErrConversationNotFound) {
 			t.Fatalf("Target: got %v, want ErrConversationNotFound", err)
-		}
-		return rollback
-	})
-
-	if !errors.Is(err, rollback) {
-		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
-	}
-}
-
-// ADR-0022 makes message_batches the source of truth of the turn number, and the sequence has to hold against real DDL.
-func TestTheTurnNumberAdvancesWithEachBatch(t *testing.T) {
-	ctx := context.Background()
-
-	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
-		conversationID, _ := conversation(t, ctx, exec)
-		repo := NewRepository(exec)
-		now := time.Now().UTC()
-
-		first, err := repo.OpenBatch(ctx, conversationID, now)
-		if err != nil {
-			t.Fatalf("OpenBatch: got %v, want no error", err)
-		}
-		second, err := repo.OpenBatch(ctx, conversationID, now)
-		if err != nil {
-			t.Fatalf("OpenBatch: got %v, want no error", err)
-		}
-
-		if first.TurnNumber != 1 || second.TurnNumber != 2 {
-			t.Fatalf("turn numbers %d and %d, want 1 and 2", first.TurnNumber, second.TurnNumber)
-		}
-
-		// Opened and closed at once because Fase 1 has no timer, and closed_reason describes a timer that does not exist yet.
-		var closedAt *time.Time
-		var reason *string
-		var timerMS int
-		if err := exec.QueryRow(ctx,
-			`SELECT closed_at, closed_reason, timer_ms_used FROM message_batches WHERE id = $1`, first.ID).
-			Scan(&closedAt, &reason, &timerMS); err != nil {
-			t.Fatalf("read back the batch: %v", err)
-		}
-		if closedAt == nil || reason != nil || timerMS != 0 {
-			t.Fatalf("closed_at %v, closed_reason %v, timer_ms_used %d", closedAt, reason, timerMS)
 		}
 		return rollback
 	})
@@ -374,9 +334,9 @@ func TestAFailedBatchKeepsItsReasonAndStaysUnprocessed(t *testing.T) {
 		conversationID, _ := conversation(t, ctx, exec)
 		repo := NewRepository(exec)
 
-		batch, err := repo.OpenBatch(ctx, conversationID, time.Now().UTC())
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
 		if err != nil {
-			t.Fatalf("OpenBatch: got %v, want no error", err)
+			t.Fatalf("Append: got %v, want no error", err)
 		}
 		if err := repo.MarkFailed(ctx, batch.ID, "brain: 503"); err != nil {
 			t.Fatalf("MarkFailed: got %v, want no error", err)
@@ -411,9 +371,9 @@ func TestMarkProcessedClosesTheTurn(t *testing.T) {
 		repo := NewRepository(exec)
 		at := time.Now().UTC()
 
-		batch, err := repo.OpenBatch(ctx, conversationID, at)
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
 		if err != nil {
-			t.Fatalf("OpenBatch: got %v, want no error", err)
+			t.Fatalf("Append: got %v, want no error", err)
 		}
 		if err := repo.MarkProcessed(ctx, batch.ID, at); err != nil {
 			t.Fatalf("MarkProcessed: got %v, want no error", err)
@@ -448,9 +408,9 @@ func TestLinkGenerationJoinsTheEvidenceToTheAnswer(t *testing.T) {
 		conversationID, _ := conversation(t, ctx, exec)
 		repo := NewRepository(exec)
 
-		batch, err := repo.OpenBatch(ctx, conversationID, time.Now().UTC())
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
 		if err != nil {
-			t.Fatalf("OpenBatch: got %v, want no error", err)
+			t.Fatalf("Append: got %v, want no error", err)
 		}
 		generationID := evidence(t, ctx, exec, conversationID, batch.ID)
 		messageID := outbound(t, ctx, exec, conversationID)
@@ -525,4 +485,192 @@ func outbound(t *testing.T, ctx context.Context, exec db.Executor, conversationI
 		t.Fatalf("insert message: %v", err)
 	}
 	return messageID
+}
+
+// The close is where the timer of F10 actually goes off, and it is one statement: everything the closed row says is decided
+// there (ADR-0041, regla 4). Checked against real DDL because the CASE that picks the reason is SQL and not Go.
+func TestCloseTakesTheDueBatchesAndLeavesTheOnesStillWaiting(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		waiting, _ := conversation(t, ctx, exec)
+		expired, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		// An hour of window on one and none on the other, which is the difference between the two the poller has to see.
+		stillWaiting, err := repo.Append(ctx, waiting, time.Hour, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		due, err := repo.Append(ctx, expired, 0, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+		inbound(t, ctx, exec, expired, due.ID)
+		inbound(t, ctx, exec, expired, due.ID)
+
+		closed, err := repo.Close(ctx, 10*time.Second, time.Hour, 10, 10)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+
+		if len(closed) != 1 || closed[0].ID != due.ID {
+			t.Fatalf("closed %v, want only the batch whose wait was over (%v)", closed, due.ID)
+		}
+		if closed[0].MessagesCount != 2 {
+			t.Fatalf("messages_count = %d, want 2: it is counted at the close and never kept in a column", closed[0].MessagesCount)
+		}
+		if closed[0].TimerMsUsed != 10000 {
+			t.Fatalf("timer_ms_used = %d, want the window that was applied and not how long the batch lasted", closed[0].TimerMsUsed)
+		}
+		if closed[0].ClosedReason != enums.BatchCloseReasonSilence {
+			t.Fatalf("closed_reason = %q, want silence: the wait ran out with nobody writing", closed[0].ClosedReason)
+		}
+
+		var openStillThere bool
+		if err := exec.QueryRow(ctx,
+			`SELECT closed_at IS NULL FROM message_batches WHERE id = $1`, stillWaiting.ID).Scan(&openStillThere); err != nil {
+			t.Fatalf("read back the batch that was waiting: %v", err)
+		}
+		if !openStillThere {
+			t.Fatal("a batch whose wait was not over was closed, which answers a customer still typing")
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// The three values of BatchCloseReason, in the order that decides them: the cap first, because attributing to silence a wait the
+// cap deliberately cut would hide the one case F10 does not describe (ADR-0041, regla 5).
+func TestCloseWritesTheReasonThatStoppedTheWait(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		messages int
+		// How long ago the batch was opened, which is what max_duration is measured against.
+		age  time.Duration
+		want enums.BatchCloseReason
+	}{
+		{"the wait ran out with nobody writing", 1, 0, enums.BatchCloseReasonSilence},
+		{"the customer sent more than the batch takes", 3, 0, enums.BatchCloseReasonMaxMessages},
+		{"the customer kept writing past the maximum a batch may last", 1, 2 * time.Hour, enums.BatchCloseReasonMaxDuration},
+		{"over both at once, and the cap is the one that must show", 3, 2 * time.Hour, enums.BatchCloseReasonMaxMessages},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+				conversationID, _ := conversation(t, ctx, exec)
+				repo := NewRepository(exec)
+
+				batch, err := repo.Append(ctx, conversationID, 0, 100)
+				if err != nil {
+					t.Fatalf("Append: got %v, want no error", err)
+				}
+				for range tc.messages {
+					inbound(t, ctx, exec, conversationID, batch.ID)
+				}
+				if tc.age > 0 {
+					if _, err := exec.Exec(ctx,
+						`UPDATE message_batches SET opened_at = now() - ($2 * interval '1 millisecond') WHERE id = $1`,
+						batch.ID, tc.age.Milliseconds()); err != nil {
+						t.Fatalf("age the batch: %v", err)
+					}
+				}
+
+				closed, err := repo.Close(ctx, 10*time.Second, time.Hour, 3, 10)
+				if err != nil {
+					t.Fatalf("Close: got %v, want no error", err)
+				}
+				if len(closed) != 1 {
+					t.Fatalf("closed %d batches, want 1", len(closed))
+				}
+				if closed[0].ClosedReason != tc.want {
+					t.Fatalf("closed_reason = %q, want %q", closed[0].ClosedReason, tc.want)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+			}
+		})
+	}
+}
+
+// A batch closed twice is a customer answered twice, which cannot be taken back (ADR-0020). What prevents it is the statement
+// itself: closed_at is written where it was NULL, so the second caller finds nothing due.
+func TestCloseNeverTakesTheSameBatchTwice(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		batch, err := repo.Append(ctx, conversationID, 0, 10)
+		if err != nil {
+			t.Fatalf("Append: got %v, want no error", err)
+		}
+
+		first, err := repo.Close(ctx, 10*time.Second, time.Hour, 10, 10)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+		second, err := repo.Close(ctx, 10*time.Second, time.Hour, 10, 10)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+
+		if len(first) != 1 || first[0].ID != batch.ID {
+			t.Fatalf("the first tick closed %v, want the batch that was due", first)
+		}
+		if len(second) != 0 {
+			t.Fatalf("the second tick closed %v again, which answers the same customer twice", second)
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// The limit is not a queue: it only bounds what one tick may open, so a core that was down for an hour drains its backlog over
+// several ticks instead of calling the LLM once per batch in the same second.
+func TestCloseTakesNoMoreThanTheTickAllows(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		repo := NewRepository(exec)
+		for range 3 {
+			conversationID, _ := conversation(t, ctx, exec)
+			if _, err := repo.Append(ctx, conversationID, 0, 10); err != nil {
+				t.Fatalf("Append: got %v, want no error", err)
+			}
+		}
+
+		closed, err := repo.Close(ctx, 10*time.Second, time.Hour, 10, 2)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+		if len(closed) != 2 {
+			t.Fatalf("one tick closed %d batches, want at most 2", len(closed))
+		}
+
+		rest, err := repo.Close(ctx, 10*time.Second, time.Hour, 10, 2)
+		if err != nil {
+			t.Fatalf("Close: got %v, want no error", err)
+		}
+		if len(rest) != 1 {
+			t.Fatalf("the next tick closed %d, want the one the first left behind", len(rest))
+		}
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
 }

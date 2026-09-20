@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
@@ -23,7 +21,8 @@ func TestTheTurnWritesInTheOrderSectionTwoDeclares(t *testing.T) {
 
 	h.turn()
 
-	want := []string{"open_batch", "link_to_batch", "outbound_message", "generation_linked", "processed_at", "message_sent"}
+	// No open_batch and no link_to_batch any more: the batch arrives closed and its messages were linked as they came in (T3).
+	want := []string{"outbound_message", "generation_linked", "processed_at", "message_sent"}
 	if !slices.Equal(*h.steps, want) {
 		t.Fatalf("steps = %v, want %v", *h.steps, want)
 	}
@@ -50,64 +49,51 @@ func TestTheAnswerIsWrittenBeforeItIsSent(t *testing.T) {
 	}
 }
 
-// The brain reads the turn by message_batch_id, so a batch nobody linked leaves it with no incoming messages to answer.
-func TestTheIncomingMessageIsLinkedToTheBatch(t *testing.T) {
+// The brain is asked about the batch the poller closed, which is the turn: a different id would answer somebody else's messages.
+func TestTheBrainIsAskedAboutTheBatchThatClosed(t *testing.T) {
 	h := conductor()
 
 	h.turn()
 
-	if len(h.aggregate.linked) != 1 {
-		t.Fatalf("linked %d messages to a batch, want 1", len(h.aggregate.linked))
-	}
-	for _, batchID := range h.aggregate.linked {
-		if batchID != h.store.batch.ID {
-			t.Fatalf("the message was linked to %s and the batch is %s", batchID, h.store.batch.ID)
-		}
-	}
 	if h.brain.requests[0].MessageBatchID != h.store.batch.ID {
-		t.Fatal("the brain was asked about a batch other than the one that was opened")
+		t.Fatal("the brain was asked about a batch other than the one the poller closed")
+	}
+	if h.brain.requests[0].ConversationID != h.store.target.ConversationID {
+		t.Fatal("the batch and the conversation the brain was told about are not the same turn")
 	}
 }
 
-// A conversation with no agent has nobody to answer it, and the turn must not open a batch for a turn that will not happen.
-func TestATurnWithNoAIAgentDoesNothing(t *testing.T) {
-	h := conductor()
-
-	h.orchestrator.Start(context.Background(), uuid.New(), uuid.New(), nil)
-	_ = h.orchestrator.Wait(context.Background())
-
-	if len(*h.steps) != 0 || h.brain.calls != 0 {
-		t.Fatalf("a turn without an agent still did work: %v", *h.steps)
+// Regla 8: the gate is read again when the batch closes, because the customer wrote up to a minute earlier. All three ways of
+// failing it end the same: processed_at written, no error_message, and the brain never called. A pause is a decision.
+func TestAGateThatClosedWhileTheBatchWaitedEndsTheTurnAsProcessed(t *testing.T) {
+	cases := []struct {
+		name  string
+		close func(*Target)
+	}{
+		{"the admin moved the conversation to suggestion, which is Fase 9",
+			func(tg *Target) { tg.Mode = enums.AgentModeSuggestion }},
+		{"the admin turned the conversation off", func(tg *Target) { tg.Mode = enums.AgentModeOff }},
+		{"the admin paused or removed the agent", func(tg *Target) { tg.AIAgentAvailable = false }},
+		{"the admin took the agent away from the conversation", func(tg *Target) { tg.AIAgentID = nil }},
 	}
-}
 
-// The three modes branch the orchestrator in Fase 9; until then only the autonomous one answers by itself (F02).
-func TestOnlyTheAutonomousModeAnswersOnItsOwn(t *testing.T) {
-	for _, mode := range []enums.AgentMode{enums.AgentModeSuggestion, enums.AgentModeOff} {
-		t.Run(string(mode), func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			h := conductor()
-			h.store.target.Mode = mode
+			tc.close(&h.store.target)
 
 			h.turn()
 
 			if h.brain.calls != 0 || h.sender.calls != 0 {
-				t.Fatalf("mode %q reached the brain or the channel", mode)
+				t.Fatalf("the brain was called %d times and the channel %d, want neither", h.brain.calls, h.sender.calls)
+			}
+			if len(h.store.processed) != 1 {
+				t.Fatal("processed_at is missing, and without it section 5 reads this pause as a turn nobody finished")
+			}
+			if len(h.store.failed) != 0 {
+				t.Fatalf("error_message was written for a decision of the administrator: %v", h.store.failed)
 			}
 		})
-	}
-}
-
-// A paused or removed agent answers nothing, and like a conversation that is off it leaves no batch behind: a pause is a decision
-// of the administrator and not a failure to record (ADR-0038).
-func TestAnAIAgentThatIsPausedOrRemovedDoesNotAnswer(t *testing.T) {
-	h := conductor()
-	h.store.target.AIAgentAvailable = false
-
-	h.turn()
-
-	if len(*h.steps) != 0 || h.brain.calls != 0 || h.sender.calls != 0 {
-		t.Fatalf("an agent that cannot answer still did work: steps %v, brain %d, sender %d",
-			*h.steps, h.brain.calls, h.sender.calls)
 	}
 }
 
@@ -256,8 +242,7 @@ func TestShutdownWaitsForTheTurnsInFlight(t *testing.T) {
 	release := make(chan struct{})
 	h.orchestrator.opts.Sender = &blockingSender{release: release}
 
-	agent := uuid.New()
-	h.orchestrator.Start(context.Background(), h.store.target.ConversationID, uuid.New(), &agent)
+	h.orchestrator.Start(context.Background(), h.closed())
 
 	quick, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -278,8 +263,7 @@ func TestStartRegistersTheTurnBeforeItReturns(t *testing.T) {
 	defer close(release)
 	h.orchestrator.opts.Sender = &blockingSender{release: release}
 
-	agent := uuid.New()
-	h.orchestrator.Start(context.Background(), h.store.target.ConversationID, uuid.New(), &agent)
+	h.orchestrator.Start(context.Background(), h.closed())
 
 	immediate, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -293,8 +277,7 @@ func TestTheTurnSurvivesTheRequestThatStartedIt(t *testing.T) {
 	h := conductor()
 	requestCtx, cancel := context.WithCancel(context.Background())
 
-	agent := uuid.New()
-	h.orchestrator.Start(context.WithoutCancel(requestCtx), h.store.target.ConversationID, uuid.New(), &agent)
+	h.orchestrator.Start(context.WithoutCancel(requestCtx), h.closed())
 	cancel()
 	_ = h.orchestrator.Wait(context.Background())
 

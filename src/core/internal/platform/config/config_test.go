@@ -4,9 +4,9 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
-	"time"
 )
 
 // validEnv puts a bootable environment in place, so each case only changes the variable it is about.
@@ -225,5 +225,58 @@ func TestLoadRefusesAFlagThatIsNotTrueOrFalse(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() accepted WHATSAPP_USE_DOUBLE=si")
+	}
+}
+
+// The two configurations of the timer that mean nothing, refused at boot rather than discovered in production (ADR-0041, regla 10).
+func TestLoadRefusesATimerThatCannotWork(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+	}{
+		{
+			name: "a poller slower than the window makes the tick the real window, and the window a number nobody applies",
+			env:  map[string]string{"TURN_BATCH_WINDOW_MS": "1000", "TURN_POLL_INTERVAL_MS": "5000"},
+		},
+		{
+			name: "a maximum duration below the window closes every batch by max_duration before it ever waits",
+			env:  map[string]string{"TURN_BATCH_WINDOW_MS": "10000", "TURN_BATCH_MAX_DURATION_MS": "5000"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() accepted %v, want an error", tc.env)
+			}
+		})
+	}
+}
+
+// The four defaults of regla 10, which are a starting point and not a measurement: they have to be the ones the ADR declares.
+func TestTheTimerDefaultsAreTheOnesTheDecisionDeclares(t *testing.T) {
+	validEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() = %v, want no error", err)
+	}
+
+	if cfg.TurnBatchWindow != 10*time.Second {
+		t.Fatalf("TurnBatchWindow = %v, want 10s", cfg.TurnBatchWindow)
+	}
+	if cfg.TurnPollInterval != time.Second {
+		t.Fatalf("TurnPollInterval = %v, want 1s: it is a tenth of the window, so the close lags by 10%% of it", cfg.TurnPollInterval)
+	}
+	if cfg.TurnBatchMaxMessages != 10 {
+		t.Fatalf("TurnBatchMaxMessages = %d, want 10", cfg.TurnBatchMaxMessages)
+	}
+	if cfg.TurnBatchMaxDuration != time.Minute {
+		t.Fatalf("TurnBatchMaxDuration = %v, want 1m", cfg.TurnBatchMaxDuration)
 	}
 }

@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Documento** | `docs/design/07-secuencia-del-turno.md` |
-| **Estado** | Borrador para el Paso 8 |
+| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) |
 | **Fecha** | 2026-08-22 |
 | **Base documental** | [Anteproyecto](../SONIA_Anteproyecto.pdf) — F02, F10, F12, F21, F29 · [ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md) (pipeline) · [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) (frontera de procesos) · [03-capa-prompts.md](03-capa-prompts.md) (las cinco reglas) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) — este documento no repite atributos, define **orden y dueño de cada escritura** |
@@ -86,6 +86,7 @@ sequenceDiagram
     autonumber
     participant M as Meta
     participant N as Núcleo (Go)
+    participant P as Poller (Go, mismo proceso)
     participant C as Cerebro (Python)
     participant DB as PostgreSQL
     participant Q as Qdrant
@@ -94,23 +95,31 @@ sequenceDiagram
     M->>N: POST webhook
     N->>DB: INSERT webhook_events
     N->>DB: INSERT messages (inbound) · UPDATE conversations
+
+    rect rgb(238,238,238)
+    Note over N,DB: una sola transacción (ADR-0041, regla 2)
+    N->>DB: INSERT o UPDATE message_batches · expires_at = now() + ventana
+    N->>DB: UPDATE messages SET message_batch_id
+    end
+
     N-->>M: 200 OK
     N->>O: WS · mensaje entrante
-    N->>DB: INSERT message_batches (opened_at) · timer arranca
 
-    Note over N: cada mensaje reinicia el timer
+    Note over N,DB: cada mensaje corre expires_at; el turno todavía no arranca
 
-    N->>DB: UPDATE message_batches (closed_at, messages_count, timer_ms_used)
+    P->>DB: UPDATE message_batches (closed_at, messages_count, timer_ms_used, closed_reason)
+    P->>N: el bloque cerrado · acá arranca el turno
     N->>C: POST /turns
 
     C->>DB: INSERT pipeline_steps · blocklist + guardrail (inbound)
     C->>DB: INSERT contact_attributes · PII redactada
-    C->>DB: INSERT pipeline_steps (triage) · detected_intents
+    C->>DB: INSERT pipeline_steps (triage)
     C->>DB: INSERT signal_evaluations · las 4 señales de F12
     C->>Q: búsqueda semántica
     C->>DB: INSERT retrieval_logs · pipeline_steps (retrieval, grounding)
     C->>DB: INSERT conversation_context_versions · turno t+1
     C->>DB: INSERT pipeline_steps · blocklist + guardrail (outbound)
+    C->>DB: INSERT detected_intents · las intenciones del bloque, ya usadas en el prompt (F11)
     C->>DB: INSERT generations (status=auto_sent, message_id NULL) · generation_components
     C-->>N: outcome=generated · transfer?
 
@@ -128,9 +137,11 @@ sequenceDiagram
     N->>O: WS · respuesta
 ```
 
-### Cinco puntos de orden que importan
+### Seis puntos de orden que importan
 
-**El 200 a Meta va antes de procesar.** La plataforma reintenta el webhook si no recibe respuesta rápida, y un reintento sobre un turno en curso duplicaría el trabajo. La idempotencia por `wamid` cubre el caso, pero conviene no depender de ella para lo que el orden ya resuelve.
+**El turno arranca cuando el bloque cierra, no cuando llega el mensaje** ([ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md), reglas 2 y 7). Es lo que hace de este diagrama el de F10 y no el del esqueleto: cuando el mensaje llega todavía **no se sabe si la clienta terminó de escribir**, así que el webhook lo suma al bloque abierto de su conversación y le corre el vencimiento. Quien decide que la espera terminó es un poller del núcleo, mirando `expires_at` en la fila. El temporizador no vive en la memoria del proceso: un reinicio no pierde nada, y los bloques que vencieron durante la caída se cierran en el tick siguiente.
+
+**El 200 a Meta va antes de procesar, pero después de escribir el bloque.** La plataforma reintenta el webhook si no recibe respuesta rápida, y un reintento sobre un turno en curso duplicaría el trabajo. La idempotencia por `wamid` cubre el caso, pero conviene no depender de ella para lo que el orden ya resuelve. Lo que **sí** espera el 200 es la fila del bloque y su enlace: un mensaje que no llegó a ningún bloque es uno que nadie va a responder nunca, y el reintento de Meta se descartaría por `wamid` duplicado sin agruparlo tampoco. Lo que el 200 no espera sigue siendo el turno entero ([ADR-0029](02-decisiones/0029-el-acuse-del-webhook-no-espera-al-turno.md)).
 
 **La generación se escribe después del guardrail de salida, no antes.** Es lo que permite que `generations.status` se escriba **una sola vez y ya con su veredicto** —`auto_sent`, `pending_review` o `blocked`— sin necesitar un estado provisional que nombre el intervalo entre generar y filtrar. El costo hay que decirlo: si el cerebro cae **durante** el guardrail de salida, esa generación se pierde y sólo quedan sus `pipeline_steps`. Es la contrapartida aceptada de no agregar un sexto valor a la enumeración.
 

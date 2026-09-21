@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · §2 enmendada por [ADR-0041](0041-temporizador-del-turno-por-poller.md), regla 7: el turno ya no arranca con cada mensaje sino cuando el bloque cierra, y quien lo arranca es el poller y no el handler del webhook. Lo demás se sostiene entero — 200 inmediato, contexto propio, una goroutine por turno sin cola, y el apagado que espera a los turnos en vuelo |
 | **Fecha** | 2026-09-06 |
 | **Etapa** | Construcción — Fase 1 (esqueleto de punta a punta) |
 | **Resuelve** | Cuándo devuelve 200 el webhook de Meta, y quién ejecuta el turno |

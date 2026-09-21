@@ -35,6 +35,8 @@ type wiring struct {
 
 	// Held so the shutdown can wait for the turns in flight: with the 200 already sent, nobody else would (ADR-0029).
 	turns *turn.Orchestrator
+	// Held so the shutdown can stop it first: a poller still ticking would keep adding turns to what the deployment waits for.
+	poller *turn.Poller
 }
 
 // wire builds the object graph, repository then service then controller: it is the only part that grows with each context.
@@ -72,13 +74,16 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 
 	turnRepo := turn.NewRepository(pool)
 
+	// Binds both collaborators to the same transaction, which is what lets it cross packages (regla 5). Shared by the two sides
+	// of the turn: the one that gathers the messages and the one that answers them.
+	turnTx := func(ctx context.Context, fn func(turn.Store, turn.Aggregate) error) error {
+		return db.InTx(ctx, pool, func(exec db.Executor) error {
+			return fn(turnRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+		})
+	}
+
 	turns := turn.New(turn.Options{
-		// Binds both collaborators to the same transaction, which is what lets it cross packages (regla 5).
-		Tx: func(ctx context.Context, fn func(turn.Store, turn.Aggregate) error) error {
-			return db.InTx(ctx, pool, func(exec db.Executor) error {
-				return fn(turnRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
-			})
-		},
+		Tx:        turnTx,
 		Store:     turnRepo,
 		Aggregate: aggregate,
 		Brain: brainclient.New(brainclient.Options{
@@ -95,7 +100,28 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:       log,
 	})
 
-	channel := whatsapp.NewController(whatsapp.NewService(channelRepo, channelTx, log), turns, log)
+	// What the webhook hands each message to: the turn no longer starts there, it starts when the batch closes (ADR-0041, regla 7).
+	collector := turn.NewCollector(turn.CollectorOptions{
+		Tx:          turnTx,
+		Window:      cfg.TurnBatchWindow,
+		MaxMessages: cfg.TurnBatchMaxMessages,
+		Logger:      log,
+	})
+
+	// Where the timer of F10 goes off. Pool-bound and outside any transaction of ours: the close is one statement, and the locks
+	// it takes with SKIP LOCKED last exactly as long as that statement (ADR-0041, regla 4).
+	poller := turn.NewPoller(turn.PollerOptions{
+		Store:       turnRepo,
+		Interval:    cfg.TurnPollInterval,
+		Window:      cfg.TurnBatchWindow,
+		MaxDuration: cfg.TurnBatchMaxDuration,
+		MaxMessages: cfg.TurnBatchMaxMessages,
+		Limit:       cfg.TurnPollLimit,
+		Turns:       turns,
+		Logger:      log,
+	})
+
+	channel := whatsapp.NewController(whatsapp.NewService(channelRepo, channelTx, log), collector, log)
 
 	tokens := auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL)
 	people := operators.NewService(operators.NewRepository(pool), tokens, log)
@@ -180,6 +206,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		actorLookup:       resolveActor(people),
 		publicControllers: []soniahttp.Controller{channel, operators.NewLoginController(people, log)},
 		turns:             turns,
+		poller:            poller,
 	}, nil
 }
 

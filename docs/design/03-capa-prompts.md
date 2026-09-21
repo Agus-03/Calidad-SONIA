@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -38,18 +38,21 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 ### Regla 1 — Composición del prompt
 
 > **Enmendada el 2026-09-06** al construir el ensamblador (Fase 1, tarea 12). La redacción anterior decía que `system` contenía **únicamente** los seis componentes concatenados; el texto de abajo admite el andamiaje fijo que los enmarca.
+>
+> **Enmendada el 2026-09-20** al construir F11 (Fase 7, [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md) regla 12). El `user` tenía tres secciones y pasa a tener cuatro: las intenciones que el clasificador leyó de este mismo bloque entran entre la base de conocimiento y el mensaje literal. La regla enumeraba tres y admitirlas exige decirlo; el orden y el motivo están abajo.
 
 **Decisión.** El prompt no es un texto plano: usa la estructura de roles de la API del LLM.
 
 - **`system`** tiene una **estructura fija** —declarada y versionada en `src/brain/rules/generation.yaml`— dentro de la cual se insertan los seis `prompt_components` activos del agente, cada uno bajo su encabezado y en el orden de su `position`. El andamiaje aporta tres cosas que el administrador no edita: un encabezado de canal, un encabezado por componente y un bloque final de formato de salida. **El único contenido variable siguen siendo los seis componentes**, así que el `system` no cambia entre bloques de la misma conversación salvo que el administrador edite uno. Un componente que falta no imprime su sección: F01 declara seis, pero una empresa puede no tener voz de marca y eso es un estado válido, no un error.
-- **`user`** contiene, en este orden: **(1)** el contexto dinámico del bloque (`conversation_contexts`: `primary_intent`, objeciones, urgencia, señal de presupuesto, datos extraídos), **(2)** los fragmentos recuperados por RAG (`retrieval_logs`), **(3)** el mensaje del cliente ya redactado (Regla 4).
+- **`user`** contiene, en este orden: **(1)** el contexto dinámico del bloque (`conversation_contexts`: `primary_intent`, objeciones, urgencia, señal de presupuesto, datos extraídos), **(2)** los fragmentos recuperados por RAG (`retrieval_logs`), **(3)** las intenciones que el clasificador detectó en **este** bloque (`detected_intents`, por `position`), **(4)** el mensaje del cliente ya redactado (Regla 4). Una sección vacía no imprime su encabezado: decirle al modelo que se miró y no se encontró nada es distinto de no haber podido mirar.
 - **El historial** de bloques anteriores viaja como turnos reales `user`/`assistant` entre `system` y el `user` del bloque actual — no se aplana dentro de un solo mensaje.
 
 **Justificación.**
 
 - Mantener `system` estático y limitado a los seis componentes lo vuelve **cacheable** entre bloques (Anthropic, OpenAI y otros proveedores ofrecen *prompt caching* sobre el contenido que no cambia). Si el contexto dinámico viviera en `system`, se perdería ese ahorro en el 100% de los bloques, porque nunca habría dos `system` iguales. El costo y la latencia por bloque que ya registra `generations.cost` / `latency_ms` son insumo directo de la viabilidad económica ante el cooperante — este orden los protege.
 - F04 usa el verbo "inyecta" para describir el contexto dinámico, y no impone en qué rol de la API ocurre esa inyección: no hay conflicto entre esta decisión y el texto del anteproyecto.
-- El orden dentro de `user` — contexto, luego RAG, luego la pregunta — sigue el razonamiento con que un operador humano encararía el mismo caso: primero "qué sé de este cliente ahora", después "qué dice mi base de conocimiento", y al final la pregunta literal.
+- El orden dentro de `user` — contexto, luego RAG, luego lo que pidió, y al final la pregunta — sigue el razonamiento con que un operador humano encararía el mismo caso: primero "qué sé de este cliente ahora", después "qué dice mi base de conocimiento", después "cuántas cosas me está pidiendo", y al final la pregunta literal.
+- **Por qué las intenciones van en `user` y no en `system`.** Cambian con cada bloque, y el `system` existe para no cambiar: ponerlas ahí rompería el caché de prompt en el 100 % de los bloques, que es lo que esta misma regla protege. Van **inmediatamente antes** del mensaje porque es la lista que el modelo tiene que cubrir con su única respuesta, y lo último que lee es lo que pesa más al escribir. La instrucción de contestarlas todas vive en el bloque de formato del `system`, que es fijo: repetirla en cada bloque gastaría tokens por nada.
 - **Por qué el andamiaje.** Seis textos pegados sin separador no le dicen al modelo dónde termina el tono y empiezan las reglas. Y el formato de salida es una decisión del sistema, no del administrador: WhatsApp no renderiza Markdown, así que un modelo sin esa instrucción contesta con viñetas y negritas que llegan al cliente como símbolos sueltos. Si esa instrucción viviera dentro de un componente, el administrador podría borrarla sin querer; si viviera en el `user`, se repetiría en cada bloque — gastando tokens y rompiendo el mismo caché que esta regla protege.
 - El andamiaje no afecta a OE1, que mide que **estén** los seis componentes activos, no que estén solos: entran enteros y en su orden.
 
@@ -155,7 +158,9 @@ Una clienta ("Lucía", ejemplo) escribe tres mensajes en 40 segundos:
 2. "Vi el depto de 2 ambientes en Jesús María que publicaron"
 3. "Mi DNI es 33445566 y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil"
 
-El agregador los agrupa en un `message_batch` (`closed_reason = silence`, `timer_ms_used ≈ 12000`, `messages_count = 3`).
+El agregador los agrupa en un `message_batch`: los tres entran al mismo bloque porque **cada uno reinicia la ventana de diez segundos**, y el bloque cierra diez segundos después del último (`closed_reason = silence`, `timer_ms_used = 10000`, `messages_count = 3`).
+
+> **Corregido el 2026-09-20** ([ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md), regla 6). Este ejemplo decía `timer_ms_used ≈ 12000`, un número aproximado que sugería que la columna guarda lo que el bloque esperó. Guarda **la ventana que se aplicó**, que es un valor exacto de configuración: con `TURN_BATCH_WINDOW_MS = 10000` no puede valer otra cosa. Lo que el bloque duró —unos cincuenta segundos acá— es `closed_at - opened_at`, y **es esa distancia contra los diez segundos de ventana lo que muestra el reinicio de la regla 2**.
 
 ### 4.3. Checkpoint de redacción (Regla 4)
 
@@ -211,7 +216,7 @@ Se extrae el DNI, se cifra y persiste en `contact_attributes` (`source_message_i
 
 **Historial** — bloques 1 a 4, como turnos `user`/`assistant` reales.
 
-**`user`** del bloque 5 — contexto → RAG → pregunta redactada:
+**`user`** del bloque 5 — contexto → RAG → lo que pidió → pregunta redactada:
 ```
 [CONTEXTO DE LA CONVERSACIÓN]
 Intención: consulta_disponibilidad · Presupuesto: $350.000
@@ -220,6 +225,10 @@ Zona: Jesús María, 2 ambientes · Urgencia: 3/5
 [BASE DE CONOCIMIENTO]
 1. Depto 2 ambientes, Jesús María, zona centro. $320.000/mes + expensas. Disponible desde el 1°.
 2. Requisitos: recibo de sueldo, garantía propietaria o seguro de caución, depósito de un mes.
+
+[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]
+1. consulta_disponibilidad
+2. consulta_precio
 
 [MENSAJE DEL CLIENTE]
 Hola buenas. Vi el depto de 2 ambientes en Jesús María que publicaron. Mi DNI es [DNI]

@@ -43,6 +43,9 @@ type outcome struct {
 	promptHasEnvelope   bool
 	assembled           int
 	missing             int
+	// The two halves of F11: the evidence the brain wrote, and whether the list reached the prompt that answered.
+	intents          int
+	promptHasIntents bool
 }
 
 func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
@@ -90,6 +93,13 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	// The two sides of OE1 by their own paths: with nothing assembled the query reads this generation as 0 %, not as absent.
 	if got.assembled == 0 || got.missing != 0 {
 		t.Errorf("generation_components: %d assembled and %d active components missing, want some and none (OE1)", got.assembled, got.missing)
+	}
+	// The two halves of F11, which is the whole of the requirement: detecting them and not using them leaves it half done.
+	if got.intents == 0 {
+		t.Error("detected_intents is empty: nothing says what the customer asked for in this batch (F11)")
+	}
+	if !got.promptHasIntents {
+		t.Error("prompt_rendered carries no list of requests: the intents were detected and never used (F11)")
 	}
 }
 
@@ -257,6 +267,8 @@ SELECT b.processed_at IS NOT NULL,
        coalesce(g.status, ''),
        position('Ayudar a potenciales inquilinos' in g.prompt_rendered) > 0,
        position('[MENSAJE DEL CLIENTE]' in g.prompt_rendered) > 0,
+       position('[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]' in g.prompt_rendered) > 0,
+       (SELECT count(*) FROM detected_intents d WHERE d.message_batch_id = b.id),
        (SELECT count(*) FROM generation_components gc WHERE gc.generation_id = g.id),
        (SELECT count(*) FROM prompt_components pc
         WHERE  pc.ai_agent_id = g.ai_agent_id AND pc.active AND pc.deleted_at IS NULL
@@ -278,7 +290,8 @@ func awaitTurn(ctx context.Context, t *testing.T, pool db.Pool, wamid string) ou
 		err := pool.QueryRow(ctx, turnOutcome, wamid).Scan(
 			&got.batchProcessed, &got.batchError, &got.messageDirection, &got.messageStatus,
 			&got.messageHasWamid, &got.generationCost, &got.generationState,
-			&got.promptHasComponents, &got.promptHasEnvelope, &got.assembled, &got.missing,
+			&got.promptHasComponents, &got.promptHasEnvelope, &got.promptHasIntents, &got.intents,
+			&got.assembled, &got.missing,
 		)
 		switch {
 		case err == nil:

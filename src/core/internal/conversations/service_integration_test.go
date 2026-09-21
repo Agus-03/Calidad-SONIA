@@ -43,7 +43,7 @@ func TestTheBoundAggregateWritesInsideTheTransaction(t *testing.T) {
 		// The batch is turn/'s table, so it is written here by hand: what is under test is the one column of messages it points from.
 		batch := id.New()
 		if _, err := exec.Exec(ctx,
-			`INSERT INTO message_batches (id, conversation_id, turn_number, timer_ms_used) VALUES ($1, $2, 1, 0)`,
+			`INSERT INTO message_batches (id, conversation_id, turn_number, timer_ms_used, expires_at) VALUES ($1, $2, 1, 0, now())`,
 			batch, conversation.ID); err != nil {
 			t.Fatalf("insert batch: %v", err)
 		}

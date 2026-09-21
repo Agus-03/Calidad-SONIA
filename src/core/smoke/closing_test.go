@@ -70,6 +70,9 @@ func TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt(t *testing.T) {
 				(SELECT id FROM generations WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the generations", `DELETE FROM generations WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			{"the messages", `DELETE FROM messages WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
+			// Before the batches they hang from: F11 gave message_batches a second child, and children go first (ADR-0041, regla 12).
+			{"the detected intents", `DELETE FROM detected_intents WHERE message_batch_id IN
+				(SELECT id FROM message_batches WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the batches", `DELETE FROM message_batches WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			{"the assignments", `DELETE FROM conversation_assignments WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			{"the conversations", `DELETE FROM conversations WHERE id IN (` + conversations + `)`, []any{customer}},

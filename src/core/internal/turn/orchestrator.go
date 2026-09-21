@@ -30,7 +30,8 @@ var newID = id.New
 // The collaborators are declared here because this is the side that uses them, and none of them names a concrete type.
 type Store interface {
 	Target(ctx context.Context, conversationID uuid.UUID) (Target, error)
-	OpenBatch(ctx context.Context, conversationID uuid.UUID, at time.Time) (Batch, error)
+	Append(ctx context.Context, conversationID uuid.UUID, window time.Duration, maxMessages int) (Batch, error)
+	Close(ctx context.Context, window, maxDuration time.Duration, maxMessages, limit int) ([]Batch, error)
 	MarkProcessed(ctx context.Context, batchID uuid.UUID, at time.Time) error
 	MarkFailed(ctx context.Context, batchID uuid.UUID, reason string) error
 	LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error
@@ -84,30 +85,23 @@ func New(opts Options) *Orchestrator {
 	return &Orchestrator{opts: opts}
 }
 
-// Registered here and not inside the goroutine, so a shutdown that begins right now still finds this turn (ADR-0029).
-func (o *Orchestrator) Start(ctx context.Context, conversationID, messageID uuid.UUID, aiAgentID *uuid.UUID) {
-	if aiAgentID == nil {
-		// A conversation with no agent has nobody to answer it: the operator sees it in the inbox and that is the whole flow.
-		o.opts.Logger.Info("turn skipped",
-			slog.String("conversation_id", conversationID.String()),
-			slog.String("reason", "the conversation has no agent"),
-		)
-		return
-	}
-
-	agentID := *aiAgentID
+// Start takes the batch already closed: the turn is the block of fragmented messages, and until the poller cut it nobody knew
+// what the customer had finished saying (ADR-0041, regla 7). Registered here and not inside the goroutine, so a shutdown that
+// begins right now still finds this turn (ADR-0029).
+func (o *Orchestrator) Start(ctx context.Context, batch Batch) {
 	o.inFlight.Add(1)
 
 	go func() {
 		defer o.inFlight.Done()
 
-		// Its own deadline: the request's context is already cancelled, and an unbounded turn holds the shutdown open.
+		// Its own deadline: the poller's context is not this turn's, and an unbounded turn holds the shutdown open.
 		ctx, cancel := context.WithTimeout(ctx, o.opts.Budget)
 		defer cancel()
 
-		if err := o.run(ctx, conversationID, messageID, agentID); err != nil {
+		if err := o.run(ctx, batch); err != nil {
 			o.opts.Logger.Error("turn failed",
-				slog.String("conversation_id", conversationID.String()),
+				slog.String("conversation_id", batch.ConversationID.String()),
+				slog.String("batch_id", batch.ID.String()),
 				slog.String("cause", err.Error()),
 			)
 		}
@@ -130,32 +124,27 @@ func (o *Orchestrator) Wait(ctx context.Context) error {
 	}
 }
 
-func (o *Orchestrator) run(ctx context.Context, conversationID, messageID, aiAgentID uuid.UUID) error {
+func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
+	conversationID := batch.ConversationID
+
 	target, err := o.opts.Store.Target(ctx, conversationID)
 	if err != nil {
 		return err
 	}
+	// The three conditions of ADR-0038 regla 2, read again now: the batch waited up to a minute, and a pause, a removal or a
+	// change of mode that committed in between has to win over what was true when the customer wrote (ADR-0041, regla 8).
 	// The three modes branch the orchestrator in Fase 9; until then only the autonomous one answers by itself (F02).
-	if target.Mode != enums.AgentModeAutonomous {
+	if target.Mode != enums.AgentModeAutonomous || !target.AIAgentAvailable || target.AIAgentID == nil {
 		o.opts.Logger.Info("turn not answered",
 			slog.String("conversation_id", conversationID.String()),
 			slog.String("mode", string(target.Mode)),
+			slog.Bool("ai_agent_available", target.AIAgentAvailable),
 		)
-		return nil
+		// processed_at and no error_message: a closed batch that nobody processed is the marker of a turn that failed
+		// (07-secuencia section 5), and a pause is a decision. The turn ran, and its outcome was not to answer.
+		return o.opts.Store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
 	}
-	// Skipped like a conversation that is off, before any batch exists: a pause is a decision and not a failure to record (ADR-0038).
-	if !target.AIAgentAvailable {
-		o.opts.Logger.Info("turn not answered",
-			slog.String("conversation_id", conversationID.String()),
-			slog.String("reason", "the agent is paused or removed"),
-		)
-		return nil
-	}
-
-	batch, err := o.openBatch(ctx, conversationID, messageID, time.Now().UTC())
-	if err != nil {
-		return err
-	}
+	aiAgentID := *target.AIAgentID
 
 	answer, err := o.ask(ctx, batch, aiAgentID, target.Mode)
 	if err != nil {
@@ -175,20 +164,6 @@ func (o *Orchestrator) run(ctx context.Context, conversationID, messageID, aiAge
 	}
 
 	return o.deliver(ctx, target, message, answer.Text())
-}
-
-// Both writes together: a batch nobody linked leaves the brain reading a turn with no incoming messages.
-func (o *Orchestrator) openBatch(ctx context.Context, conversationID, messageID uuid.UUID, at time.Time) (Batch, error) {
-	var batch Batch
-
-	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
-		var err error
-		if batch, err = store.OpenBatch(ctx, conversationID, at); err != nil {
-			return err
-		}
-		return aggregate.LinkToBatch(ctx, messageID, batch.ID)
-	})
-	return batch, err
 }
 
 func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID, mode enums.AgentMode) (brainclient.TurnResponse, error) {

@@ -7,6 +7,14 @@ PROVIDER = "double"
 # Announces itself in the answer, because a canned reply that looks real is the failure this double could cause.
 PREFIX = "[doblado]"
 
+# The heading the classifier of F11 opens its system prompt with. Held as a literal and not imported, so an adapter does not
+# have to know a pipeline step; rules/intents.yaml declares the same string and tests/test_intents.py fails if the two drift.
+# Without this, "[doblado] hola" would reach json.loads and the doubled stack would run every path of the turn except F11's.
+INTENT_MARKER = "[CLASIFICADOR DE INTENCIONES]"
+
+# Two intentions, which is the case F11 exists for: one answer that covers everything the customer asked.
+INTENT_ANSWER = '[{"label": "consulta_disponibilidad", "confidence": 0.9}, {"label": "consulta_precio", "confidence": 0.7}]'
+
 
 class DoubleClient:
     provider = PROVIDER
@@ -24,6 +32,14 @@ class DoubleClient:
         last = next((m.text for m in reversed(messages) if m.role == "user"), "")
         if not last:
             raise LLMUnavailable(f"{PROVIDER}: the turn reached the model with nothing to answer")
+
+        if system and INTENT_MARKER in system:
+            return Completion(
+                text=INTENT_ANSWER,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(INTENT_ANSWER.split()),
+            )
 
         return Completion(
             text=f"{PREFIX} {last}",

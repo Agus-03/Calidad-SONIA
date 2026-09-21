@@ -24,7 +24,8 @@ sonia/
     │   │   ├── whatsapp/                  F20, F29 · controller.go (entrada del webhook) · client.go (envío a Meta)
     │   │   ├── meta_templates/            plantillas de Meta: sincroniza y sirve · F08, F37
     │   │   ├── turn/                      orquestador del turno
-    │   │   │   ├── timer.go               agrupa mensajes fragmentados · F10
+    │   │   │   ├── collector.go           agrupa mensajes fragmentados en el bloque abierto · F10 (ADR-0041)
+    │   │   │   ├── poller.go              cierra los bloques vencidos y arranca el turno · F10 (ADR-0041)
     │   │   │   ├── orchestrator.go        conduce el turno: cerebro → persistir → enviar
     │   │   │   └── retry.go               3 reintentos configurables
     │   │   ├── conversations/             DUEÑO de conversations y messages · el agregado compartido

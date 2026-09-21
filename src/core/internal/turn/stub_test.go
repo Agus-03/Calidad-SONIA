@@ -21,15 +21,40 @@ type stubStore struct {
 	target Target
 
 	targetErr    error
-	openErr      error
+	closeErr     error
 	processedErr error
 	linkErr      error
 
+	// What the next tick finds due, handed over once.
+	due []Batch
+
+	// One per call and consumed in order, which is the only way to play a race: the first Append loses and the second wins.
+	appendErrs []error
+
 	batch     Batch
+	appended  []uuid.UUID
 	processed []uuid.UUID
 	failed    map[uuid.UUID]string
 	linked    map[uuid.UUID]uuid.UUID
 	steps     *[]string
+}
+
+func (s *stubStore) Append(_ context.Context, conversationID uuid.UUID, window time.Duration, _ int) (Batch, error) {
+	s.mu.Lock()
+	if len(s.appendErrs) > 0 {
+		err := s.appendErrs[0]
+		s.appendErrs = s.appendErrs[1:]
+		if err != nil {
+			s.mu.Unlock()
+			return Batch{}, err
+		}
+	}
+	s.appended = append(s.appended, conversationID)
+	s.mu.Unlock()
+
+	s.record("append")
+	s.batch = Batch{ID: uuid.New(), ConversationID: conversationID, TurnNumber: 1, ExpiresAt: time.Now().UTC().Add(window)}
+	return s.batch, nil
 }
 
 func (s *stubStore) Target(context.Context, uuid.UUID) (Target, error) {
@@ -39,13 +64,17 @@ func (s *stubStore) Target(context.Context, uuid.UUID) (Target, error) {
 	return s.target, nil
 }
 
-func (s *stubStore) OpenBatch(_ context.Context, conversationID uuid.UUID, at time.Time) (Batch, error) {
-	if s.openErr != nil {
-		return Batch{}, s.openErr
+// due is what the next tick finds; each call hands one batch over, so a poller loop cannot close the same one forever.
+func (s *stubStore) Close(context.Context, time.Duration, time.Duration, int, int) ([]Batch, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closeErr != nil {
+		return nil, s.closeErr
 	}
-	s.record("open_batch")
-	s.batch = Batch{ID: uuid.New(), ConversationID: conversationID, TurnNumber: 1, OpenedAt: at}
-	return s.batch, nil
+	closed := s.due
+	s.due = nil
+	return closed, nil
 }
 
 func (s *stubStore) MarkProcessed(_ context.Context, batchID uuid.UUID, _ time.Time) error {
@@ -245,6 +274,7 @@ type harness struct {
 // The transaction is a plain call here: what the test checks is the order of the writes, and binding them is the pool's job.
 func conductor() *harness {
 	steps := &[]string{}
+	agent := uuid.New()
 
 	store := &stubStore{
 		target: Target{
@@ -252,6 +282,7 @@ func conductor() *harness {
 			InboxID:          uuid.New(),
 			ContactPhone:     "5493510000000",
 			Mode:             enums.AgentModeAutonomous,
+			AIAgentID:        &agent,
 			AIAgentAvailable: true,
 		},
 		steps: steps,
@@ -279,10 +310,22 @@ func conductor() *harness {
 	return h
 }
 
+// closed is what the poller hands over: the turn now begins at a batch that already stopped waiting (ADR-0041, regla 7).
+func (h *harness) closed() Batch {
+	h.store.batch = Batch{
+		ID:             uuid.New(),
+		ConversationID: h.store.target.ConversationID,
+		TurnNumber:     1,
+		MessagesCount:  3,
+		TimerMsUsed:    10000,
+		ClosedReason:   enums.BatchCloseReasonSilence,
+	}
+	return h.store.batch
+}
+
 // Runs one turn to completion: Start is asynchronous by contract, so a test that asserts on its writes has to wait for it.
 func (h *harness) turn() {
-	agent := uuid.New()
-	h.orchestrator.Start(context.Background(), h.store.target.ConversationID, uuid.New(), &agent)
+	h.orchestrator.Start(context.Background(), h.closed())
 	_ = h.orchestrator.Wait(context.Background())
 }
 

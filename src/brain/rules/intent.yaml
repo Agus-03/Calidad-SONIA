@@ -1,0 +1,36 @@
+# The classifier of F11, versioned as data for the same reason generation.yaml is: changing the wording changes what gets
+# written into detected_intents, and a measurement has to be able to name the version that produced it (regla 9).
+version: 1
+
+# The heading the system prompt opens with, and the one the doubled adapter looks for so the whole path of F11 runs in a stack
+# with no key. Both sides hold the same literal and tests/test_intents.py is what keeps them from drifting apart.
+marker: "[CLASIFICADOR DE INTENCIONES]"
+
+# At most this many rows per batch. A model that rambles must not write fifty rows of evidence for one message, and F11 is about
+# a customer asking for two or three things at once, not fifty.
+max_intents: 5
+
+# Free text and not a closed taxonomy: ADR-0023 discarded fixing one, because the definition of intent change that OE4 rests on
+# does not need it and maintaining it does cost. The shape is asked for here so the label is at least consistent with itself.
+system: |-
+  [CLASIFICADOR DE INTENCIONES]
+
+  Sos un clasificador. Leés lo que un cliente le escribió a una inmobiliaria por WhatsApp y decís cuántas cosas distintas está pidiendo.
+
+  Devolvés únicamente un array JSON, sin texto alrededor, sin explicaciones y sin bloques de código. Cada elemento tiene dos claves:
+
+  - "label": una etiqueta corta en español, en minúsculas y con guiones bajos, que nombre lo que pide. Por ejemplo: consulta_disponibilidad, consulta_precio, pide_fotos, quiere_visitar, saludo.
+  - "confidence": un número entre 0 y 1 con cuánta seguridad lo afirmás.
+
+  Las ordenás en el orden en que aparecen en el mensaje. Si pide una sola cosa, devolvés un solo elemento. Si no pide nada
+  concreto —un saludo suelto, un "gracias"—, devolvés igual el elemento que mejor lo describa.
+
+  No inventás pedidos que el cliente no hizo. Dos formas de decir lo mismo son una sola intención, no dos.
+
+  Ejemplo de salida:
+  [{"label": "consulta_disponibilidad", "confidence": 0.94}, {"label": "consulta_precio", "confidence": 0.71}]
+
+# What the classifier is handed: the messages of the batch, already joined, and nothing else. No history, because F11 asks what
+# the customer said in this turn and the earlier turns have their own rows.
+user: |-
+  [MENSAJE DEL CLIENTE]

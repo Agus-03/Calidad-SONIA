@@ -1,6 +1,7 @@
 # The turn's reads, next to what uses them: the brain gets four ids and finds everything else here (07-secuencia 1).
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -8,6 +9,7 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
+from classifiers.intent import Intent
 from infra import ids
 from infra.enums import GenerationStatus, MessageDirection, SenderType
 
@@ -231,5 +233,34 @@ async def write_generation(conn: AsyncConnection, generation: Generation) -> Non
                 "generation_id": generation.id,
                 "version_id": version_id,
                 "position": position,
+            },
+        )
+
+
+# detected_intents is the evidence of F11, and one of the six tables the brain may write (regla 3).
+_INTENTS_OF_BATCH = "DELETE FROM detected_intents WHERE message_batch_id = %(message_batch_id)s"
+
+_INTENT = """
+INSERT INTO detected_intents (id, message_batch_id, intent_label, confidence, position)
+VALUES (%(id)s, %(message_batch_id)s, %(intent_label)s, %(confidence)s, %(position)s)
+"""
+
+
+# Deleted first and not upserted: the core asks again when the brain answers a 5xx (ADR-0020), and a second run of the same
+# batch has to leave one classification and not two. There is no natural key to upsert on, because the labels are free text.
+async def write_intents(
+    conn: AsyncConnection, message_batch_id: UUID, intents: Sequence[Intent]
+) -> None:
+    await conn.execute(_INTENTS_OF_BATCH, {"message_batch_id": message_batch_id})
+    # One statement per intent and not executemany: they are five at most, and the order of the rows is the order of the asking.
+    for intent in intents:
+        await conn.execute(
+            _INTENT,
+            {
+                "id": ids.new(),
+                "message_batch_id": message_batch_id,
+                "intent_label": intent.label,
+                "confidence": intent.confidence,
+                "position": intent.position,
             },
         )

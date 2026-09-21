@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · §1, §2 y §4 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md): el temporizador de F10 deja de vivir en la memoria del proceso y pasa a `message_batches.expires_at`, cerrado por un poller. Con eso se cierra el pendiente que §4 dejó abierto —qué hacer al arrancar con los bloques cuyo temporizador se perdió— y el temporizador deja de ser un motivo para la instancia única; el fan-out de WebSockets de F21 sí lo sigue siendo. **§2 también**: los *leases* en la base que ese parágrafo ofrecía como salida para el temporizador dejan de estar abiertos —el vencimiento en la fila con `FOR UPDATE SKIP LOCKED` es la salida elegida, y no necesita lease porque el bloque no se arrienda: se toma o no se toma |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 7 (nivel físico) |
 | **Resuelve** | Pendiente abierto por ADR-0017: el núcleo es de instancia única y no está declarado |

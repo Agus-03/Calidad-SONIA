@@ -16,7 +16,7 @@ _RULES_FILE = Path(__file__).resolve().parent.parent / "rules" / "generation.yam
 # Replaced and not formatted, so a brace typed inside a component can never turn into a template error.
 _AGENT_NAME = "{agent_name}"
 
-_USER_SECTIONS = ("context", "knowledge", "message")
+_USER_SECTIONS = ("context", "knowledge", "intents", "message")
 
 
 # Raised while loading and never while answering: a scaffolding that cannot be read is a deployment mistake.
@@ -101,7 +101,8 @@ def _text(parent: dict, key: str) -> str:
     return value.strip()
 
 
-# context and knowledge are empty until Fase 9 and Fase 12, but Regla 1 declares three sections and the caller should see them.
+# context is empty until Fase 9 and knowledge until Fase 12, but Regla 1 declares the sections and the caller should see them.
+# intents is what F11 adds: the labels the classifier read out of this same batch, in the order the customer said them.
 def assemble(
     *,
     agent_name: str,
@@ -109,6 +110,7 @@ def assemble(
     message: str,
     context: str | None = None,
     knowledge: Sequence[str] = (),
+    intents: Sequence[str] = (),
 ) -> Prompt:
     spec = rules()
 
@@ -125,24 +127,32 @@ def assemble(
 
     return Prompt(
         system="\n\n".join(blocks),
-        user=_envelope(spec, message, context, knowledge),
+        user=_envelope(spec, message, context, knowledge, intents),
         rules_version=spec.version,
         assembled=tuple(assembled),
     )
 
 
-# The order of Regla 1: what I know about this customer, then what my knowledge base says, then the literal question.
-def _envelope(spec: Rules, message: str, context: str | None, knowledge: Sequence[str]) -> str:
+# The order of Regla 1: what I know about this customer, then what my knowledge base says, then what they are asking for in
+# this batch, and last the literal question.
+def _envelope(
+    spec: Rules, message: str, context: str | None, knowledge: Sequence[str], intents: Sequence[str]
+) -> str:
     sections: list[tuple[str, str]] = []
     if context and context.strip():
         sections.append((spec.user_headings["context"], context.strip()))
     if knowledge:
         sections.append((spec.user_headings["knowledge"], _numbered(knowledge)))
+    # Left out when the classifier found nothing, the same as the other two: an empty list would tell the model the customer
+    # asked for nothing, which is the opposite of "we did not manage to read it" (F11).
+    if intents:
+        sections.append((spec.user_headings["intents"], _numbered(intents)))
     sections.append((spec.user_headings["message"], message.strip()))
 
     return "\n\n".join(f"{heading}\n{body}" for heading, body in sections)
 
 
-# Numbered because retrieval_logs.rank is an order the model should see: the first fragment is the most similar one.
+# Numbered because the order carries meaning on both lists: for knowledge it is rank, and for intents it is the order the
+# customer asked in, which is what detected_intents.position stores.
 def _numbered(fragments: Sequence[str]) -> str:
     return "\n".join(f"{rank}. {text.strip()}" for rank, text in enumerate(fragments, start=1))

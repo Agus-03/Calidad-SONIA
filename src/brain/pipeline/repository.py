@@ -8,10 +8,11 @@ from decimal import Decimal
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 
 from classifiers.intent import Intent
 from infra import ids
-from infra.enums import GenerationStatus, MessageDirection, SenderType
+from infra.enums import GenerationStatus, MessageDirection, PipelineStep, SenderType
 
 logger = logging.getLogger("sonia.pipeline.repository")
 
@@ -262,5 +263,73 @@ async def write_intents(
                 "intent_label": intent.label,
                 "confidence": intent.confidence,
                 "position": intent.position,
+            },
+        )
+
+
+# pipeline_steps is the trace of ADR-0016, and the first of the six tables the brain writes that can outlive the answer: a turn
+# the pipeline cut has these rows and no generation at all, which is why it hangs from message_batches and not from generations.
+
+
+# One step as it ran. It restates the fields of StepResult instead of holding one, because pipeline/step.py needs Turn from this
+# module and importing it back from here would close the cycle. The runner is what maps one to the other.
+@dataclass(frozen=True)
+class TracedStep:
+    step: PipelineStep
+    # What tells the two runs of blocklist and of guardrail apart (ADR-0016).
+    direction: MessageDirection
+    # The order of execution inside the turn, from 1 and continuous across both directions.
+    position: int
+    # Its domain is declared by step and is not an enumeration: C07 does not admit one that depends on another column.
+    outcome: str
+    # The version of the list, the rule or the model that decided. Without it, adjusting a guardrail invalidates every earlier
+    # measurement without saying so.
+    version: str
+    # Measured by the runner around the call, so a step cannot disagree with the trace it is part of.
+    latency_ms: int
+    # Only the steps that produce one: triage and grounding.
+    score: Decimal | None = None
+    detail: dict | None = None
+
+
+_STEPS_OF_BATCH = "DELETE FROM pipeline_steps WHERE message_batch_id = %(message_batch_id)s"
+
+_STEP = """
+INSERT INTO pipeline_steps (
+    id, message_batch_id, step, direction, position, outcome, score, version, latency_ms, detail_json
+) VALUES (
+    %(id)s, %(message_batch_id)s, %(step)s, %(direction)s, %(position)s, %(outcome)s, %(score)s, %(version)s,
+    %(latency_ms)s, %(detail_json)s
+)
+"""
+
+
+# Deleted first and not upserted, for the same reason as the intents: the core asks again when the brain answers a 5xx
+# (ADR-0020), and a second run of the same batch has to leave one trace and not two interleaved by position.
+# Nothing is sent when the trace is empty: a DELETE per turn that can match nothing is a statement nobody asked for.
+async def write_steps(
+    conn: AsyncConnection, message_batch_id: UUID, steps: Sequence[TracedStep]
+) -> None:
+    if not steps:
+        return
+
+    await conn.execute(_STEPS_OF_BATCH, {"message_batch_id": message_batch_id})
+    # One statement per row and not executemany: they are nine at most, and the order of the rows is the order of the turn.
+    for step in steps:
+        await conn.execute(
+            _STEP,
+            {
+                "id": ids.new(),
+                "message_batch_id": message_batch_id,
+                "step": step.step,
+                "direction": step.direction,
+                "position": step.position,
+                "outcome": step.outcome,
+                "score": step.score,
+                "version": step.version,
+                "latency_ms": step.latency_ms,
+                # Wrapped because psycopg does not adapt a dict on its own, and NULL and not an empty object when there is no
+                # detail: {} would read as "the step reported nothing" where NULL reads as "the step had nothing to report".
+                "detail_json": Jsonb(step.detail) if step.detail is not None else None,
             },
         )

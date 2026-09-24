@@ -11,7 +11,10 @@ from fastapi.testclient import TestClient
 from adapters.llm.base import LLMUnavailable
 from infra.config import Settings
 from main import create_app
+from infra.enums import MessageDirection, PipelineStep
+from pipeline import runner
 from pipeline.repository import TurnNotFound, read_turn
+from pipeline.step import Step, StepRequest, StepResult
 
 BATCH_ID = uuid4()
 CONVERSATION_ID = uuid4()
@@ -90,6 +93,7 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
         ],
         # Declared so the fake connection records the INSERTs: these are the only writes the brain makes in a turn.
         "detected_intents": [],
+        "pipeline_steps": [],
         "generations": [],
         "generation_components": [],
     }
@@ -357,3 +361,70 @@ def test_a_classifier_that_cannot_run_does_not_stop_the_turn(caplog: pytest.LogC
     # The DELETE still runs, so a retry of a batch that had intents does not keep the old ones.
     assert connection.seen.count("detected_intents") == 1
     assert "[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]" not in payload["completion_text"]
+
+
+# The pipeline of ADR-0016 is declared and still empty, so a turn issues no statement at all against pipeline_steps: a DELETE
+# per turn that can never match anything is a statement nobody asked for.
+def test_a_turn_with_an_empty_pipeline_writes_no_trace() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "generated"
+    assert "pipeline_steps" not in connection.seen
+
+
+# The cut of 07-secuencia section 4.1: no generation, no message, and the trace is the only evidence the turn leaves behind.
+def test_a_step_that_cuts_the_turn_answers_blocked_and_leaves_its_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def blocking(request: StepRequest) -> StepResult:
+        return StepResult(outcome="blocked", version="1", text=request.text, halts=True)
+
+    monkeypatch.setattr(
+        runner,
+        "INBOUND",
+        (Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocking),),
+    )
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "blocked"
+    assert payload["generation_id"] is None, "a turn that never generated pointed at evidence that does not exist"
+    assert payload["completion_text"] is None
+    # One DELETE and one INSERT: without these rows, nothing says why this customer was not answered.
+    assert connection.seen.count("pipeline_steps") == 2
+    assert "generations" not in connection.seen
+    # The cut comes before the classifier, so a blocked message does not pay for a model that nobody was going to answer with.
+    assert "detected_intents" not in connection.seen
+
+
+# Section 5 again, one step earlier than the generation: a provider that fell over mid-pipeline is a failed turn whose partial
+# evidence is kept, because it is the record of what did manage to happen.
+def test_a_step_that_could_not_decide_fails_the_turn_and_keeps_what_ran(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def passing(request: StepRequest) -> StepResult:
+        return StepResult(outcome="pass", version="1", text=request.text)
+
+    async def falling(request: StepRequest) -> StepResult:
+        raise LLMUnavailable("double: the triage is down")
+
+    monkeypatch.setattr(
+        runner,
+        "INBOUND",
+        (
+            Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=passing),
+            Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=falling),
+        ),
+    )
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "failed"
+    # The DELETE plus the one step that did decide: the one that fell over leaves no row, because no declared outcome domain
+    # has a value for "could not decide" (ADR-0016).
+    assert connection.seen.count("pipeline_steps") == 2
+    assert "generations" not in connection.seen

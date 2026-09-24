@@ -9,8 +9,9 @@ from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
 from classifiers.intent import Intent, classify
 from infra.enums import PromptComponentType
+from pipeline import runner
 from pipeline.generation import UnpricedModel, generate
-from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation, write_intents
+from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation, write_intents, write_steps
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -36,6 +37,29 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     client = resolve(turn.agent.llm_provider, request.app.state.settings)
     message = _incoming(turn)
+
+    # The steps of ADR-0016 that decide about what the customer wrote, before anything is generated. Its trace is written even
+    # when it ends the turn: a batch the pipeline cut has these rows and no generation at all, which is the case the table
+    # exists to be able to show.
+    try:
+        trace = await runner.run(steps=runner.INBOUND, turn=turn, client=client, text=message)
+    except runner.StepFailed as err:
+        # The partial evidence is kept, which is what 07-secuencia section 5 asks of a turn that fell over halfway.
+        logger.error(
+            "turn not decided",
+            extra={"context": {"conversation_id": str(turn.conversation_id), "error": str(err)}},
+        )
+        await _write_trace(request, turn, err.trace)
+        return TurnResponse(outcome="failed")
+
+    if trace.halted:
+        # No generation and no message: the core writes processed_at and drops the conversation to waiting (section 4.1).
+        await _write_trace(request, turn, trace)
+        return TurnResponse(outcome="blocked")
+
+    # What reaches the model from here on is what the leg returned and not what arrived: the redaction of ADR-0006 happens in
+    # a step, and generations.prompt_rendered has to carry the redacted text and never the original.
+    message = trace.text
 
     # First half of F11: how many different things the customer asked for in this batch. Before the assembly, because the
     # second half is handing that list to the model that answers (ADR-0041, regla 12).
@@ -69,6 +93,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "prompt_components": prompt.components,
         "prompt_rules_version": prompt.rules_version,
         "detected_intents": len(intents),
+        "pipeline_steps": len(trace.steps),
     }
 
     try:
@@ -80,6 +105,8 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     # A new connection and not the first one held open: the call above takes seconds and the pool is shared.
     async with request.app.state.database.connection() as conn:
+        # First, because it is the first thing that happened: the trace reads in the order of the turn (ADR-0016).
+        await write_steps(conn, turn.message_batch_id, trace.steps)
         # Before the generation and in the same transaction: the evidence of F11 belongs to the turn that used it, and a
         # generation whose intents were lost would read as a turn that answered a list nobody can see.
         await write_intents(conn, turn.message_batch_id, intents)
@@ -105,6 +132,13 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         generation_id=generation.id,
         completion_text=generation.completion_text,
     )
+
+
+# On its own connection, because the leg above may have spent seconds against a provider and the pool is shared. It is the only
+# evidence a cut turn leaves, so it is not folded into the transaction of a generation that is never going to exist.
+async def _write_trace(request: Request, turn: Turn, trace: runner.Trace) -> None:
+    async with request.app.state.database.connection() as conn:
+        await write_steps(conn, turn.message_batch_id, trace.steps)
 
 
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).

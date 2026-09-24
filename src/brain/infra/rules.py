@@ -40,6 +40,19 @@ class RulesFile:
             raise RulesFileError(f"rules: {self.name} has no {key} text")
         return value.strip()
 
+    # A list of texts, each one stripped like a single one. An empty list is admitted, because a mechanism that ships with no
+    # policy in it yet is a decision somebody took and a file has no way of saying which of the two it is (blocklist.yaml v1).
+    def strings(self, key: str) -> tuple[str, ...]:
+        value = self.raw.get(key)
+        if not isinstance(value, list):
+            raise RulesFileError(f"rules: {self.name} has no {key} list")
+        out: list[str] = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise RulesFileError(f"rules: {self.name} has an entry of {key} that is not text")
+            out.append(item.strip())
+        return tuple(out)
+
     def integer(self, key: str, *, minimum: int) -> int:
         return _integer(self.name, self.raw, key, minimum=minimum)
 

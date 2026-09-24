@@ -104,6 +104,35 @@ def test_text_that_is_not_text_is_refused(tmp_path: Path, body: str) -> None:
         spec.text("system")
 
 
+# Stripped one by one for the same reason a single text is, and an empty list admitted on purpose: a mechanism that ships with
+# no policy in it yet is a decision somebody took, and a file has no way of saying which of the two it is (blocklist.yaml v1).
+def test_a_list_of_texts_comes_back_stripped_and_may_be_empty(tmp_path: Path) -> None:
+    spec = _load(write(tmp_path, "version: 1\nterms:\n  - '  uno  '\n  - dos\nempty: []\n"))
+
+    assert spec.strings("terms") == ("uno", "dos")
+    assert spec.strings("empty") == ()
+
+
+# A key that is not a list, one that is not there, and an entry that is not text: the three ways a list of terms can be a file
+# somebody left half written, which has to fail on the way up and not on the turn that needed it.
+@pytest.mark.parametrize(
+    "body",
+    [
+        "version: 1\nterms: uno\n",
+        "version: 1\n",
+        "version: 1\nterms:\n  - '  '\n",
+        "version: 1\nterms:\n  - 7\n",
+    ],
+)
+def test_a_list_that_is_not_one_of_texts_is_refused(tmp_path: Path, body: str) -> None:
+    spec = _load(write(tmp_path, body))
+
+    with pytest.raises(RulesFileError) as raised:
+        spec.strings("terms")
+
+    assert "terms" in str(raised.value)
+
+
 def test_a_count_is_an_integer_at_or_above_its_minimum(tmp_path: Path) -> None:
     spec = _load(write(tmp_path, "version: 1\nmax_intents: 5\n"))
 

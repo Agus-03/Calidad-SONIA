@@ -1,0 +1,26 @@
+# The blocked terms of ADR-0016, versioned as data because what they are is a decision of the business and not of the code
+# (regla 9): pipeline_steps.version writes the version below, so a turn that got cut can name the list that cut it.
+#
+# EMPTY ON PURPOSE, and that is a decision and not a file half written. The anteproyecto declares no blocked terms anywhere —
+# only F12 — so anything written here would be ours and not a requirement. The mechanism ships complete and the policy ships
+# absent: whoever wants one writes the terms here and deploys, without touching a single line of Python.
+#
+# The cost of shipping it this way, stated so the report does not have to discover it: in production this step never blocks.
+# It runs, it writes its row and its outcome is always pass, which is evidence that the pipeline works and not that anything is
+# being filtered.
+version: 1
+
+# One list per direction, because a term forbidden in what the customer writes is not the same as one forbidden in what the
+# AIAgent answers, and ADR-0016 already counts the two runs as two rows of the trace.
+#
+# How a term is compared, so the list can be written without reading the module: whole word, with case and accents folded.
+# "casa" does not fire on "casamiento", and "seña" matches "sena" and "SEÑA". A term can hold more than one word.
+# The order matters only for what gets reported: the first one that matches is the one the detail names.
+
+# What the customer wrote, before anything is generated.
+inbound:
+  terms: []
+
+# What the AIAgent is about to answer, which is the second run of this same step (ADR-0016).
+outbound:
+  terms: []

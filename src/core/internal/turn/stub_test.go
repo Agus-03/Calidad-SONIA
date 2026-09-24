@@ -127,6 +127,7 @@ type stubAggregate struct {
 	recordErr error
 
 	linked   map[uuid.UUID]uuid.UUID
+	waiting  []uuid.UUID
 	outbound []string
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
@@ -141,6 +142,14 @@ func (a *stubAggregate) LinkToBatch(_ context.Context, messageID, batchID uuid.U
 		a.linked = map[uuid.UUID]uuid.UUID{}
 	}
 	a.linked[messageID] = batchID
+	return nil
+}
+
+func (a *stubAggregate) MarkWaiting(_ context.Context, conversationID uuid.UUID) error {
+	a.record("conversation_waiting")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.waiting = append(a.waiting, conversationID)
 	return nil
 }
 

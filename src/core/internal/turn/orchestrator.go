@@ -40,6 +40,9 @@ type Store interface {
 // Aggregate is conversations/: this package never writes messages with SQL of its own (regla 1).
 type Aggregate interface {
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
+	// Where a turn that produced no answer leaves the conversation, because somebody has to answer what the bot did not
+	// (07-secuencia secciones 4 y 5).
+	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	RecordOutbound(ctx context.Context, conversationID, aiAgentID uuid.UUID, text string, at time.Time) (conversations.Message, error)
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
@@ -151,6 +154,20 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 		return o.abandon(ctx, batch, err)
 	}
 
+	// The three outcomes of the contract are three different turns, and reading them as one is what this stopped doing: a cut is a
+	// decision of the pipeline (07-secuencia section 4) and a failure is nobody deciding anything (section 5).
+	switch {
+	case answer.Outcome == brainclient.OutcomeBlocked:
+		return o.blocked(ctx, batch, conversationID, answer)
+	case answer.Outcome != brainclient.OutcomeGenerated:
+		// failed, or an outcome this version of the contract does not know. Either way nothing was decided and nothing can be sent.
+		return o.abandon(ctx, batch, fmt.Errorf("%w: outcome %s", ErrNoAnswer, answer.Outcome))
+	case answer.Text() == "":
+		// Not a cut: the brain said it generated an answer and there is none, which is the two services disagreeing about the same
+		// turn. A blocked answer is empty on purpose and says so in its outcome; this one does not.
+		return o.abandon(ctx, batch, fmt.Errorf("%w: generated with an empty text", ErrNoAnswer))
+	}
+
 	if answer.GenerationID == nil {
 		// The customer still gets the answer, but a generation nobody can find is indistinguishable from one nobody wrote (OE2).
 		o.opts.Logger.Warn("turn answered with no evidence to link",
@@ -183,12 +200,40 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 	if err != nil {
 		return brainclient.TurnResponse{}, err
 	}
-
-	// blocked and failed both mean there is nothing to send, and generated with an empty text is neither an answer nor a rejection.
-	if res.Outcome != brainclient.OutcomeGenerated || res.Text() == "" {
-		return brainclient.TurnResponse{}, fmt.Errorf("%w: outcome %s", ErrNoAnswer, res.Outcome)
-	}
+	// What the brain answered, whatever it answered: only the hop's own failures are errors here, and what the outcome means is
+	// decided by run, which is the one that knows what each of the three costs.
 	return res, nil
+}
+
+// The cut of 07-secuencia section 4, in either of its two places: before generating, where there is no evidence at all, or after,
+// where there is a generation whose message_id stays NULL for ever. Neither writes a message.
+//
+// processed_at is written and error_message is not, which is the same reading the pause of ADR-0041 regla 8 gets: the turn ran, and
+// its outcome was not to answer. The conversation drops to waiting because somebody has to answer what the bot refused to.
+func (o *Orchestrator) blocked(ctx context.Context, batch Batch, conversationID uuid.UUID, answer brainclient.TurnResponse) error {
+	fields := []any{
+		slog.String("conversation_id", conversationID.String()),
+		slog.String("batch_id", batch.ID.String()),
+	}
+	if answer.GenerationID != nil {
+		// Only when the cut came after generating: that evidence exists and the forensics of a blocked answer start there (section 4.2).
+		fields = append(fields, slog.String("generation_id", answer.GenerationID.String()))
+	}
+	o.opts.Logger.Info("turn blocked", fields...)
+
+	// One transaction for the two writes, for the reason section 2 gives about the happy path: either alone leaves a turn that reads
+	// as finished and unattended, or as attended and never finished.
+	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+		if err := aggregate.MarkWaiting(ctx, conversationID); err != nil {
+			return err
+		}
+		return store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
+	})
+	if err != nil {
+		// Nothing committed, so this turn really was not finished by anybody, and that is what the row has to say.
+		return o.abandon(ctx, batch, err)
+	}
+	return nil
 }
 
 // The transaction of 07-secuencia section 2: without it a restart cannot tell a finished turn from one that never ran.

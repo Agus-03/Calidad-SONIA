@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
@@ -164,7 +166,6 @@ func TestAFailedTurnLeavesItselfMarkedAndUnprocessed(t *testing.T) {
 	}{
 		{"the brain never answered", brainclient.TurnResponse{}, []error{&httpclient.StatusError{Status: 422}}},
 		{"the brain answered failed, which carries no text to send", brainclient.TurnResponse{Outcome: brainclient.OutcomeFailed}, nil},
-		{"the guardrail blocked it, which is a decision and still nothing to send", brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}, nil},
 		{"generated with an empty text is neither an answer nor a rejection", generated(""), nil},
 	}
 
@@ -358,5 +359,78 @@ func TestAnAnswerWithNoEvidenceIsStillDelivered(t *testing.T) {
 	}
 	if slices.Contains(*h.steps, "generation_linked") {
 		t.Fatalf("a generation nobody named was linked: %v", *h.steps)
+	}
+}
+
+
+// Section 4: a cut is a decision of the pipeline and not a failure of the turn, so it gets the reading a pause gets (ADR-0041,
+// regla 8) — processed_at written, no error_message — plus the one thing a pause does not need: somebody has to answer what the
+// bot refused to, so the conversation drops to waiting.
+func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
+	generation := uuid.New()
+	cases := []struct {
+		name     string
+		response brainclient.TurnResponse
+	}{
+		{"cut before generating, so there is no evidence to point at (section 4.1)",
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}},
+		{"cut after generating, where the evidence exists and its message_id stays NULL for ever (section 4.2)",
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := conductor()
+			h.brain.response = tc.response
+
+			h.turn()
+
+			// The two writes and nothing else, in one transaction: either alone leaves a turn that reads as finished and
+			// unattended, or as attended and never finished.
+			if got := *h.steps; len(got) != 2 || got[0] != "conversation_waiting" || got[1] != "processed_at" {
+				t.Fatalf("the writes of a blocked turn were %v, want conversation_waiting and processed_at alone", got)
+			}
+			if len(h.store.failed) != 0 {
+				t.Fatalf("error_message was written for a cut the pipeline decided: %v", h.store.failed)
+			}
+			if h.sender.calls != 0 {
+				t.Fatal("a blocked answer reached the customer")
+			}
+			if len(h.store.linked) != 0 {
+				t.Fatal("a blocked generation was linked to a message that was never written")
+			}
+		})
+	}
+}
+
+// generated and empty is the two services disagreeing about the same turn, and that is a failure: a cut says so in its outcome.
+func TestAnAnswerThatCameEmptyIsAFailureAndNotACut(t *testing.T) {
+	h := conductor()
+	h.brain.response = generated("")
+
+	h.turn()
+
+	if len(h.aggregate.waiting) != 0 {
+		t.Fatal("an inconsistency between the two services was recorded as a decision of the pipeline")
+	}
+	if h.store.failed[h.store.batch.ID] == "" {
+		t.Fatal("the batch was left without error_message, which is what diagnoses the failure")
+	}
+}
+
+
+// A cut whose two writes did not commit is not a decision that landed: nobody finished this turn, and that is what the row says.
+func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}
+	h.store.processedErr = errors.New("turn: the batch could not be marked")
+
+	h.turn()
+
+	if h.store.failed[h.store.batch.ID] == "" {
+		t.Fatal("the cut never committed and the batch was left saying nothing about it")
+	}
+	if len(h.store.processed) != 0 {
+		t.Fatal("processed_at was recorded for a transaction that did not commit")
 	}
 }

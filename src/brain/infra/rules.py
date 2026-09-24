@@ -40,6 +40,21 @@ class RulesFile:
             raise RulesFileError(f"rules: {self.name} has no {key} text")
         return value.strip()
 
+    # A list of mappings, each one a file of its own like a single section: it is what a file uses for an ordered set of rules,
+    # where a list of words was enough for blocklist.yaml. Whether an empty one is admissible is the caller's to say, and the
+    # two callers disagree: an empty blocklist is a policy and an empty set of redactions is ADR-0006 missing.
+    def sections(self, key: str) -> tuple["RulesFile", ...]:
+        value = self.raw.get(key)
+        if not isinstance(value, list):
+            raise RulesFileError(f"rules: {self.name} has no {key} list")
+        out: list[RulesFile] = []
+        for position, item in enumerate(value, start=1):
+            if not isinstance(item, dict):
+                raise RulesFileError(f"rules: {self.name} has an entry of {key} that is not a mapping")
+            # Named after its position, because one of twelve rules that is wrong has to say which one it is.
+            out.append(RulesFile(name=f"{self.name}:{key}[{position}]", version=self.version, raw=item))
+        return tuple(out)
+
     # A list of texts, each one stripped like a single one. An empty list is admitted, because a mechanism that ships with no
     # policy in it yet is a decision somebody took and a file has no way of saying which of the two it is (blocklist.yaml v1).
     def strings(self, key: str) -> tuple[str, ...]:

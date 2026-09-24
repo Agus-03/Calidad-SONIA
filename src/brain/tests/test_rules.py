@@ -104,6 +104,37 @@ def test_text_that_is_not_text_is_refused(tmp_path: Path, body: str) -> None:
         spec.text("system")
 
 
+# An ordered set of rules, each one a file of its own: what guardrails.yaml needs and blocklist.yaml did not, because a list of
+# words has nothing to say about itself and a redaction has a type, a marker and a pattern.
+def test_a_list_of_mappings_comes_back_as_files_named_after_their_position(tmp_path: Path) -> None:
+    spec = _load(write(tmp_path, "version: 2\nrules:\n  - kind: uno\n  - kind: dos\n"))
+
+    first, second = spec.sections("rules")
+    assert (first.text("kind"), second.text("kind")) == ("uno", "dos")
+    # The version of the file it came from, like a single section: a rule is part of that file and not of another.
+    assert first.version == 2
+    # Named after its position, because one wrong rule out of twelve has to say which one it is.
+    assert "rules[1]" in first.name and "rules[2]" in second.name
+
+
+# Empty is admitted here and refused by the caller that cannot live with it: an empty blocklist is a policy somebody chose and
+# an empty set of redactions is ADR-0006 missing, and only the caller knows which of the two it is holding.
+def test_an_empty_list_of_mappings_is_left_to_the_caller(tmp_path: Path) -> None:
+    spec = _load(write(tmp_path, "version: 1\nrules: []\n"))
+
+    assert spec.sections("rules") == ()
+
+
+@pytest.mark.parametrize("body", ["version: 1\nrules: uno\n", "version: 1\n", "version: 1\nrules:\n  - uno\n"])
+def test_a_list_that_is_not_one_of_mappings_is_refused(tmp_path: Path, body: str) -> None:
+    spec = _load(write(tmp_path, body))
+
+    with pytest.raises(RulesFileError) as raised:
+        spec.sections("rules")
+
+    assert "rules" in str(raised.value)
+
+
 # Stripped one by one for the same reason a single text is, and an empty list admitted on purpose: a mechanism that ships with
 # no policy in it yet is a decision somebody took, and a file has no way of saying which of the two it is (blocklist.yaml v1).
 def test_a_list_of_texts_comes_back_stripped_and_may_be_empty(tmp_path: Path) -> None:

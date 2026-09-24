@@ -1,0 +1,50 @@
+# The guardrail of ADR-0016, inbound run: the second net under the redaction checkpoint of 03-capa-prompts regla 4, which is
+# there to catch the false negative that ADR-0006 already admits it has. Versioned as data (regla 9) because a pattern that
+# redacts too much has to be fixable by editing this file and deploying, never by editing Python.
+#
+# Unlike blocklist.yaml, the content here is NOT ours: ADR-0006 declares the four data and their markers. What is ours, and is
+# written down term by term below, is how much text a pattern is allowed to claim.
+version: 1
+
+# In order, and the order is the decision: the longest number first, because a CBU read by the shorter patterns would come out as
+# three CUITs and the trace would report three reasons for one datum. Every rule replaces before the next one looks.
+#
+# requires_context is written on every rule even when it is empty, the same way a route writes its roles: a pattern that only
+# holds when a word is nearby must say so, and one that holds on its own must say that too.
+redactions:
+  # 22 digits, optionally split after the first 8, which is how a bank writes it. Nothing else in a rental conversation is 22
+  # digits long, so this one needs no context word to be safe.
+  - type: cbu
+    marker: "[CBU]"
+    pattern: '(?<!\d)\d{8}[ .-]?\d{14}(?!\d)'
+    requires_context: []
+
+  # 11 digits, with or without the two hyphens. One marker for the two of them, which is the first of the two ways out that the
+  # note of ADR-0006 left open for the Paso 5: reading 20-35412887-4 in a message there is no way to tell a CUIT from a CUIL, and
+  # emitting one of the two names would be asserting something nobody knows. The columns stay apart (ADR-0031); only the marker
+  # is shared, and it is disambiguated when somebody persists the value and has the context to do it.
+  #
+  # The cost, and it is real: an Argentine mobile written with its 9 prefix is also 11 digits, so a customer who leaves a second
+  # phone number gets it redacted as if it were a fiscal id. The AIAgent loses a datum it was not going to use and the marker in
+  # the trace is the wrong name for what was found.
+  - type: cuit_cuil
+    marker: "[CUIT/CUIL]"
+    pattern: '(?<!\d)\d{2}[ .-]?\d{8}[ .-]?\d(?!\d)'
+    requires_context: []
+
+  # A DNI written with its dots is unmistakable, so it holds on its own.
+  - type: dni
+    marker: "[DNI]"
+    pattern: '(?<!\d)\d{1,2}\.\d{3}\.\d{3}(?!\d)'
+    requires_context: []
+
+  # And the same number with no dots is where this file earns its keep. 7 or 8 bare digits is also what a property costs and what
+  # a plot measures, so a rule that claimed every one of them would redact the prices of a real estate business — the answer the
+  # customer gets back would have a marker where the number was. So it only holds when the message says what the number is.
+  #
+  # The cost: a message that names a document AND a price gets both redacted, and a DNI written with no dots in a message that
+  # never says the word escapes. That second one is the false negative ADR-0006 asks to measure rather than to promise away.
+  - type: dni
+    marker: "[DNI]"
+    pattern: '(?<!\d)\d{7,8}(?!\d)'
+    requires_context: ['dni', 'documento', 'd\.n\.i']

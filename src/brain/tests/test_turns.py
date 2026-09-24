@@ -363,16 +363,17 @@ def test_a_classifier_that_cannot_run_does_not_stop_the_turn(caplog: pytest.LogC
     assert "[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]" not in payload["completion_text"]
 
 
-# The pipeline of ADR-0016 is declared and still empty, so a turn issues no statement at all against pipeline_steps: a DELETE
-# per turn that can never match anything is a statement nobody asked for.
-def test_a_turn_with_an_empty_pipeline_writes_no_trace() -> None:
+# The pipeline the brain actually ships: the blocklist runs on every turn and leaves its row even when it refuses nothing, which
+# is what makes the trace say a step ran and passed rather than say nothing at all (ADR-0016).
+def test_a_turn_the_pipeline_let_through_still_leaves_its_trace() -> None:
     connection = FakeConnection(tables())
 
     with client(connection, doubled()) as http:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     assert response.json()["outcome"] == "generated"
-    assert "pipeline_steps" not in connection.seen
+    # One DELETE and one INSERT, in the transaction that holds the rest of the evidence of the turn.
+    assert connection.seen.count("pipeline_steps") == 2
 
 
 # The cut of 07-secuencia section 4.1: no generation, no message, and the trace is the only evidence the turn leaves behind.

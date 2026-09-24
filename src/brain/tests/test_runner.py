@@ -94,9 +94,11 @@ async def walk(*steps: Step, text: str = "hola", start_position: int = 1) -> run
     )
 
 
-# The turn of today: the pipeline is declared and empty, so the turn behaves exactly as it did before any of this ran.
-def test_the_inbound_leg_is_declared_and_still_empty() -> None:
-    assert runner.INBOUND == ()
+# The order of the turn is data, so it is read here and not inferred from a chain of calls. The blocklist opens the leg because
+# it is the cheapest of the seven: what can be refused without a provider is refused before one gets paid (ADR-0016).
+def test_the_inbound_leg_opens_with_the_blocklist() -> None:
+    assert [s.step for s in runner.INBOUND] == [PipelineStep.BLOCKLIST]
+    assert [s.direction for s in runner.INBOUND] == [MessageDirection.INBOUND]
 
 
 async def test_a_leg_with_no_steps_changes_nothing() -> None:

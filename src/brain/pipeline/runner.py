@@ -11,14 +11,22 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from adapters.llm.base import LLMClient, LLMError
+from infra.enums import MessageDirection, PipelineStep
+from pipeline import blocklist
 from pipeline.repository import TracedStep, Turn
 from pipeline.step import Step, StepRequest
 
 logger = logging.getLogger("sonia.pipeline.runner")
 
-# The inbound leg. Empty until the steps of this phase exist, and a tuple and not a chain of calls because the order of the turn
-# is data: adding a step is adding an entry here, which is also what makes one row map to one module (regla 6).
-INBOUND: tuple[Step, ...] = ()
+# The inbound leg, in the order of ADR-0016. A tuple and not a chain of calls because the order of the turn is data: adding a
+# step is adding an entry here, which is also what makes one row map to one module (regla 6).
+#
+# The rest of the leg is still missing, and its absence is a gap in the trace and not a step that let something through:
+# guardrail and triage because what each one decides by is still open, retrieval and grounding because Fase 12 completes them.
+INBOUND: tuple[Step, ...] = (
+    # First because it is the cheapest of the seven: a message with a forbidden term must not pay for a model to be refused.
+    Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocklist.run),
+)
 
 
 # What one leg leaves behind. Frozen for the same reason as the results it holds: it is evidence on its way to a row.

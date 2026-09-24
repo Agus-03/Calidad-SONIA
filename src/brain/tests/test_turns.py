@@ -37,11 +37,14 @@ class FakeConnection:
     def __init__(self, tables: dict[str, list[dict]]) -> None:
         self.tables = tables
         self.seen: list[str] = []
+        # What each statement carried, keyed by the table it hit: asserting that a value never reached a column needs the value.
+        self.sent: list[tuple[str, dict]] = []
 
     async def execute(self, sql: str, params: dict | None = None) -> FakeCursor:
         for table, rows in self.tables.items():
             if table in sql:
                 self.seen.append(table)
+                self.sent.append((table, params or {}))
                 return FakeCursor(rows)
         return FakeCursor([])
 
@@ -372,8 +375,26 @@ def test_a_turn_the_pipeline_let_through_still_leaves_its_trace() -> None:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     assert response.json()["outcome"] == "generated"
-    # One DELETE and one INSERT, in the transaction that holds the rest of the evidence of the turn.
-    assert connection.seen.count("pipeline_steps") == 2
+    # One DELETE and one INSERT per step of the leg, in the transaction that holds the rest of the evidence of the turn.
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
+
+
+# ADR-0006 end to end, which is the assertion that makes the decision verifiable instead of declared: the redaction happens in a
+# step, the route hands the model what the leg returned, and the double echoes what it was handed — so the answer itself is the
+# evidence of what the provider saw. And prompt_rendered has to carry the redacted version or the audit trail becomes the largest
+# repository of personal data in the system.
+def test_the_document_number_a_customer_wrote_never_reaches_the_provider() -> None:
+    connection = FakeConnection(tables(messages=[message(f"hola, mi DNI es 12.345.678 y quiero alquilar")]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    assert "12.345.678" not in payload["completion_text"], "the datum ADR-0006 exists to stop reached the model"
+    assert "[DNI]" in payload["completion_text"], "the model got the message with the datum gone and no marker in its place"
+    rendered = [params["prompt_rendered"] for table, params in connection.sent if table == "generations"]
+    assert rendered and "12.345.678" not in rendered[0], "prompt_rendered kept the original text (ADR-0006)"
 
 
 # The cut of 07-secuencia section 4.1: no generation, no message, and the trace is the only evidence the turn leaves behind.

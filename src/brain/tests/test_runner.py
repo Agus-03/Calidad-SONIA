@@ -95,10 +95,11 @@ async def walk(*steps: Step, text: str = "hola", start_position: int = 1) -> run
 
 
 # The order of the turn is data, so it is read here and not inferred from a chain of calls. The blocklist opens the leg because
-# it is the cheapest of the seven: what can be refused without a provider is refused before one gets paid (ADR-0016).
-def test_the_inbound_leg_opens_with_the_blocklist() -> None:
-    assert [s.step for s in runner.INBOUND] == [PipelineStep.BLOCKLIST]
-    assert [s.direction for s in runner.INBOUND] == [MessageDirection.INBOUND]
+# it is the cheapest of the seven —what can be refused without a provider is refused before one gets paid— and the guardrail
+# follows it because a message that is going to be refused outright is not worth redacting first (ADR-0016).
+def test_the_inbound_leg_runs_in_the_order_of_adr_0016() -> None:
+    assert [s.step for s in runner.INBOUND] == [PipelineStep.BLOCKLIST, PipelineStep.GUARDRAIL]
+    assert {s.direction for s in runner.INBOUND} == {MessageDirection.INBOUND}
 
 
 async def test_a_leg_with_no_steps_changes_nothing() -> None:

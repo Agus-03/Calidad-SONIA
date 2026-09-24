@@ -179,6 +179,30 @@ func (r *Repository) TouchOutbound(ctx context.Context, conversationID uuid.UUID
 	return nil
 }
 
+// The state a turn nobody answered leaves behind: the customer wrote, the bot did not reply, and somebody has to
+// (07-secuencia secciones 4 y 5). The value travels as $2 and is never a literal in the statement, so a rename in enums.yaml
+// cannot write a status nothing else recognises (C07). The clock is the database's, the one every writer of this row shares.
+//
+// A conversation somebody already resolved moves back to waiting too, and that is deliberate: the message that was not answered
+// is unanswered whatever anybody had decided about the conversation a minute earlier.
+const conversationMarkWaiting = `
+UPDATE conversations
+SET    status = $2, updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL`
+
+// MarkWaiting is the status half of a turn that ends without an answer, and the caller holds it in the same transaction as
+// message_batches.processed_at: one of the two written alone is a turn that reads as finished and unattended, or the reverse.
+func (r *Repository) MarkWaiting(ctx context.Context, conversationID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationMarkWaiting, conversationID, enums.ConversationStatusWaiting)
+	if err != nil {
+		return fmt.Errorf("conversations: mark waiting: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // The pool is in the predicate and not in an earlier read: two operators answering at once both reach this UPDATE, the second
 // waits on the row lock of the first, re-reads operator_id once it commits, and matches nothing (ADR-0004, ADR-0035 regla 8).
 const conversationClaim = `

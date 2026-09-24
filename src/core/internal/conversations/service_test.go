@@ -26,6 +26,7 @@ type fakeStore struct {
 	sent        map[uuid.UUID]string
 	failed      map[uuid.UUID]string
 	turnedOff   []uuid.UUID
+	waiting     []uuid.UUID
 
 	appendErr   error
 	touchOutErr error
@@ -46,6 +47,11 @@ func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode en
 func (f *fakeStore) TurnOffAIAgent(_ context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
 	f.turnedOff = append(f.turnedOff, aiAgentID)
 	return []uuid.UUID{aiAgentID}, nil
+}
+
+func (f *fakeStore) MarkWaiting(_ context.Context, conversationID uuid.UUID) error {
+	f.waiting = append(f.waiting, conversationID)
+	return nil
 }
 
 func (f *fakeStore) TouchOutbound(context.Context, uuid.UUID) error {

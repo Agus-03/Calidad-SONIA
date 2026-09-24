@@ -37,6 +37,7 @@ type store interface {
 	AppendMessage(ctx context.Context, m Message) error
 	TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error
 	TouchOutbound(ctx context.Context, conversationID uuid.UUID) error
+	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
@@ -187,6 +188,12 @@ func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode en
 // and whoever conducts the pause holds the transaction (ADR-0038).
 func (s *Service) TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
 	return s.repo.TurnOffAIAgent(ctx, aiAgentID)
+}
+
+// MarkWaiting is where a turn that produced no answer leaves the conversation, and turn/ asks for it through here because the
+// status is this aggregate's column (regla 1). Whoever conducts the turn holds the transaction (07-secuencia secciones 4 y 5).
+func (s *Service) MarkWaiting(ctx context.Context, conversationID uuid.UUID) error {
+	return s.repo.MarkWaiting(ctx, conversationID)
 }
 
 // LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.

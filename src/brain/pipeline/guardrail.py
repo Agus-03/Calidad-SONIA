@@ -6,9 +6,11 @@
 # number in it comes out of here as modified. That is a gap and not a design: regla 4 step 1 writes contact_attributes, which the
 # brain is not allowed to write (regla 3), so whoever builds it has to settle that first.
 #
-# What this step does when it finds something: it replaces it and lets the turn go on (modified). 07-secuencia section 4 admits a
-# guardrail that returns blocked, and this one never does — a datum that was successfully redacted is not a reason to leave a
-# customer unanswered, and the value never reaches the provider either way. So Rama B is reachable through the blocklist only.
+# The two runs find the same thing and do opposite things with it, which is decision D3 of this phase. Inbound it replaces the
+# datum and lets the turn go on (modified): a datum that was successfully redacted is no reason to leave a customer unanswered,
+# and the provider never sees it either way. Outbound it refuses the answer whole (blocked) and never rewrites it, because that
+# text has already been through the external provider — rewriting it would protect nothing ADR-0006 cares about and would only
+# put a marker where the customer's own number was. So an inbound guardrail never cuts a turn, and an outbound one only ever cuts.
 
 import logging
 import re
@@ -23,10 +25,11 @@ logger = logging.getLogger("sonia.pipeline.guardrail")
 
 _FILE = "guardrails.yaml"
 
-# Two of the three values the domain of this step declares (DER/entidades.md). blocked is the third and belongs to the outbound
-# run, which is not built yet.
+# The three values the domain of this step declares (DER/entidades.md), and each run uses two of them: pass and modified inbound,
+# pass and blocked outbound. No single run of this step can produce all three.
 _PASS = "pass"
 _MODIFIED = "modified"
+_BLOCKED = "blocked"
 
 
 @dataclass(frozen=True)
@@ -95,34 +98,61 @@ def _compiled_word(rule: RulesFile, word: str) -> re.Pattern[str]:
 
 # async with no I/O inside, like the blocklist: StepFunc is one shape for the seven, and three of them do call a provider.
 async def run(request: StepRequest) -> StepResult:
-    if request.direction != MessageDirection.INBOUND:
-        # The outbound run refuses an answer and never rewrites one (decision D3), and until that is built there is nothing
-        # honest for it to report: a pass here would be a row claiming a check that never happened. Unreachable unless somebody
-        # registers this step on the outbound leg, which is what the row of that leg is still missing.
-        raise NotImplementedError("guardrail: the outbound run refuses and does not rewrite, and it is not built yet")
-
     spec = rules()
-    # varchar in the row, and for this step it is the file: a redaction has to name the version of the patterns that made it.
+    # varchar in the row, and for this step it is the file: a finding has to name the version of the patterns that produced it.
     version = str(spec.version)
-    text, counted = _redact(request.text, spec.redactions)
+    # One way of finding for the two runs, so the two directions can never disagree about what a personal datum is. The outbound
+    # run throws the rewritten text away, and that is the whole of what D3 decided.
+    redacted, counted = _redact(request.text, spec.redactions)
 
+    if request.direction == MessageDirection.OUTBOUND:
+        return _outbound(request, version, counted)
+    return _inbound(request, version, redacted, counted)
+
+
+def _inbound(request: StepRequest, version: str, redacted: str, counted: dict[str, int]) -> StepResult:
     if not counted:
-        return StepResult(outcome=_PASS, version=version, text=text)
+        return StepResult(outcome=_PASS, version=version, text=redacted)
 
-    # Warning and not info: every row this step writes means the checkpoint of regla 4 let a datum through, which is the false
-    # negative ADR-0006 asks to measure. The types and how many, never a value — the log is not where the leak gets reopened.
+    # Warning and not info: every row this run writes means the checkpoint of regla 4 let a datum through, which is the false
+    # negative ADR-0006 asks to measure. The types and how many, never a value — a log is not where a leak gets reopened.
+    _report(request, "the guardrail redacted what reached it unredacted", counted)
+    # modified and not blocked: the datum is gone, so the customer still gets an answer and the provider still never saw it.
+    return StepResult(outcome=_MODIFIED, version=version, text=redacted, detail={"redacted": counted})
+
+
+# The answer comes back out untouched, which is what the caller then writes into generations.completion_text: 07-secuencia 4.2
+# keeps the blocked generation precisely so somebody can see what was stopped and with what prompt it was produced.
+#
+# The cost, and it is not hypothetical: an administrator who writes the agency own CBU into a prompt component so the AIAgent can
+# pass it on gets every answer that repeats it refused. This step cannot tell the agency bank account from a customer one, and
+# ADR-0006 is about the customer one.
+def _outbound(request: StepRequest, version: str, counted: dict[str, int]) -> StepResult:
+    if not counted:
+        return StepResult(outcome=_PASS, version=version, text=request.text)
+
+    _report(request, "the guardrail refused an answer that carried a personal datum", counted)
+    return StepResult(
+        outcome=_BLOCKED,
+        version=version,
+        text=request.text,
+        halts=True,
+        detail={"found": counted},
+    )
+
+
+def _report(request: StepRequest, message: str, counted: dict[str, int]) -> None:
     logger.warning(
-        "the guardrail redacted what reached it unredacted",
+        message,
         extra={
             "context": {
                 "conversation_id": str(request.turn.conversation_id),
                 "message_batch_id": str(request.turn.message_batch_id),
-                "redacted": counted,
+                "direction": request.direction,
+                "found": counted,
             }
         },
     )
-    # modified and not blocked: the datum is gone, so the customer still gets an answer and the provider still never sees it.
-    return StepResult(outcome=_MODIFIED, version=version, text=text, detail={"redacted": counted})
 
 
 # Returns the text the next step decides about and how many of each datum were replaced, which is all the detail ever holds: a

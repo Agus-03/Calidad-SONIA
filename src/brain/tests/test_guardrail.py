@@ -198,11 +198,45 @@ async def test_the_version_of_the_file_is_what_the_row_will_carry(tmp_path, monk
 
 
 # Decision D3, and the reason is stronger than the edit rate of F02: the outbound text has already been through the external
-# provider, so rewriting it protects nothing ADR-0006 cares about and only puts a marker where the customer's own number was.
-# Until the outbound run is built there is nothing honest for it to report, and a pass would be a row claiming a check nobody ran.
-async def test_the_outbound_run_does_not_rewrite_what_the_ai_agent_is_about_to_say() -> None:
-    with pytest.raises(NotImplementedError):
-        await decide(f"tu CBU es {CBU}", MessageDirection.OUTBOUND)
+# provider, so rewriting it would protect nothing ADR-0006 cares about and would only put a marker where the number was. So the
+# answer is refused whole and comes back untouched, which is what the caller writes into generations.completion_text (4.2).
+async def test_the_outbound_run_refuses_an_answer_and_never_rewrites_it() -> None:
+    result = await decide(f"tu CBU es {CBU}", MessageDirection.OUTBOUND)
+
+    assert result.outcome == "blocked"
+    assert result.halts is True, "a refused answer did not end the turn and would have been sent"
+    assert result.text == f"tu CBU es {CBU}", "the outbound run rewrote the answer instead of refusing it (D3)"
+    assert result.detail == {"found": {"cbu": 1}}
+
+
+async def test_an_answer_with_nothing_in_it_goes_out_untouched() -> None:
+    result = await decide("el depto de Jesús María está disponible", MessageDirection.OUTBOUND)
+
+    assert result.outcome == "pass"
+    assert result.halts is False
+    assert result.detail is None
+
+
+# One way of finding for the two runs and opposite decisions about the finding, which is the whole of D3: the same sentence is
+# repaired on the way in and refused on the way out.
+async def test_the_same_datum_is_repaired_inbound_and_refused_outbound() -> None:
+    text = f"te paso el CBU {CBU} para la seña"
+
+    inbound = await decide(text, MessageDirection.INBOUND)
+    outbound = await decide(text, MessageDirection.OUTBOUND)
+
+    assert (inbound.outcome, inbound.halts) == ("modified", False)
+    assert (outbound.outcome, outbound.halts) == ("blocked", True)
+    assert "[CBU]" in inbound.text and CBU not in inbound.text
+    assert CBU in outbound.text
+
+
+# The cost of the rule above, and it is not hypothetical: this step cannot tell the agency own bank account from a customer one,
+# so an administrator who writes it into a prompt component so the AIAgent can pass it on gets every such answer refused.
+async def test_an_answer_that_repeats_the_agency_own_account_is_refused_too() -> None:
+    result = await decide(f"para la seña transferí a nuestra cuenta, CBU {CBU}", MessageDirection.OUTBOUND)
+
+    assert result.outcome == "blocked"
 
 
 # ADR-0006 declares four data, so a file with no rule in it is not an empty policy the way an empty blocklist is: it is the

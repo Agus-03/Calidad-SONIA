@@ -95,20 +95,27 @@ async def walk(*steps: Step, text: str = "hola", start_position: int = 1) -> run
 
 
 # The order of the turn is data, so it is read here and not inferred from a chain of calls. The blocklist opens the leg because
-# it is the cheapest of the seven —what can be refused without a provider is refused before one gets paid— and the guardrail
-# follows it because a message that is going to be refused outright is not worth redacting first (ADR-0016).
+# it is the cheapest of the seven —what can be refused without a provider is refused before one gets paid—, the guardrail
+# follows it because a message that is going to be refused outright is not worth redacting first, and the triage comes last of
+# the three because it is the first one that calls a provider and the text has to be redacted before it leaves (ADR-0016).
 def test_the_inbound_leg_runs_in_the_order_of_adr_0016() -> None:
-    assert [s.step for s in runner.INBOUND] == [PipelineStep.BLOCKLIST, PipelineStep.GUARDRAIL]
+    assert [s.step for s in runner.INBOUND] == [
+        PipelineStep.BLOCKLIST,
+        PipelineStep.GUARDRAIL,
+        PipelineStep.TRIAGE,
+    ]
     assert {s.direction for s in runner.INBOUND} == {MessageDirection.INBOUND}
 
 
-# The same two steps a second time, which is why a leg is a tuple and not a flag on the first one: what they decide about the
-# second time is the answer, and it did not exist when the leg above ran (ADR-0016).
+# Two of the three a second time, which is why a leg is a tuple and not a flag on the first one: what they decide about the
+# second time is the answer, and it did not exist when the leg above ran. The triage is not among them — the domain of a
+# question is a property of the question, and it was already settled on the way in (ADR-0016).
 def test_the_outbound_leg_runs_the_same_two_steps_over_the_answer() -> None:
     assert [s.step for s in runner.OUTBOUND] == [PipelineStep.BLOCKLIST, PipelineStep.GUARDRAIL]
     assert {s.direction for s in runner.OUTBOUND} == {MessageDirection.OUTBOUND}
-    # The same module on both legs, because what changes between the two runs is the decision and not the code that makes it.
-    assert [s.run for s in runner.OUTBOUND] == [s.run for s in runner.INBOUND]
+    # The same modules on both legs, because what changes between the two runs is the decision and not the code that makes it.
+    inbound = {s.step: s.run for s in runner.INBOUND}
+    assert [s.run for s in runner.OUTBOUND] == [inbound[PipelineStep.BLOCKLIST], inbound[PipelineStep.GUARDRAIL]]
 
 
 async def test_a_leg_with_no_steps_changes_nothing() -> None:

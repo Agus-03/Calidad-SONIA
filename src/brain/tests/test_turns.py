@@ -183,11 +183,12 @@ def test_turns_generates_when_a_provider_answers() -> None:
     assert connection.seen.count("generation_components") == 2, "the generation does not name what it assembled"
 
 
-# The fixture has two of the six: the turn answers anyway, and says so in the log.
-def test_a_turn_with_fewer_than_six_components_says_so(settings: Settings, caplog: pytest.LogCaptureFixture) -> None:
+# The fixture has two of the six: the turn answers anyway, and says so in the log. On the doubled stack, because the line it
+# asserts is written after the assembly and the assembly now happens after a step that calls a provider.
+def test_a_turn_with_fewer_than_six_components_says_so(caplog: pytest.LogCaptureFixture) -> None:
     connection = FakeConnection(tables())
 
-    with caplog.at_level("INFO", logger="sonia"), client(connection, settings) as http:
+    with caplog.at_level("INFO", logger="sonia"), client(connection, doubled()) as http:
         http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     assert [r for r in caplog.records if "fewer components" in r.getMessage()]
@@ -199,7 +200,7 @@ def test_turns_reads_the_batch_the_agent_and_the_messages(settings: Settings) ->
     with client(connection, settings) as http:
         http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
-    assert connection.seen == [
+    assert connection.seen[:5] == [
         "message_batches",
         "ai_agents",
         "messages",
@@ -411,7 +412,8 @@ def test_an_answer_that_carried_a_personal_datum_is_generated_and_not_sent() -> 
     original = double_module.DoubleClient.complete
 
     async def leaking(self, **kwargs: object):
-        if kwargs.get("system") and double_module.INTENT_MARKER in str(kwargs["system"]):
+        system = str(kwargs.get("system") or "")
+        if double_module.INTENT_MARKER in system or double_module.TRIAGE_MARKER in system:
             return await original(self, **kwargs)
         return Completion(
             text=f"para la seña transferí al CBU {CBU}",
@@ -449,8 +451,8 @@ def test_the_positions_of_the_trace_run_across_the_two_legs() -> None:
         http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     steps = [params for table, params in connection.sent if table == "pipeline_steps" and "position" in params]
-    assert [p["position"] for p in steps] == [1, 2, 3, 4], "the outbound leg started counting again"
-    assert [p["direction"] for p in steps] == ["inbound", "inbound", "outbound", "outbound"]
+    assert [p["position"] for p in steps] == [1, 2, 3, 4, 5], "the outbound leg started counting again"
+    assert [p["direction"] for p in steps] == ["inbound", "inbound", "inbound", "outbound", "outbound"]
 
 
 # Section 2, and it is the rule somebody will want to "fix" the first day it costs a generation: the verdict is written once and

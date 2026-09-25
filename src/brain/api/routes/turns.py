@@ -52,7 +52,13 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     # when it ends the turn: a batch the pipeline cut has these rows and no generation at all, which is the case the table
     # exists to be able to show.
     try:
-        trace = await runner.run(steps=runner.INBOUND, turn=turn, client=client, text=message)
+        trace = await runner.run(
+            steps=runner.INBOUND,
+            turn=turn,
+            client=client,
+            text=message,
+            components=read.components,
+        )
     except runner.StepFailed as err:
         # The partial evidence is kept, which is what 07-secuencia section 5 asks of a turn that fell over halfway.
         logger.error(
@@ -122,6 +128,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             client=client,
             text=generation.completion_text,
             start_position=trace.next_position,
+            components=read.components,
         )
     except runner.StepFailed as err:
         # A declared cost and not an oversight (section 2): generations is written once and already with its verdict, so a brain

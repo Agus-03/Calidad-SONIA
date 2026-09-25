@@ -12,9 +12,10 @@ from time import perf_counter
 
 from adapters.llm.base import LLMClient, LLMError
 from infra.enums import MessageDirection, PipelineStep
-from pipeline import blocklist, guardrail
+from pipeline import blocklist, guardrail, triage
 from pipeline.repository import TracedStep, Turn
 from pipeline.step import Step, StepRequest
+from prompts.repository import Component
 
 logger = logging.getLogger("sonia.pipeline.runner")
 
@@ -22,13 +23,17 @@ logger = logging.getLogger("sonia.pipeline.runner")
 # step is adding an entry here, which is also what makes one row map to one module (regla 6).
 #
 # The rest of the leg is still missing, and its absence is a gap in the trace and not a step that let something through:
-# triage because what it compares against is still open, retrieval and grounding because Fase 12 completes them.
+# retrieval and grounding, which Fase 12 completes.
 INBOUND: tuple[Step, ...] = (
     # First because it is the cheapest of the seven: a message with a forbidden term must not pay for a model to be refused.
     Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocklist.run),
     # Second, in the order of ADR-0016, and after the blocklist for a reason worth saying: a message that is going to be
     # refused outright should not be worth redacting first.
     Step(step=PipelineStep.GUARDRAIL, direction=MessageDirection.INBOUND, run=guardrail.run),
+    # Third, and the first step of the turn that costs a provider call: whether a question belongs to a business is a judgement
+    # about meaning, and no file settles it. After the guardrail on purpose — this is the first text that leaves for a provider,
+    # and by here it is the redacted one (ADR-0006).
+    Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=triage.run),
 )
 
 # The outbound leg: the same two steps, deciding about the answer the model produced. It is a second tuple and not a flag on the
@@ -81,12 +86,13 @@ async def run(
     client: LLMClient,
     text: str,
     start_position: int = 1,
+    components: tuple[Component, ...] = (),
 ) -> Trace:
     traced: list[TracedStep] = []
     position = start_position
 
     for step in steps:
-        request = StepRequest(turn=turn, client=client, direction=step.direction, text=text)
+        request = StepRequest(turn=turn, client=client, direction=step.direction, text=text, components=components)
 
         # Measured here and not inside the step, so no step can disagree with the trace it is part of. perf_counter because a
         # wall clock that steps back mid-turn would report a negative latency.

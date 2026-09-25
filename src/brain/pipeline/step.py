@@ -8,12 +8,13 @@ from typing import Any, Protocol
 from adapters.llm.base import LLMClient
 from infra.enums import MessageDirection, PipelineStep
 from pipeline.repository import Turn
+from prompts.repository import Component
 
 
 # What a step is handed. Frozen because a step decides about it and never edits it: the text it returns is how it answers.
 @dataclass(frozen=True)
 class StepRequest:
-    # The whole turn, because deciding can need the agent that owns it: triage has to know what this business is about, and a
+    # The whole turn, because deciding can need the agent that owns it: triage calls the provider that ai_agents names, and a
     # blocklist does not care. A step that ignores these two is the normal case and not a sign of a wrong contract.
     turn: Turn
     client: LLMClient
@@ -21,6 +22,10 @@ class StepRequest:
     direction: MessageDirection
     # What this step decides about: the customer's message inbound, the answer the model produced outbound.
     text: str
+    # The agent's active prompt components (F01), which is where triage finds what this business is about (decision D1). A field
+    # and not a read of its own, because a step takes no connection and the route has already loaded them for the assembly.
+    # Empty by default: most steps never look at them, and no step of the outbound leg does.
+    components: tuple[Component, ...] = ()
 
 
 # One row of pipeline_steps, minus what only the runner knows: position is the order in the turn and latency_ms is measured

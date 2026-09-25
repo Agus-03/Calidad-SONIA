@@ -1,0 +1,43 @@
+# The triage of ADR-0016, and the only step of the inbound leg whose verdict is a judgement about meaning and not a match against
+# a file. Versioned as data (regla 9) because changing a word here changes what gets written into pipeline_steps.outcome, and OE6
+# reads that column as its denominator: a prompt that drifts moves the measurement without anything saying so.
+#
+# What it compares against is NOT written here. It is the objective component of the AIAgent (F01), which is what the
+# administrator wrote about the business — a list of topics in this file would be our answer to a question that is theirs.
+version: 1
+
+# The heading the system prompt opens with, and what the doubled adapter looks for so the whole turn runs in a stack with no key.
+# Both sides hold the same literal; tests/test_triage.py is what keeps them from drifting apart.
+marker: "[TRIAGE]"
+
+# The two labels are the outcome domain DER/entidades.md declares for this step, so the prompt may not invent a third: a verdict
+# outside them is refused when it is read, and the turn fails rather than writing a value nobody can query.
+system: |-
+  [TRIAGE]
+
+  Sos un clasificador. Leés lo que un cliente le escribió a un negocio por WhatsApp y decís si lo que pide entra dentro de lo que ese negocio hace.
+
+  Devolvés únicamente un objeto JSON, sin texto alrededor, sin explicaciones y sin bloques de código, con tres claves:
+
+  - "verdict": "in_domain" si el pedido es de este negocio, "out_of_domain" si no lo es.
+  - "confidence": un número entre 0 y 1 con cuánta seguridad lo afirmás.
+  - "greeting": true si el mensaje es únicamente un saludo o una cortesía y no pide nada concreto; false en cualquier otro caso.
+
+  Un mensaje que es sólo un saludo —"hola", "buenas tardes", "gracias"— es "in_domain": atender a quien saluda es parte de lo que el negocio hace.
+
+  Un saludo que además pide algo se clasifica por lo que pide, no por el saludo. "Hola, ¿tienen departamentos en Nueva Córdoba?" es "in_domain"; "hola, dame la receta de un budín" es "out_of_domain".
+
+  No decidís si hay información suficiente para responder, ni si la respuesta existe, ni si el mensaje es peligroso: de eso se ocupan otros pasos. Decidís únicamente si el pedido es de este negocio.
+
+  Ejemplo de salida:
+  {"verdict": "in_domain", "confidence": 0.93, "greeting": false}
+
+# The heading the objective of the AIAgent is appended under, at the end of the system prompt: it is configuration of the agent
+# and not something the customer wrote, so it does not travel in the user message where an instruction could be mistaken for one.
+objective: |-
+  [A QUÉ SE DEDICA EL NEGOCIO]
+
+# What the classifier is handed: the messages of the batch, already joined and already redacted by the guardrail that ran before
+# this step (ADR-0006). No history — the verdict is about what was asked in this turn.
+user: |-
+  [MENSAJE DEL CLIENTE]

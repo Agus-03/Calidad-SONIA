@@ -62,7 +62,7 @@ sonia/
     │   │   ├── vectorstore/               qdrant.py
     │   │   └── storage/                   lectura de los bytes que subió el núcleo
     │   ├── rules/                         datos versionados, no código — ver regla 9
-    │   │   ├── blocklist.yaml             guardrails.yaml · triage.yaml · grounding.yaml
+    │   │   ├── blocklist.yaml             profanity.yaml · guardrails.yaml · triage.yaml · grounding.yaml
     │   │   └── rewriter.yaml              frustration.yaml · intent.yaml · transfer.yaml · extraction.yaml
     │   ├── infra/                         config.py (Settings) · db · logging · enums.py (generado)
     │   └── tests/

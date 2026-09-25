@@ -4,6 +4,9 @@
 #
 # One module for the two directions (regla 6), because what changes between the inbound run and the outbound one is the list and
 # not the way of reading it.
+#
+# Two files and one step: blocklist.yaml holds the policy of the business, and profanity.yaml holds the words of decision O6b,
+# which only apply to what the AIAgent answers. Both feed this same reading, because a forbidden term is a forbidden term.
 
 import logging
 import re
@@ -19,6 +22,12 @@ logger = logging.getLogger("sonia.pipeline.blocklist")
 
 _FILE = "blocklist.yaml"
 
+# The words of O6b, kept as a file of their own and not appended to the outbound section above: the two are loaded and versioned
+# by different people —that one by whoever runs the business, this one by the team— and whoever reads a blocked answer has to know
+# which of the two refused it. It holds one list and nothing else, which is what makes it safe to hand to somebody who is only
+# there to add a word.
+_PROFANITY_FILE = "profanity.yaml"
+
 # The outcome domain declared for this step in DER/entidades.md: it lets a text through or it ends the turn. There is no third
 # value, and in particular no failed — a list cannot be unavailable.
 _PASS = "pass"
@@ -31,6 +40,8 @@ _BLOCKED = "blocked"
 class Term:
     written: str
     pattern: re.Pattern[str]
+    # Which of the two files it came from, because detail_json is read by a person who then has to open one of them.
+    file: str
 
 
 @dataclass(frozen=True)
@@ -38,37 +49,64 @@ class Rules:
     version: int
     inbound: tuple[Term, ...]
     outbound: tuple[Term, ...]
+    # Its own field and not merged into the one above, so what blocklist.yaml ships with can still be read on its own: decision
+    # D4 keeps that file empty, and a merge would hide the day somebody writes a term of ours into it.
+    profanity_version: int
+    profanity: tuple[Term, ...]
 
     def terms(self, direction: MessageDirection) -> tuple[Term, ...]:
-        return self.inbound if direction == MessageDirection.INBOUND else self.outbound
+        if direction == MessageDirection.INBOUND:
+            return self.inbound
+        # The words of O6b last, so when both lists match it is the term of the business that gets reported.
+        return self.outbound + self.profanity
+
+    # varchar in the row, and what decided the outbound run is two files: naming only the first would let a word be loaded without
+    # the version moving, and then every earlier row of this step would name a list that no longer exists — the same argument that
+    # signal_evaluations.classifier_version exists for.
+    def version_for(self, direction: MessageDirection) -> str:
+        if direction == MessageDirection.INBOUND:
+            return str(self.version)
+        return f"{self.version}+profanity{self.profanity_version}"
 
 
-# Read once per process: the file is versioned data, so it changes with a deploy and never between two turns.
+# Read once per process: the files are versioned data, so they change with a deploy and never between two turns.
 @lru_cache(maxsize=1)
 def rules() -> Rules:
-    return _rules(load(_FILE))
+    return _rules(load(_FILE), load(_PROFANITY_FILE))
 
 
-def _rules(spec: RulesFile) -> Rules:
+# Both files are demanded, and a missing profanity.yaml is a load error and not an empty list: an empty list is a policy somebody
+# chose, and a file that is not there is a deploy that lost it. O6b says this guard cannot be off.
+def _rules(spec: RulesFile, profanity: RulesFile) -> Rules:
     return Rules(
         version=spec.version,
-        inbound=_terms(spec.section("inbound")),
-        outbound=_terms(spec.section("outbound")),
+        inbound=_terms(spec.section("inbound"), _FILE),
+        outbound=_terms(spec.section("outbound"), _FILE),
+        profanity_version=profanity.version,
+        # The whole file and not a section of it, which is the difference between a list somebody maintains and a policy.
+        profanity=_terms(profanity, _PROFANITY_FILE),
     )
 
 
-def _terms(section: RulesFile) -> tuple[Term, ...]:
-    return tuple(Term(written=term, pattern=_pattern(term)) for term in section.strings("terms"))
+# Deduplicated by what is compared and not by what is written, because a list somebody keeps loading gets the same word twice and
+# gets it in two spellings that fold to one: Puta and puta compile to the same pattern, and the second one could only make the
+# file longer. The first spelling wins, since it is the one a blocked turn reports.
+def _terms(section: RulesFile, file: str) -> tuple[Term, ...]:
+    out: dict[str, Term] = {}
+    for written in section.strings("terms"):
+        normalized = _normalize(written)
+        if not normalized:
+            # Refused while loading: a pattern built out of nothing matches every message, so this one term would block the whole
+            # business and every row of the trace would say the list had done its job.
+            raise RulesFileError(f"blocklist: the term {written!r} is nothing once it is normalized")
+        out.setdefault(normalized, Term(written=written, pattern=_pattern(normalized), file=file))
+    return tuple(out.values())
 
 
 # Whole word and not a substring, which is what keeps a short term from blocking half the conversation: casa must not fire on
 # casamiento, and seña is an ordinary word in a rental. Lookarounds and not \b, because \b means something different depending on
 # whether the term happens to begin with a letter or with a symbol.
-def _pattern(term: str) -> re.Pattern[str]:
-    normalized = _normalize(term)
-    if not normalized:
-        # Refused while loading: a pattern built out of nothing matches every message, so this file would block the business.
-        raise RulesFileError(f"blocklist: the term {term!r} is nothing once it is normalized")
+def _pattern(normalized: str) -> re.Pattern[str]:
     return re.compile(rf"(?<!\w){re.escape(normalized)}(?!\w)")
 
 
@@ -84,8 +122,8 @@ def _normalize(text: str) -> str:
 # three of them do call a provider, so the cheap steps pay one await rather than the runner branching on which kind it holds.
 async def run(request: StepRequest) -> StepResult:
     spec = rules()
-    # varchar in the row: for this step it is the version of the file, because a file is what decided and not a model (ADR-0016).
-    version = str(spec.version)
+    # varchar in the row: for this step it is the version of the files, because a file is what decided and not a model (ADR-0016).
+    version = spec.version_for(request.direction)
     # Normalized once and not per term: the comparison is the same for all of them.
     text = _normalize(request.text)
 
@@ -99,17 +137,18 @@ async def run(request: StepRequest) -> StepResult:
                         "message_batch_id": str(request.turn.message_batch_id),
                         "direction": request.direction,
                         "term": term.written,
+                        "file": term.file,
                     }
                 },
             )
-            # The term and never the text it was found in: detail_json is evidence a person reads, and what the customer wrote
-            # has had no redaction at this point in the turn (ADR-0006).
+            # The term and the file that holds it, never the text it was found in: detail_json is evidence a person reads, two
+            # lists feed the outbound run, and what the customer wrote has had no redaction at this point (ADR-0006).
             return StepResult(
                 outcome=_BLOCKED,
                 version=version,
                 text=request.text,
                 halts=True,
-                detail={"term": term.written},
+                detail={"term": term.written, "file": term.file},
             )
 
     # The text comes out exactly as it went in: this step decides and never rewrites, which is the guardrail's job and not this

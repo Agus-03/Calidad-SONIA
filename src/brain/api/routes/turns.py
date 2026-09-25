@@ -1,6 +1,8 @@
 # The one synchronous hop of the turn (ADR-0017 (e)): the core calls, the brain answers, and no queue sits between them.
 
 import logging
+from collections.abc import Sequence
+from dataclasses import replace
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -8,10 +10,18 @@ from adapters.llm.base import LLMClient, LLMError
 from adapters.llm.registry import resolve
 from api.schemas.turn import TurnRequest, TurnResponse
 from classifiers.intent import Intent, classify
-from infra.enums import PromptComponentType
+from infra.enums import GenerationStatus, PromptComponentType
 from pipeline import runner
 from pipeline.generation import UnpricedModel, generate
-from pipeline.repository import Turn, TurnNotFound, read_turn, write_generation, write_intents, write_steps
+from pipeline.repository import (
+    TracedStep,
+    Turn,
+    TurnNotFound,
+    read_turn,
+    write_generation,
+    write_intents,
+    write_steps,
+)
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -49,12 +59,12 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             "turn not decided",
             extra={"context": {"conversation_id": str(turn.conversation_id), "error": str(err)}},
         )
-        await _write_trace(request, turn, err.trace)
+        await _write_trace(request, turn, err.trace.steps)
         return TurnResponse(outcome="failed")
 
     if trace.halted:
         # No generation and no message: the core writes processed_at and drops the conversation to waiting (section 4.1).
-        await _write_trace(request, turn, trace)
+        await _write_trace(request, turn, trace.steps)
         return TurnResponse(outcome="blocked")
 
     # What reaches the model from here on is what the leg returned and not what arrived: the redaction of ADR-0006 happens in
@@ -103,14 +113,48 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
         return TurnResponse(outcome="failed")
 
-    # A new connection and not the first one held open: the call above takes seconds and the pool is shared.
+    # The steps that decide about the answer: the same blocklist and the same guardrail, about a text that did not exist when the
+    # leg above ran. It continues the numbering, so the trace of the turn reads in order across the two legs (ADR-0016).
+    try:
+        answer = await runner.run(
+            steps=runner.OUTBOUND,
+            turn=turn,
+            client=client,
+            text=generation.completion_text,
+            start_position=trace.next_position,
+        )
+    except runner.StepFailed as err:
+        # A declared cost and not an oversight (section 2): generations is written once and already with its verdict, so a brain
+        # that falls over mid-guardrail loses that generation and leaves only the steps of the turn.
+        logger.error("answer not decided", extra={"context": {**context, "error": str(err)}})
+        await _write_trace(request, turn, trace.steps + err.trace.steps)
+        return TurnResponse(outcome="failed")
+
+    if answer.halted:
+        # Written once with its verdict, and its text is kept: the evidence of section 4.2 exists so somebody can see what was
+        # stopped and with what prompt it was produced. message_id stays NULL for ever, and the core never links it.
+        generation = replace(generation, status=GenerationStatus.BLOCKED)
+
+    steps = trace.steps + answer.steps
+    context["pipeline_steps"] = len(steps)
+
+    # A new connection and not the first one held open: the calls above take seconds and the pool is shared.
     async with request.app.state.database.connection() as conn:
         # First, because it is the first thing that happened: the trace reads in the order of the turn (ADR-0016).
-        await write_steps(conn, turn.message_batch_id, trace.steps)
+        await write_steps(conn, turn.message_batch_id, steps)
         # Before the generation and in the same transaction: the evidence of F11 belongs to the turn that used it, and a
         # generation whose intents were lost would read as a turn that answered a list nobody can see.
         await write_intents(conn, turn.message_batch_id, intents)
         await write_generation(conn, generation)
+
+    if answer.halted:
+        logger.warning(
+            "answer blocked after generating",
+            extra={"context": {**context, "generation_id": str(generation.id)}},
+        )
+        # With the generation_id and without the text: the evidence has to be pointable at, and an answer that was refused must
+        # not be sendable by the caller (section 4.2).
+        return TurnResponse(outcome="blocked", generation_id=generation.id)
 
     logger.info(
         "turn generated",
@@ -134,11 +178,11 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     )
 
 
-# On its own connection, because the leg above may have spent seconds against a provider and the pool is shared. It is the only
+# On its own connection, because the legs may have spent seconds against a provider and the pool is shared. It is the only
 # evidence a cut turn leaves, so it is not folded into the transaction of a generation that is never going to exist.
-async def _write_trace(request: Request, turn: Turn, trace: runner.Trace) -> None:
+async def _write_trace(request: Request, turn: Turn, steps: Sequence[TracedStep]) -> None:
     async with request.app.state.database.connection() as conn:
-        await write_steps(conn, turn.message_batch_id, trace.steps)
+        await write_steps(conn, turn.message_batch_id, steps)
 
 
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).

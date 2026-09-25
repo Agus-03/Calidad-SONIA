@@ -31,6 +31,17 @@ INBOUND: tuple[Step, ...] = (
     Step(step=PipelineStep.GUARDRAIL, direction=MessageDirection.INBOUND, run=guardrail.run),
 )
 
+# The outbound leg: the same two steps, deciding about the answer the model produced. It is a second tuple and not a flag on the
+# first because these two run twice in a turn and the second time the text they decide about does not exist yet (ADR-0016).
+#
+# The generation goes between the two legs, so once its own row exists (its step is declared and unwritten) it takes the position
+# right after the leg above and these two move one along. Numbering continuously now and shifting then is what keeps position
+# meaning the order things happened in, rather than a hole reserved for something nobody has built.
+OUTBOUND: tuple[Step, ...] = (
+    Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.OUTBOUND, run=blocklist.run),
+    Step(step=PipelineStep.GUARDRAIL, direction=MessageDirection.OUTBOUND, run=guardrail.run),
+)
+
 
 # What one leg leaves behind. Frozen for the same reason as the results it holds: it is evidence on its way to a row.
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from adapters.llm.base import LLMUnavailable
+from adapters.llm.base import Completion, LLMUnavailable
 from infra.config import Settings
 from main import create_app
 from infra.enums import MessageDirection, PipelineStep
@@ -19,6 +19,9 @@ from pipeline.step import Step, StepRequest, StepResult
 BATCH_ID = uuid4()
 CONVERSATION_ID = uuid4()
 AGENT_ID = uuid4()
+
+# A real CBU, because the outbound guardrail is only worth testing against what it is meant to catch.
+CBU = "0170099220000067797151"
 
 
 class FakeCursor:
@@ -375,8 +378,8 @@ def test_a_turn_the_pipeline_let_through_still_leaves_its_trace() -> None:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     assert response.json()["outcome"] == "generated"
-    # One DELETE and one INSERT per step of the leg, in the transaction that holds the rest of the evidence of the turn.
-    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
+    # One DELETE and one INSERT per step of the two legs, in the transaction that holds the rest of the evidence of the turn.
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND) + len(runner.OUTBOUND)
 
 
 # ADR-0006 end to end, which is the assertion that makes the decision verifiable instead of declared: the redaction happens in a
@@ -395,6 +398,83 @@ def test_the_document_number_a_customer_wrote_never_reaches_the_provider() -> No
     assert "[DNI]" in payload["completion_text"], "the model got the message with the datum gone and no marker in its place"
     rendered = [params["prompt_rendered"] for table, params in connection.sent if table == "generations"]
     assert rendered and "12.345.678" not in rendered[0], "prompt_rendered kept the original text (ADR-0006)"
+
+
+# Section 4.2, the other cut: the answer was generated and it is not going to be sent. Nothing the customer wrote can produce it
+# —the inbound guardrail would have redacted that— so the answer itself has to carry the datum, which is what a prompt component
+# holding the agency own account does in production.
+def test_an_answer_that_carried_a_personal_datum_is_generated_and_not_sent() -> None:
+    connection = FakeConnection(tables())
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def leaking(self, **kwargs: object):
+        if kwargs.get("system") and double_module.INTENT_MARKER in str(kwargs["system"]):
+            return await original(self, **kwargs)
+        return Completion(
+            text=f"para la seña transferí al CBU {CBU}",
+            model=str(kwargs["model"]),
+            prompt_tokens=9,
+            completion_tokens=7,
+        )
+
+    double_module.DoubleClient.complete = leaking
+    try:
+        with client(connection, doubled()) as http:
+            response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    payload = response.json()
+    assert payload["outcome"] == "blocked"
+    # With the id and without the text: the core has to be able to point at the evidence and must not be able to send it.
+    assert payload["generation_id"] is not None
+    assert payload["completion_text"] is None, "a refused answer travelled back in a shape the core could send"
+    written = [params for table, params in connection.sent if table == "generations"]
+    assert len(written) == 1
+    # Written once and already with its verdict, which is why GenerationStatus needed a sixth value at all (section 4.2).
+    assert written[0]["status"] == "blocked", "a refused answer was recorded as one that went out"
+    # And kept whole, components included: the row exists so somebody can see what was stopped and with what prompt.
+    assert CBU in written[0]["completion_text"], "the answer that was stopped was not kept, so nobody can read what it said"
+    assert connection.seen.count("generation_components") == 2
+
+
+# position is the order inside the turn and not inside the leg, which is what lets the trace of a turn be read in order at all.
+def test_the_positions_of_the_trace_run_across_the_two_legs() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    steps = [params for table, params in connection.sent if table == "pipeline_steps" and "position" in params]
+    assert [p["position"] for p in steps] == [1, 2, 3, 4], "the outbound leg started counting again"
+    assert [p["direction"] for p in steps] == ["inbound", "inbound", "outbound", "outbound"]
+
+
+# Section 2, and it is the rule somebody will want to "fix" the first day it costs a generation: the verdict is written once and
+# with the row, so a brain that falls over during the outbound leg loses that generation and leaves only the steps that ran.
+def test_a_step_that_could_not_decide_the_answer_loses_the_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def falling(request: StepRequest) -> StepResult:
+        raise LLMUnavailable("double: no answer about the answer")
+
+    monkeypatch.setattr(
+        runner,
+        "OUTBOUND",
+        (Step(step=PipelineStep.GUARDRAIL, direction=MessageDirection.OUTBOUND, run=falling),),
+    )
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "failed"
+    assert "generations" not in connection.seen, "an answer nobody managed to check was written anyway"
+    # The steps of the leg that did run are kept, and the intents of this turn go with the generation: what a failed turn leaves
+    # behind is its trace and nothing else (section 5).
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
+    assert "detected_intents" not in connection.seen
 
 
 # The cut of 07-secuencia section 4.1: no generation, no message, and the trace is the only evidence the turn leaves behind.

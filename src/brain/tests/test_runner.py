@@ -102,6 +102,15 @@ def test_the_inbound_leg_runs_in_the_order_of_adr_0016() -> None:
     assert {s.direction for s in runner.INBOUND} == {MessageDirection.INBOUND}
 
 
+# The same two steps a second time, which is why a leg is a tuple and not a flag on the first one: what they decide about the
+# second time is the answer, and it did not exist when the leg above ran (ADR-0016).
+def test_the_outbound_leg_runs_the_same_two_steps_over_the_answer() -> None:
+    assert [s.step for s in runner.OUTBOUND] == [PipelineStep.BLOCKLIST, PipelineStep.GUARDRAIL]
+    assert {s.direction for s in runner.OUTBOUND} == {MessageDirection.OUTBOUND}
+    # The same module on both legs, because what changes between the two runs is the decision and not the code that makes it.
+    assert [s.run for s in runner.OUTBOUND] == [s.run for s in runner.INBOUND]
+
+
 async def test_a_leg_with_no_steps_changes_nothing() -> None:
     trace = await walk(text="hola")
 

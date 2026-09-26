@@ -69,6 +69,9 @@ func TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt(t *testing.T) {
 			{"the assembled components", `DELETE FROM generation_components WHERE generation_id IN
 				(SELECT id FROM generations WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the generations", `DELETE FROM generations WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
+			// After the generations that point at them: a generated turn leaves both since ADR-0048.
+			{"the context versions", `DELETE FROM conversation_context_versions WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
+			{"the current context", `DELETE FROM conversation_contexts WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			{"the messages", `DELETE FROM messages WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			// Before the batches they hang from: F11 gave message_batches a second child and the pipeline of ADR-0016 gave it a
 			// third, and children go first (ADR-0041, regla 12). The trace is written by every turn and not only by a cut one, so

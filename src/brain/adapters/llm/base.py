@@ -1,6 +1,7 @@
 # The port of one of the four declared boundaries (regla 11), and the only one OE2 turns into an instrument.
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -62,6 +63,19 @@ class LLMClient(Protocol):
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> Completion: ...
+
+
+# The commonest way a model ignores "sin bloques de código". Moved here at the third reader of a JSON answer, which is the count
+# pipeline/triage.py named as the point where one place costs less than keeping the copies in step (ADR-0048).
+_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
+# Unwrapping is cheaper than losing a whole classification over three backticks.
+def unfenced(answer: str) -> str:
+    text = answer.strip()
+    if fenced := _FENCE.match(text):
+        return fenced.group(1)
+    return text
 
 
 # Wraps only the network call, never the extraction around it: a bug reading the response must not be reported as a provider failure.

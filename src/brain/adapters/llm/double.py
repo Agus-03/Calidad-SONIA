@@ -30,6 +30,16 @@ TRIAGE_PERSON_ANSWER = (
     '{"verdict": "in_domain", "confidence": 0.9, "greeting": false, "explicit_request": true, "resolved": null}'
 )
 
+# The heading the rewriter of F04 opens its system prompt with, held here for the same reason as the two above: without it the
+# doubled stack would answer the rewrite with prose, every rewrite would fall back, and the smoke could not see a version written.
+REWRITER_MARKER = "[REESCRITOR DE CONTEXTO]"
+
+# Announces itself in the summary, which is the text that reaches the prompt of the answer and conversation_contexts.
+REWRITER_ANSWER = (
+    '{"summary": "[doblado] el cliente consulta por un inmueble.", "objections": [], "urgency_level": 2, '
+    '"budget_signal": null, "intent_changed": false}'
+)
+
 
 class DoubleClient:
     provider = PROVIDER
@@ -55,6 +65,14 @@ class DoubleClient:
                 model=model,
                 prompt_tokens=sum(len(m.text.split()) for m in messages),
                 completion_tokens=len(answer.split()),
+            )
+
+        if system and REWRITER_MARKER in system:
+            return Completion(
+                text=REWRITER_ANSWER,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(REWRITER_ANSWER.split()),
             )
 
         if system and INTENT_MARKER in system:

@@ -1,9 +1,11 @@
 # The one synchronous hop of the turn (ADR-0017 (e)): the core calls, the brain answers, and no queue sits between them.
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from time import perf_counter
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 from psycopg import AsyncConnection
@@ -13,6 +15,7 @@ from adapters.llm.registry import resolve
 from api.schemas.turn import TransferProposal, TurnRequest, TurnResponse
 from classifiers import transfer
 from classifiers.intent import Intent, classify
+from infra import ids
 from infra.enums import (
     AgentMode,
     GenerationStatus,
@@ -24,18 +27,24 @@ from infra.enums import (
 from pipeline import notices, runner, triage
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository import (
+    Context,
+    ContextVersion,
+    CurrentContext,
     TracedStep,
     Turn,
     TurnNotFound,
+    read_context,
     read_no_resolution_streak,
     read_transfer_policies,
     read_turn,
+    write_context_version,
     write_generation,
     write_intents,
     write_signal_evaluation,
     write_steps,
 )
 from pipeline.step import Step
+from prompts import rewriter
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -117,15 +126,24 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     # a step, and generations.prompt_rendered has to carry the redacted text and never the original.
     message = trace.text
 
-    # First half of F11: how many different things the customer asked for in this batch. Before the assembly, because the
-    # second half is handing that list to the model that answers (ADR-0041, regla 12).
-    intents = await _intents(client, turn, message)
+    # Only a turn that reaches generation rewrites the context: a cut one has nothing to give it to (ADR-0048).
+    async with request.app.state.database.connection() as conn:
+        current = await read_context(conn, turn.conversation_id)
+
+    # First half of F11, and the rewrite of F04 beside it: neither reads the other, and the customer waits for the slower one and
+    # not for both (ADR-0048). Before the assembly, because the answer is given the two (ADR-0041, regla 12; Regla 1).
+    intents, rewritten = await asyncio.gather(
+        _intents(client, turn, message),
+        _rewrite(client, turn, message, current),
+    )
+    dynamic, version, version_id = _dynamic(turn, current, rewritten, intents)
 
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
     prompt = assemble(
         agent_name=turn.agent.name,
         components=read.components,
         message=message,
+        context=rewriter.render(dynamic) if dynamic is not None else None,
         intents=[i.label for i in intents],
     )
     if prompt.components < len(PromptComponentType):
@@ -149,6 +167,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "prompt_components": prompt.components,
         "prompt_rules_version": prompt.rules_version,
         "detected_intents": len(intents),
+        "context_rewritten": version is not None,
         "pipeline_steps": len(trace.steps),
     }
 
@@ -174,6 +193,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         )
         await _write_trace(request, turn, trace.steps + (failed,))
         return TurnResponse(outcome="failed")
+    generation = replace(generation, context_version_id=version_id)
 
     # The sixth step of ADR-0016, and the only row of the trace whose latency is not measured by whoever writes it: generate()
     # timed its own call, and using that number keeps the trace and generations from disagreeing about the same provider call.
@@ -225,6 +245,9 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         # Before the generation and in the same transaction: the evidence of F11 belongs to the turn that used it, and a
         # generation whose intents were lost would read as a turn that answered a list nobody can see.
         await write_intents(conn, turn.message_batch_id, intents)
+        # Before the generation, which points at it; the core copies it into conversation_contexts when it closes the turn.
+        if version is not None:
+            await write_context_version(conn, version)
         await write_generation(conn, generation)
 
     if answer.halted:
@@ -365,6 +388,57 @@ async def _write_trace(request: Request, turn: Turn, steps: Sequence[TracedStep]
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).
 def _incoming(turn: Turn) -> str:
     return "\n".join(m.content_text for m in turn.incoming)
+
+
+# Never lets the rewrite end the turn, and never asks twice: Regla 3 answers with the context there was, and the core waits ten
+# seconds for all of it (ADR-0048). The gap is logged, and countable as a generation that points at an older turn's version.
+async def _rewrite(
+    client: LLMClient, turn: Turn, message: str, current: CurrentContext | None
+) -> rewriter.Rewrite | None:
+    try:
+        return await rewriter.rewrite(
+            client=client,
+            model=turn.agent.llm_model,
+            previous=current.context if current is not None else None,
+            message=message,
+        )
+    except LLMError as err:
+        logger.warning(
+            "context not rewritten",
+            extra={
+                "context": {
+                    "conversation_id": str(turn.conversation_id),
+                    "message_batch_id": str(turn.message_batch_id),
+                    "error": str(err),
+                }
+            },
+        )
+        return None
+
+
+# This turn's rewrite with the intent F11 read, and the version that records it; or, when it failed, the context there was and
+# the version it came from, which is what the generation points at (03-capa-prompts, Regla 3).
+def _dynamic(
+    turn: Turn,
+    current: CurrentContext | None,
+    rewritten: rewriter.Rewrite | None,
+    intents: Sequence[Intent],
+) -> tuple[Context | None, ContextVersion | None, UUID | None]:
+    if rewritten is None:
+        if current is None:
+            return None, None, None
+        return current.context, None, current.version_id
+
+    context = replace(rewritten.context, primary_intent=rewriter.primary(intents) or rewritten.context.primary_intent)
+    version = ContextVersion(
+        id=ids.new(),
+        conversation_id=turn.conversation_id,
+        turn_number=turn.turn_number,
+        context=context,
+        rewritten_by_model=rewritten.model,
+        latency_ms=rewritten.latency_ms,
+    )
+    return context, version, version.id
 
 
 # Never lets the classifier end the turn: the customer is owed an answer, and a batch whose intents were not read is answered

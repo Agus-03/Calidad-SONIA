@@ -224,6 +224,9 @@ func tearDownCut(t *testing.T, pool db.Pool, customer string) {
 		{"the assembled components", `DELETE FROM generation_components WHERE generation_id IN
 			(SELECT id FROM generations WHERE conversation_id IN (` + conversations + `))`},
 		{"the generations", `DELETE FROM generations WHERE conversation_id IN (` + conversations + `)`},
+		// After the generations that point at them: a generated turn leaves both since ADR-0048, a suggestion included.
+		{"the context versions", `DELETE FROM conversation_context_versions WHERE conversation_id IN (` + conversations + `)`},
+		{"the current context", `DELETE FROM conversation_contexts WHERE conversation_id IN (` + conversations + `)`},
 		{"the messages", `DELETE FROM messages WHERE conversation_id IN (` + conversations + `)`},
 		{"the batches", `DELETE FROM message_batches WHERE conversation_id IN (` + conversations + `)`},
 		{"the assignments", `DELETE FROM conversation_assignments WHERE conversation_id IN (` + conversations + `)`},

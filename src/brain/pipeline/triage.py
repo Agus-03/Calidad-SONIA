@@ -6,14 +6,13 @@
 
 import json
 import logging
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Any
 
-from adapters.llm.base import LLMMessage, LLMRefusal
+from adapters.llm.base import LLMMessage, LLMRefusal, unfenced
 from infra.enums import MessageDirection, PromptComponentType, SenderType, TransferSignalType
 from infra.rules import RulesFileError, load
 from pipeline.repository import Message, TracedStep
@@ -31,11 +30,6 @@ _VERDICTS = frozenset({_IN_DOMAIN, _OUT_OF_DOMAIN})
 
 # The scale of pipeline_steps.score, and enough for a number nobody compares beyond two digits.
 _SCALE = Decimal("0.01")
-
-# The second copy of this in the repository and it is deliberate: wrapping the answer in a fence is the commonest way a model
-# ignores "sin bloques de código", and classifiers/intent.py carries the same three lines. A third copy is what should move them
-# into one place — two is under the threshold where regla 2 says a shared module costs more than it saves.
-_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 # Enough of a bad answer to recognise it in a log, and it is admissible here for one reason: this step runs after the inbound
 # guardrail, so whatever text reaches it has already been through the redaction of ADR-0006.
@@ -185,9 +179,7 @@ def verdict_of(step: TracedStep) -> Verdict | None:
 # Separate from the call so every case below can be tested without a model, and it raises where the classifier of F11 returns
 # nothing: this domain has no value for "could not decide", and answering in_domain would assert a check that never ran.
 def parse(answer: str) -> Verdict:
-    text = answer.strip()
-    if fenced := _FENCE.match(text):
-        text = fenced.group(1)
+    text = unfenced(answer)
 
     try:
         payload = json.loads(text)

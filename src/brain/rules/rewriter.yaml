@@ -1,0 +1,51 @@
+# The rewriter of F04, versioned as data (regla 9): what it writes is the context the next answer is given, and OE4 reads its
+# intent_changed against the annotations of ADR-0023, so a wording that drifts moves a measurement with nothing saying so.
+version: 1
+
+# The heading the doubled adapter looks for, so the turn runs with no key; tests/test_rewriter.py keeps the two literals together.
+marker: "[REESCRITOR DE CONTEXTO]"
+
+# Four of the columns of conversation_contexts and the flag of ADR-0023. primary_intent is not asked for: it is the dominant
+# label of detected_intents (DER/entidades.md), and a second model deciding it would write two answers to one question.
+system: |-
+  [REESCRITOR DE CONTEXTO]
+
+  Mantenés el contexto de una conversación de WhatsApp entre un cliente y un negocio. Recibís el contexto que había hasta ahora y lo último que escribió el cliente, y devolvés el contexto actualizado.
+
+  Devolvés únicamente un objeto JSON, sin texto alrededor, sin explicaciones y sin bloques de código, con cinco claves:
+
+  - "summary": en tres oraciones como máximo, qué busca el cliente y en qué punto está la conversación. En español y en tercera persona.
+  - "objections": una lista de las objeciones que el cliente puso y siguen en pie —el precio, la zona, los requisitos, una demora—, cada una en pocas palabras. Una lista vacía si no hay ninguna.
+  - "urgency_level": 1 si el cliente no tiene apuro, 2 si quiere avanzar pronto, 3 si lo necesita ya. null si no hay forma de saberlo.
+  - "budget_signal": lo que el cliente dijo de su presupuesto, en pocas palabras y con la moneda si la dijo. null si no dijo nada.
+  - "intent_changed": true si lo último que escribió el cliente cambia lo que quiere de una forma que deja sin valor el contexto anterior —venía negociando un precio y ahora reclama por una entrega—; false si lo extiende, lo precisa o sigue en lo mismo. false también si no había contexto anterior.
+
+  Cuando "intent_changed" es true, el "summary" y las "objections" se escriben de cero, sin arrastrar nada de lo anterior. Cuando es false, se conserva lo que sigue valiendo y se agrega lo nuevo.
+
+  No inventás datos que el cliente no dio. Un dato que el mensaje reemplaza —dijo otro presupuesto— reemplaza al anterior.
+
+  Ejemplo de salida:
+  {"summary": "Busca un departamento de 2 ambientes en Jesús María, con presupuesto de hasta $350.000. Preguntó si hay disponibilidad.", "objections": [], "urgency_level": 2, "budget_signal": "hasta 350000 ARS", "intent_changed": false}
+
+# The context there was, as the JSON the model returned the turn before; absent on the first turn of a conversation.
+previous: |-
+  [CONTEXTO ANTERIOR]
+
+# The messages of the batch, already redacted by the guardrail before the triage (ADR-0006).
+user: |-
+  [MENSAJE DEL CLIENTE]
+
+# At most this many objections: a model that rambles must not turn one message into a list nobody reads in the prompt.
+max_objections: 5
+
+# The top of urgency_level. The anteproyecto names the column and no scale, so three steps is a reading of the team (ADR-0048).
+urgency_max: 3
+
+# How the context reads inside the prompt of the answer, under the heading generation.yaml gives it. A line whose value is empty
+# is left out, the same as an empty section (Regla 1).
+render:
+  summary: "Resumen:"
+  primary_intent: "Intención principal:"
+  objections: "Objeciones:"
+  urgency_level: "Urgencia (1 a 3):"
+  budget_signal: "Presupuesto:"

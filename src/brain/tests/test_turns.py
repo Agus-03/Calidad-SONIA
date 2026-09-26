@@ -756,3 +756,116 @@ async def test_the_run_is_read_from_the_batch_before() -> None:
 
     assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": [{"score": Decimal(2)}]}), turn, "2") == 2
     assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": []}), turn, "2") == 0
+
+
+# ADR-0048: the context of F04 as the turn reads it and leaves it. conversation_contexts is read and never written here: the core
+# copies the version into it when it closes the turn.
+VERSION_ID = uuid4()
+
+
+def current_context(summary: str = "Venía preguntando por Nueva Córdoba.") -> dict:
+    return {
+        "turn_number": 1,
+        "summary": summary,
+        "primary_intent": "consulta_zona",
+        "objections_json": [],
+        "urgency_level": None,
+        "budget_signal": None,
+        "extracted_data_json": {},
+    }
+
+
+def sent_to(connection: FakeConnection, table: str, key: str) -> list[dict]:
+    return [params for name, params in connection.sent if name == table and key in params]
+
+
+def without_rewriter():
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def down(self, **kwargs: object):
+        if double_module.REWRITER_MARKER in str(kwargs.get("system") or ""):
+            raise LLMUnavailable("double: the rewriter is down")
+        return await original(self, **kwargs)
+
+    return double_module, original, down
+
+
+def test_a_generated_turn_leaves_its_context_version_and_the_generation_points_at_it() -> None:
+    connection = FakeConnection(tables(conversation_contexts=[], conversation_context_versions=[]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    # The double echoes the envelope, so the answer shows the rewritten context reached the model under its heading (Regla 1).
+    assert "[CONTEXTO DE LA CONVERSACIÓN]" in payload["completion_text"]
+    assert "[doblado] el cliente consulta" in payload["completion_text"]
+    version = sent_to(connection, "conversation_context_versions", "content")[0]
+    generation = sent_to(connection, "generations", "prompt_rendered")[0]
+    assert generation["context_version_id"] == version["id"], "the generation does not name the context it was given"
+    # Before the generation, which has a foreign key to it.
+    assert connection.seen.index("conversation_context_versions") < connection.seen.index("generations")
+    assert version["turn_number"] == 1 and version["rewritten_by_model"] == "command-a-03-2025"
+    # primary_intent is the dominant label of F11 and never the rewriter's (DER/entidades.md).
+    assert version["content"].obj["primary_intent"] == "consulta_disponibilidad"
+
+
+# Regla 3: a rewrite that fell over does not take the answer with it, and the generation is given the context there was.
+def test_a_rewrite_that_fails_answers_with_the_context_there_was(caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(
+        tables(conversation_contexts=[current_context()], conversation_context_versions=[{"id": VERSION_ID}])
+    )
+    double_module, original, down = without_rewriter()
+
+    double_module.DoubleClient.complete = down
+    try:
+        with caplog.at_level(logging.WARNING, logger="sonia.api.turns"):
+            with client(connection, doubled()) as http:
+                response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    payload = response.json()
+    assert payload["outcome"] == "generated", "a rewrite that fell over took the customer's answer with it"
+    assert "Venía preguntando por Nueva Córdoba." in payload["completion_text"]
+    assert "context not rewritten" in caplog.text, "the gap in the evidence was not reported"
+    assert sent_to(connection, "conversation_context_versions", "content") == [], "a version was written for no rewrite"
+    assert sent_to(connection, "generations", "prompt_rendered")[0]["context_version_id"] == VERSION_ID
+
+
+def test_a_first_turn_whose_rewrite_fails_answers_with_no_context() -> None:
+    connection = FakeConnection(tables(conversation_contexts=[], conversation_context_versions=[]))
+    double_module, original, down = without_rewriter()
+
+    double_module.DoubleClient.complete = down
+    try:
+        with client(connection, doubled()) as http:
+            response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert response.json()["outcome"] == "generated"
+    assert "[CONTEXTO DE LA CONVERSACIÓN]" not in response.json()["completion_text"]
+    assert sent_to(connection, "generations", "prompt_rendered")[0]["context_version_id"] is None
+
+
+# A turn cut at the triage has no answer to give a context to, so it neither reads nor rewrites one (ADR-0048).
+def test_a_turn_cut_at_the_triage_does_not_rewrite_the_context() -> None:
+    connection = FakeConnection(
+        tables(
+            messages=[message("quiero hablar con una persona")],
+            transfer_policies=[policy("explicit_request")],
+            conversation_contexts=[current_context()],
+            conversation_context_versions=[],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "blocked"
+    assert "conversation_contexts" not in connection.seen
+    assert "conversation_context_versions" not in connection.seen

@@ -19,6 +19,14 @@ Jerarquía. Ante conflicto, gana la de más arriba.
 
 **Regla:** todo análisis, decisión o propuesta debe estar anclado en el anteproyecto. No inventar requisitos, entidades ni métricas que no estén en él. Si falta información, decirlo explícitamente en lugar de completarla.
 
+### La numeración de los requisitos es la del Anexo A
+
+**El Anexo B cita los requisitos corridos en uno** respecto del Anexo A: dice *"agentes IA (F18), usuarios (F19), etiquetas (F20) y webhooks (F21)"*, y en el Anexo A esos cuatro son **F17, F18, F19 y F20**. Es un desfase de numeración entre anexos, no una contradicción de contenido: los módulos coinciden.
+
+- **Toda la documentación y el código citan la numeración del Anexo A.** Un permiso del Anexo B se cita por el nombre del módulo, o con el número del Anexo A.
+- **Nunca copiar un número del Anexo B sin traducirlo**: apuntaría al requisito equivocado.
+- Registrado como **H-38** en [`docs/design/01-trazabilidad.md`](docs/design/01-trazabilidad.md), y va como nota al pie en el informe.
+
 ---
 
 ## `z_helps/` NO tiene peso oficial

@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/01-trazabilidad.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) · ampliada 2026-09-09 con los de la Fase 3 (§5.5) · las filas de F04 y F05 anotadas 2026-09-26 con dónde quedaron resueltas (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md) y [ADR-0049](02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md)); el símbolo sigue siendo el diagnóstico del Anexo C |
+| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) · ampliada 2026-09-09 con los de la Fase 3 (§5.5) · las filas de F04, F05 y F31 anotadas 2026-09-26 con dónde quedaron resueltas (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md) y [ADR-0049](02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md), [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)); el símbolo sigue siendo el diagnóstico del Anexo C |
 | **Etapa** | Diseño — Paso 2 (Fundaciones) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01–F39), Anexo B (roles), Anexo C (modelo de datos), sección 7.2 (OE1–OE7) |
 | **Depende de** | [00-convenciones.md](00-convenciones.md) |
@@ -87,7 +87,7 @@ Una fila por cada requisito funcional (F01–F39) y por cada objetivo específic
 | **F28** | Recordatorios | `reminders` | Alerta vinculada **a un contacto**, con fecha | ⚠️ El requisito los vincula a contactos; el modelo, a conversaciones. Ver **H-14** |
 | **F29** | Restricción: sin borrado de mensajes | `messages` | — | 📄 Documental. Su consecuencia de modelo ya está resuelta en la convención C09 |
 | **F30** | ABM de contactos | `contacts` | Nombre, apellido, teléfono, email, etiquetas, notas, tipo | ⚠️ Todos los campos existen; las etiquetas están como `tags_json`. Ver **H-16** |
-| **F31** | Extracción automática de datos | `contacts`, `ai_agents` | **Toggle por agente** + destino de los datos extraídos | ⚠️ Los tres campos cifrados existen, pero no hay toggle y sólo DNI/CUIL/CBU tienen dónde ir. Ver **H-17** |
+| **F31** | Extracción automática de datos | `contacts`, `ai_agents` | **Toggle por agente** + destino de los datos extraídos | ⚠️ Los tres campos cifrados existen, pero no hay toggle y sólo DNI/CUIL/CBU tienen dónde ir. Ver **H-17** · **Resuelto** en el modelo nuevo con `contact_attributes` y `ai_agents.extraction_enabled`, y construido en la Fase 9: una lista cerrada de seis claves, los tres sensibles por los patrones del *checkpoint* y sin consentimiento no se guardan, y el núcleo cifra y guarda ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)) |
 | **F32** | Historial unificado por contacto | `contacts`, `conversations`, `sales`, `reminders` | Conversaciones, operadores, calificaciones, ventas y recordatorios | ⚠️ Se arma por joins, salvo los recordatorios, que cuelgan de conversación. Ver **H-14** |
 | **F33** | Segmentación por etiquetas | `contacts`, `labels` | Filtrado de contactos por etiqueta del catálogo | ⚠️ Funciona como JSON, pero sin integridad referencial contra `labels` y sin join limpio. Ver **H-16** |
 | **F34** | Métricas de volumen | `conversations`, `contacts` | Estados · **tiempos de respuesta** · distribución por **canal de origen** | ⚠️ Los estados salen de `status`; los tiempos de respuesta (**H-12**) y el canal de origen (**H-13**) no |

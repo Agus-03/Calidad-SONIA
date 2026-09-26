@@ -135,8 +135,8 @@ sonia/
 │   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
-│   │   │   │   └── controller · routes · service · repository · model
-│   │   │   │                           persiste también los atributos de F31
+│   │   │   │   └── controller · routes · service · repository · model · attributes
+│   │   │   │                           attributes: guarda lo que extrae F31 y lo muestra en la ficha (ADR-0047)
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
 │   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038)

@@ -211,6 +211,37 @@ func (r *Repository) LinkGeneration(ctx context.Context, generationID, messageID
 	return nil
 }
 
+// conversation_contexts is the current context of F04, and this package writes it since ADR-0048: a copy of the version the
+// generation was given, taken in the transaction that closes the turn. It only moves forward, because a generation whose rewrite
+// failed points at an older turn's version and must not rewind the row (03-capa-prompts, Regla 3). The keys are the columns.
+const contextAdopt = `
+INSERT INTO conversation_contexts (
+       id, conversation_id, turn_number, summary, primary_intent, objections_json, urgency_level, budget_signal, extracted_data_json
+)
+SELECT $1, v.conversation_id, v.turn_number,
+       v.content ->> 'summary',
+       v.content ->> 'primary_intent',
+       coalesce(v.content -> 'objections_json', '[]'::jsonb),
+       (v.content ->> 'urgency_level')::smallint,
+       v.content ->> 'budget_signal',
+       coalesce(v.content -> 'extracted_data_json', '{}'::jsonb)
+FROM   generations g
+JOIN   conversation_context_versions v ON v.id = g.conversation_context_version_id
+WHERE  g.id = $2
+ON CONFLICT (conversation_id) DO UPDATE
+SET    turn_number = EXCLUDED.turn_number, summary = EXCLUDED.summary, primary_intent = EXCLUDED.primary_intent,
+       objections_json = EXCLUDED.objections_json, urgency_level = EXCLUDED.urgency_level,
+       budget_signal = EXCLUDED.budget_signal, extracted_data_json = EXCLUDED.extracted_data_json, updated_at = now()
+WHERE  conversation_contexts.turn_number < EXCLUDED.turn_number`
+
+// AdoptContext copies nothing when the generation names no version, which is a first turn whose rewrite failed.
+func (r *Repository) AdoptContext(ctx context.Context, generationID uuid.UUID) error {
+	if _, err := r.exec.Exec(ctx, contextAdopt, id.New(), generationID); err != nil {
+		return fmt.Errorf("turn: adopt context: %w", err)
+	}
+	return nil
+}
+
 // A draft the Operator sent, reviewed by the same statement that links it: accepted when the text left as it was proposed, edited
 // when not (ADR-0046, section 2.5). The predicate makes an id of another conversation, or one already used, a refusal and not a
 // second review. The three values travel as parameters, so a rename in enums.yaml cannot write a status nothing reads (C07).

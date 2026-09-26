@@ -37,6 +37,8 @@ type Store interface {
 	LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error
 	// The escalation of F12 the brain proposed, pointing at the evidence it evaluated (decision O1c).
 	RecordTransfer(ctx context.Context, conversationID, signalEvaluationID uuid.UUID, turnNumber int) error
+	// The context of F04 the generation was given, made the current one in the transaction that closes the turn (ADR-0048).
+	AdoptContext(ctx context.Context, generationID uuid.UUID) error
 }
 
 // Aggregate is conversations/: this package never writes messages with SQL of its own (regla 1).
@@ -269,6 +271,10 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 		if err := aggregate.MarkWaiting(ctx, target.ConversationID); err != nil {
 			return err
 		}
+		// A cut after generating still read what the customer wrote, and the next turn is owed that context (ADR-0048).
+		if err := adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
 		return store.MarkProcessed(ctx, batch.ID, at)
 	})
 	if err != nil {
@@ -293,12 +299,23 @@ func (o *Orchestrator) suggested(ctx context.Context, target Target, batch Batch
 		slog.Bool("generation", answer.GenerationID != nil),
 	)
 	err := o.opts.Tx(ctx, func(store Store, _ Aggregate) error {
+		if err := adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
 		return store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
 	})
 	if err != nil {
 		return o.abandon(ctx, batch, err)
 	}
 	return nil
+}
+
+// adopt is AdoptContext for the turns that generated: with no generation there is no context this turn was given (ADR-0048).
+func adopt(ctx context.Context, store Store, generationID *uuid.UUID) error {
+	if generationID == nil {
+		return nil
+	}
+	return store.AdoptContext(ctx, *generationID)
 }
 
 // answers is the gate of ADR-0041 regla 8 as ADR-0046 amends it: suggestion opens its turn too, because a draft needs one.
@@ -323,6 +340,9 @@ func (o *Orchestrator) persist(
 			if err = store.LinkGeneration(ctx, *answer.GenerationID, message.ID); err != nil {
 				return err
 			}
+		}
+		if err = adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
 		}
 		return store.MarkProcessed(ctx, batch.ID, at)
 	})

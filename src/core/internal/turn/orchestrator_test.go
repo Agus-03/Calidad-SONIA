@@ -24,7 +24,8 @@ func TestTheTurnWritesInTheOrderSectionTwoDeclares(t *testing.T) {
 	h.turn()
 
 	// No open_batch and no link_to_batch any more: the batch arrives closed and its messages were linked as they came in (T3).
-	want := []string{"outbound_message", "generation_linked", "processed_at", "message_sent"}
+	// The context of F04 is made current in the same transaction, before the turn is marked done (ADR-0048).
+	want := []string{"outbound_message", "generation_linked", "conversation_context", "processed_at", "message_sent"}
 	if !slices.Equal(*h.steps, want) {
 		t.Fatalf("steps = %v, want %v", *h.steps, want)
 	}
@@ -368,11 +369,15 @@ func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
 	cases := []struct {
 		name     string
 		response brainclient.TurnResponse
+		want     []string
 	}{
 		{"cut before generating, so there is no evidence to point at (section 4.1)",
-			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}},
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked},
+			[]string{"conversation_waiting", "processed_at"}},
+		// The customer's message was read and the context rewritten before the answer was refused, so it still becomes current (ADR-0048).
 		{"cut after generating, where the evidence exists and its message_id stays NULL for ever (section 4.2)",
-			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation}},
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation},
+			[]string{"conversation_waiting", "conversation_context", "processed_at"}},
 	}
 
 	for _, tc := range cases {
@@ -384,8 +389,8 @@ func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
 
 			// The two writes and nothing else, in one transaction: either alone leaves a turn that reads as finished and
 			// unattended, or as attended and never finished.
-			if got := *h.steps; len(got) != 2 || got[0] != "conversation_waiting" || got[1] != "processed_at" {
-				t.Fatalf("the writes of a blocked turn were %v, want conversation_waiting and processed_at alone", got)
+			if got := *h.steps; !slices.Equal(got, tc.want) {
+				t.Fatalf("the writes of a blocked turn were %v, want %v", got, tc.want)
 			}
 			if len(h.store.failed) != 0 {
 				t.Fatalf("error_message was written for a cut the pipeline decided: %v", h.store.failed)
@@ -536,8 +541,12 @@ func TestASuggestionIsNeitherWrittenAsAMessageNorSent(t *testing.T) {
 	if h.sender.calls != 0 || len(h.aggregate.outbound) != 0 {
 		t.Fatalf("a suggestion reached the customer: %d sends, %v written", h.sender.calls, h.aggregate.outbound)
 	}
-	if got := *h.steps; !slices.Equal(got, []string{"processed_at"}) {
-		t.Fatalf("the writes of a suggested turn were %v, want only processed_at", got)
+	// The draft was generated with a context, and the next suggestion is owed it (ADR-0048).
+	if got := *h.steps; !slices.Equal(got, []string{"conversation_context", "processed_at"}) {
+		t.Fatalf("the writes of a suggested turn were %v, want the context and processed_at", got)
+	}
+	if len(h.store.adopted) != 1 || h.store.adopted[0] != *h.brain.response.GenerationID {
+		t.Fatalf("the context adopted was %v, want the one of the draft", h.store.adopted)
 	}
 }
 
@@ -563,5 +572,21 @@ func TestACutInSuggestionModeSendsNoTextAndTransfersNothing(t *testing.T) {
 	}
 	if got := *h.steps; !slices.Equal(got, []string{"conversation_waiting", "processed_at"}) {
 		t.Fatalf("the writes of a cut in suggestion mode were %v", got)
+	}
+}
+
+// ADR-0048: the context and the turn commit together, so a context that cannot be made current leaves a turn nobody finished and
+// sends nothing — the same reading a link that failed gets (section 2).
+func TestAContextThatCannotBeAdoptedLeavesTheTurnUnfinished(t *testing.T) {
+	h := conductor()
+	h.store.contextErr = errors.New("conversation_contexts is locked")
+
+	h.turn()
+
+	if h.sender.calls != 0 {
+		t.Fatal("the answer left although the transaction that holds it did not commit")
+	}
+	if h.store.failed[h.store.batch.ID] == "" || len(h.store.processed) != 0 {
+		t.Fatalf("the batch reads as finished: processed %v, failed %v", h.store.processed, h.store.failed)
 	}
 }

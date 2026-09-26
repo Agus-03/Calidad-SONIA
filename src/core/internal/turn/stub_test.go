@@ -24,6 +24,7 @@ type stubStore struct {
 	closeErr     error
 	processedErr error
 	linkErr      error
+	contextErr   error
 
 	// What the next tick finds due, handed over once.
 	due []Batch
@@ -37,6 +38,7 @@ type stubStore struct {
 	failed    map[uuid.UUID]string
 	linked    map[uuid.UUID]uuid.UUID
 	transfers []transfer
+	adopted   []uuid.UUID
 	steps     *[]string
 }
 
@@ -127,6 +129,17 @@ func (s *stubStore) RecordTransfer(_ context.Context, conversationID, signalEval
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.transfers = append(s.transfers, transfer{ConversationID: conversationID, SignalEvaluationID: signalEvaluationID, TurnNumber: turnNumber})
+	return nil
+}
+
+func (s *stubStore) AdoptContext(_ context.Context, generationID uuid.UUID) error {
+	if s.contextErr != nil {
+		return s.contextErr
+	}
+	s.record("conversation_context")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.adopted = append(s.adopted, generationID)
 	return nil
 }
 

@@ -824,3 +824,94 @@ func operator(t *testing.T, ctx context.Context, exec db.Executor) uuid.UUID {
 	}
 	return operatorID
 }
+
+// ADR-0048, against the real DDL: the copy is SQL that reads the keys of a JSON the brain wrote, so only PostgreSQL can say the two
+// still agree, and the forward-only predicate is what keeps a generation that fell back from rewinding the current context.
+func TestAdoptContextCopiesTheVersionAndOnlyMovesForward(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+
+		newer := evidence(t, ctx, exec, conversationID, batch.ID)
+		given(t, ctx, exec, newer, conversationID, 2,
+			`{"summary": "Busca un 2 ambientes.", "primary_intent": "consulta_precio", "objections_json": ["el precio"],
+			  "urgency_level": 2, "budget_signal": "hasta 350000 ARS", "extracted_data_json": {}, "intent_changed": false}`)
+		if err := repo.AdoptContext(ctx, newer); err != nil {
+			t.Fatalf("AdoptContext: %v", err)
+		}
+
+		older := evidence(t, ctx, exec, conversationID, batch.ID)
+		given(t, ctx, exec, older, conversationID, 1, `{"summary": "Saludó.", "objections_json": [], "extracted_data_json": {}}`)
+		if err := repo.AdoptContext(ctx, older); err != nil {
+			t.Fatalf("AdoptContext of an older version: %v", err)
+		}
+
+		var turnNumber int
+		var urgency int16
+		var summary, intent, budget, objections string
+		if err := exec.QueryRow(ctx, `
+			SELECT turn_number, summary, primary_intent, objections_json::text, urgency_level, budget_signal
+			FROM   conversation_contexts WHERE conversation_id = $1`, conversationID).
+			Scan(&turnNumber, &summary, &intent, &objections, &urgency, &budget); err != nil {
+			t.Fatalf("reading the current context: %v", err)
+		}
+		if turnNumber != 2 || summary != "Busca un 2 ambientes." || intent != "consulta_precio" || objections != `["el precio"]` ||
+			urgency != 2 || budget != "hasta 350000 ARS" {
+			t.Fatalf("current context = turn %d, %q, %q, %s, %d, %q — want the version of turn 2, untouched by turn 1",
+				turnNumber, summary, intent, objections, urgency, budget)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A first turn whose rewrite failed names no version, and there is nothing to make current (03-capa-prompts, Regla 3).
+func TestAdoptContextOfAGenerationWithNoVersionWritesNothing(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+
+		if err := repo.AdoptContext(ctx, evidence(t, ctx, exec, conversationID, batch.ID)); err != nil {
+			t.Fatalf("AdoptContext: %v", err)
+		}
+		var rows int
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM conversation_contexts WHERE conversation_id = $1`, conversationID).
+			Scan(&rows); err != nil || rows != 0 {
+			t.Fatalf("conversation_contexts rows = %d (%v), want none", rows, err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// The version the brain writes before the generation, and the pointer it gives that generation (ADR-0048).
+func given(t *testing.T, ctx context.Context, exec db.Executor, generationID, conversationID uuid.UUID, turnNumber int, content string) {
+	t.Helper()
+
+	versionID := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO conversation_context_versions (id, conversation_id, turn_number, content, rewritten_by_model, latency_ms)
+		VALUES ($1, $2, $3, $4::jsonb, 'double', 5)`, versionID, conversationID, turnNumber, content); err != nil {
+		t.Fatalf("insert context version: %v", err)
+	}
+	if _, err := exec.Exec(ctx, `UPDATE generations SET conversation_context_version_id = $2 WHERE id = $1`,
+		generationID, versionID); err != nil {
+		t.Fatalf("point the generation at its context: %v", err)
+	}
+}

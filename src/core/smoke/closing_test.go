@@ -70,7 +70,14 @@ func TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt(t *testing.T) {
 				(SELECT id FROM generations WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the generations", `DELETE FROM generations WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
 			{"the messages", `DELETE FROM messages WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
-			// Before the batches they hang from: F11 gave message_batches a second child, and children go first (ADR-0041, regla 12).
+			// Before the batches they hang from: F11 gave message_batches a second child and the pipeline of ADR-0016 gave it a
+			// third, and children go first (ADR-0041, regla 12). The trace is written by every turn and not only by a cut one, so
+			// leaving it out made this cleanup fail on the batches the moment the pipeline started writing.
+			{"the transfers", `DELETE FROM transfer_events WHERE conversation_id IN (` + conversations + `)`, []any{customer}},
+			{"the signal evaluations", `DELETE FROM signal_evaluations WHERE message_batch_id IN
+				(SELECT id FROM message_batches WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
+			{"the pipeline steps", `DELETE FROM pipeline_steps WHERE message_batch_id IN
+				(SELECT id FROM message_batches WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the detected intents", `DELETE FROM detected_intents WHERE message_batch_id IN
 				(SELECT id FROM message_batches WHERE conversation_id IN (` + conversations + `))`, []any{customer}},
 			{"the batches", `DELETE FROM message_batches WHERE conversation_id IN (` + conversations + `)`, []any{customer}},

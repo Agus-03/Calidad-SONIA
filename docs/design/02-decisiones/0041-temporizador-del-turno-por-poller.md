@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
-| **Fecha** | 2026-09-19 · §1, §3 y §4 enmendados 2026-09-20 al cerrar la fase (ver la nota al pie de §3) · regla 10 enmendada 2026-09-20 (cuatro variables → cinco) |
+| **Estado** | Aceptada · **regla 8 enmendada por [ADR-0046](0046-modo-sugerencia.md)**: abre bloque también el modo `suggestion`, porque sin bloque no hay turno del cual sugerir |
+| **Fecha** | 2026-09-19 · §1, §3 y §4 enmendados 2026-09-20 al cerrar la fase (ver la nota al pie de §3) · regla 10 enmendada 2026-09-20 (cuatro variables → cinco) · regla 8 enmendada 2026-09-26 (Fase 9) |
 | **Etapa** | Construcción — Fase 7 (turno con timer) |
 | **Resuelve** | Dónde vive el temporizador de F10, qué cierra un bloque y cuándo, qué pasa con los bloques abiertos al reiniciar —el pendiente que [ADR-0027](0027-nucleo-de-instancia-unica.md) dejó abierto— y qué parte de F11 entra en esta fase |
 | **Requisitos afectados** | F10 · F11 · OE3 · OE6 (la unidad de [ADR-0024](0024-unidad-y-alcance-de-oe6.md) es el bloque) |

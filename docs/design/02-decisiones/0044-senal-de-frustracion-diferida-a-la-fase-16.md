@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **el segundo párrafo de §2.1 (la frontera con `no_resolution`) es una propuesta, pendiente del grupo** |
+| **Estado** | Aceptada · **el segundo párrafo de §2.1 (la frontera con `no_resolution`) se cerró sin cambios por [ADR-0045](0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md)** §2.3: si la clienta se queja del AIAgent es `frustration`; si sólo no avanza, `no_resolution` |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 9 (contexto dinámico y transferencia). **Se decide acá y se construye en la Fase 16** |
 | **Resuelve** | Qué cuenta como `frustration` entre las cuatro señales de F12, con qué instrumento se detecta, y qué escribe el turno mientras ese instrumento no existe |

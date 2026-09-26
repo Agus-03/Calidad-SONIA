@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046)
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -423,14 +423,12 @@ GROUP  BY conversation_id;
 --   S3. OE7 es el único objetivo SIN FECHA propia. La población "conversaciones
 --       reales" se acota por la ventana de la Fase 4 (1/03 – 6/04/2027, Anexo D).
 --       Es un anclaje derivado, no textual: va declarado, no dado por obvio.
---   S4. EL MODO SUGERENCIA TAMBIÉN DESCALIFICA (corrección del Paso 8). Una
---       sugerencia ACEPTADA (F02) produce un mensaje con `sender_type =
---       'ai_agent'` que un humano revisó ANTES de que saliera: eso no es
---       resolución autónoma. El filtro de S1 no la ve, porque el mensaje no es
---       de operador, y sin este supuesto OE7 SE INFLA. La evidencia ya existía
---       en el modelo: `generations.reviewed_by_operator_id` sólo se llena
---       cuando alguien revisó, en cualquiera de los tres desenlaces de F02
---       (aceptada, editada o rechazada).
+--   S4. EL MODO SUGERENCIA TAMBIÉN DESCALIFICA (corrección del Paso 8). Desde
+--       ADR-0046 una sugerencia usada sale con `sender_type = 'operator'`, así
+--       que S1 ya la descalifica. S4 se conserva como red: una generación con
+--       `reviewed_by_operator_id` es evidencia directa de intervención humana,
+--       y se llena cuando la sugerencia se envió aceptada o editada. Una
+--       sugerencia ignorada queda en `pending_review` y no la llena.
 
 WITH resueltas AS (
     SELECT c.id, c.ai_agent_id
@@ -819,6 +817,7 @@ WITH consultas_del_dominio AS (        -- (b): unidad = bloque
     JOIN   message_batches mb ON mb.id = ps.message_batch_id
     WHERE  ps.step = 'triage'
       AND  ps.outcome = 'in_domain'    -- (a): veredicto previo a recuperar
+      AND  ps.detail_json->>'mode' IS DISTINCT FROM 'suggestion'   -- ADR-0046: el alcance es el modo autónomo
       AND  mb.closed_at >= :desde AND mb.closed_at < :hasta
 ),
 escaladas AS (                          -- (c): SUPUESTO — cualquier transferencia

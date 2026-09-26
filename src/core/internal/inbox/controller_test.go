@@ -727,6 +727,126 @@ func TestTheModeHandlerRefusesWithoutAnActor(t *testing.T) {
 	}
 }
 
+func patchStarred(engine http.Handler, conversationID, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/conversations/"+conversationID+"/starred", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestEveryRoleStarsWhatItReads walks the route with the three roles, because a wrong Roles list compiles: F25 names no role, and
+// an operator refused here could not mark its own follow-ups (ADR-0035, regla 2).
+func TestEveryRoleStarsWhatItReads(t *testing.T) {
+	for _, role := range enums.OperatorRoleValues {
+		t.Run(string(role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(&testOperator)
+
+			rec := patchStarred(mountDesk(role, d), target.ConversationID.String(), `{"starred":true}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("PATCH as %s: got %d, want 200 - body %s", role, rec.Code, rec.Body)
+			}
+			if !strings.Contains(rec.Body.String(), `"starred":true`) || !d.aggregate.starred[target.ConversationID] {
+				t.Fatalf("want the star written and answered - body %s", rec.Body)
+			}
+		})
+	}
+}
+
+// TestEachStarRefusalHasItsOwnCode is what the frontend switches on when the star does not move. False is a value and not an
+// absence: clearing the star must never be read as a body without one.
+func TestEachStarRefusalHasItsOwnCode(t *testing.T) {
+	onePooled := func(d *desk) string { return d.open(nil).ConversationID.String() }
+
+	for _, tc := range []struct {
+		name     string
+		role     enums.OperatorRole
+		shape    func(*desk) string
+		body     string
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", enums.OperatorRoleAdmin, func(*desk) string { return "no-es-un-id" }, `{"starred":true}`, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the body has no starred", enums.OperatorRoleAdmin, onePooled, `{}`, http.StatusBadRequest, "invalid_body"},
+		{"starred is not a bool", enums.OperatorRoleAdmin, onePooled, `{"starred":"si"}`, http.StatusBadRequest, "invalid_body"},
+		{"the conversation does not exist", enums.OperatorRoleAdmin, func(*desk) string { return id.New().String() }, `{"starred":true}`, http.StatusNotFound, "conversation_not_found"},
+		{"another's conversation does not exist for an operator", enums.OperatorRoleOperator, func(d *desk) string {
+			return d.open(&otherOperator).ConversationID.String()
+		}, `{"starred":true}`, http.StatusNotFound, "conversation_not_found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			conversationID := tc.shape(d)
+
+			rec := patchStarred(mountDesk(tc.role, d), conversationID, tc.body)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+			if len(d.aggregate.starred) != 0 {
+				t.Fatal("a refused star was still written")
+			}
+		})
+	}
+
+	t.Run("false clears the star and is not read as missing", func(t *testing.T) {
+		d := newDesk(&stubStore{})
+		target := d.open(nil)
+		target.Starred = true
+		d.store.targets[target.ConversationID] = target
+
+		rec := patchStarred(mountDesk(enums.OperatorRoleAdmin, d), target.ConversationID.String(), `{"starred":false}`)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"starred":false`) {
+			t.Fatalf("got %d - body %s, want 200 with the star cleared", rec.Code, rec.Body)
+		}
+		if got, written := d.aggregate.starred[target.ConversationID]; !written || got {
+			t.Fatalf("written = %v with %v, want false written", written, got)
+		}
+	})
+}
+
+// TestTheStarIsVisibleWithoutOpeningTheConversation is F25 read through the listing: filterable in the inbox starts by being on its row.
+func TestTheStarIsVisibleWithoutOpeningTheConversation(t *testing.T) {
+	store := &stubStore{rows: []Summary{
+		{ID: id.New(), Starred: true, LastActivityAt: time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)},
+		{ID: id.New(), LastActivityAt: time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)},
+	}}
+
+	rec := get(mountDesk(enums.OperatorRoleAdmin, newDesk(store)), url.Values{})
+	var page struct {
+		Items []struct {
+			Starred *bool `json:"starred"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Items) != 2 {
+		t.Fatalf("the inbox is not a page of two: %v - body %s", err, rec.Body)
+	}
+	for i, want := range []bool{true, false} {
+		if page.Items[i].Starred == nil || *page.Items[i].Starred != want {
+			t.Fatalf("row %d starred = %v, want %v present - body %s", i, page.Items[i].Starred, want, rec.Body)
+		}
+	}
+}
+
+// TestTheStarHandlerRefusesWithoutAnActor guards the wiring the same way the other handlers do.
+func TestTheStarHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPatch, "/conversations/x/starred", strings.NewReader(`{"starred":true}`))
+
+	NewController(newDesk(&stubStore{}).service, nil).setStarred(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
 func getSuggestion(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/suggestion", nil)
 	req.Header.Set("Authorization", "Bearer cualquier-cosa")

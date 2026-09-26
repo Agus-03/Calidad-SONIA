@@ -40,6 +40,7 @@ type store interface {
 	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
+	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
@@ -197,6 +198,12 @@ func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUI
 // loss of the agent, or it could never be turned back on (F27, ADR-0035 regla 12). Which modes a caller may ask for is the caller's rule.
 func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
 	return s.repo.SetMode(ctx, conversationID, mode)
+}
+
+// SetStarred is how the inbox marks a conversation for follow-up: the flag is this aggregate's column (F25, regla 1). Who may star
+// which conversation is the caller's rule.
+func (s *Service) SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error {
+	return s.repo.SetStarred(ctx, conversationID, starred)
 }
 
 // TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),

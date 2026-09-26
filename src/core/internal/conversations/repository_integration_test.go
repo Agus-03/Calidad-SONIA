@@ -517,6 +517,68 @@ func TestTheBotIsTurnedOffWithoutLosingItsAIAgent(t *testing.T) {
 	}
 }
 
+// TestAStarMarksTheConversationWithoutMovingItInTheInbox is F25 against real DDL: the flag goes on and off, and last_activity_at stays
+// where the channel left it, because the inbox and every cursor in circulation are ordered by it (ADR-0036).
+func TestAStarMarksTheConversationWithoutMovingItInTheInbox(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, _ := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		read := func(conversationID uuid.UUID) (bool, time.Time) {
+			t.Helper()
+			var starred bool
+			var activity time.Time
+			if err := exec.QueryRow(ctx, `SELECT starred, last_activity_at FROM conversations WHERE id = $1`, conversationID).
+				Scan(&starred, &activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+			return starred, activity
+		}
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, nil, false, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		starred, before := read(conversation.ID)
+		if starred {
+			t.Fatal("a conversation is born starred")
+		}
+
+		for _, want := range []bool{true, false} {
+			if err := service.SetStarred(ctx, conversation.ID, want); err != nil {
+				t.Fatalf("SetStarred %v: %v", want, err)
+			}
+			starred, activity := read(conversation.ID)
+			if starred != want {
+				t.Fatalf("after SetStarred %v the column says %v", want, starred)
+			}
+			if !activity.Equal(before) {
+				t.Fatalf("the star moved last_activity_at from %v to %v", before, activity)
+			}
+		}
+
+		if err := service.SetStarred(ctx, id.New(), true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("starring a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		// A conversation deleted logically is one that does not exist (C09).
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET deleted_at = now() WHERE id = $1`, conversation.ID); err != nil {
+			t.Fatalf("delete the conversation: %v", err)
+		}
+		if err := service.SetStarred(ctx, conversation.ID, true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("starring a deleted conversation: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
 
 // Where a turn that produced no answer leaves the conversation (07-secuencia secciones 4 y 5). Against real DDL because the value
 // has to pass the CHECK of ConversationStatus: a status the schema refuses would only show up on the first blocked turn.

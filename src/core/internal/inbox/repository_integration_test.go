@@ -553,6 +553,65 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 	})
 }
 
+// TestAStarIsSharedAndLeavesTheInboxInPlace is F25 end to end against real DDL: the operator stars a conversation of the pool, the
+// supervisor sees the same star on the listing, and the order of the inbox does not move, so no cursor in circulation shifts (ADR-0036).
+func TestAStarIsSharedAndLeavesTheInboxInPlace(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		service := sendingDesk(exec, &stubSender{})
+		operator := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		supervisor := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleSupervisor}
+		head := []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv}
+
+		starredOf := func() map[uuid.UUID]bool {
+			t.Helper()
+			rows, err := NewRepository(exec).List(ctx, supervisor, nil, len(head))
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if got := idsOf(rows); !sameIDs(got, head) {
+				t.Fatalf("the head of the inbox is %v, want %v in the same order as before the star", got, head)
+			}
+			out := map[uuid.UUID]bool{}
+			for _, r := range rows {
+				out[r.ID] = r.Starred
+			}
+			return out
+		}
+
+		if starredOf()[w.pooledConv] {
+			t.Fatal("the pooled conversation is starred before anyone starred it")
+		}
+		if got, err := service.SetStarred(ctx, operator, w.pooledConv, true); err != nil || !got {
+			t.Fatalf("the operator starring the pool: got %v, %v", got, err)
+		}
+		if starred := starredOf(); !starred[w.pooledConv] || starred[w.mineConv] || starred[w.theirsConv] {
+			t.Fatalf("after one star the listing says %v, want only the pooled conversation starred", starred)
+		}
+
+		// Another's conversation stays out of reach for the operator, and nothing is written.
+		if _, err := service.SetStarred(ctx, operator, w.theirsConv, true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("the operator starring another's conversation: got %v, want ErrNotFound", err)
+		}
+
+		if got, err := service.SetStarred(ctx, supervisor, w.pooledConv, false); err != nil || got {
+			t.Fatalf("the supervisor clearing the star: got %v, %v", got, err)
+		}
+		if starred := starredOf(); starred[w.pooledConv] || starred[w.theirsConv] {
+			t.Fatalf("after clearing the listing says %v, want nothing starred", starred)
+		}
+
+		// Starring never takes the pool (ADR-0035, regla 13).
+		var holder *uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT operator_id FROM conversations WHERE id = $1`, w.pooledConv).Scan(&holder); err != nil {
+			t.Fatalf("read the holder: %v", err)
+		}
+		if holder != nil {
+			t.Fatalf("a star took the pool for %v", *holder)
+		}
+	})
+}
+
 // TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock (ADR-0036, regla 2), the
 // failed answer in its place with its code and its author, the hidden message left out, and the reach of the listing applied to one
 // conversation (ADR-0035, regla 2).

@@ -286,3 +286,21 @@ func (r *Repository) SetMode(ctx context.Context, conversationID uuid.UUID, mode
 	}
 	return ErrNoAIAgent
 }
+
+// last_activity_at is left alone on purpose: the inbox is ordered by it, and a star that moved the conversation up would shift the
+// pages of every cursor in circulation for something the customer did not do (ADR-0036).
+const conversationSetStarred = `
+UPDATE conversations
+SET    starred = $2, updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL`
+
+func (r *Repository) SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error {
+	tag, err := r.exec.Exec(ctx, conversationSetStarred, conversationID, starred)
+	if err != nil {
+		return fmt.Errorf("conversations: set starred: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

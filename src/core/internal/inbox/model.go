@@ -32,6 +32,9 @@ type Summary struct {
 	AIAgentID *uuid.UUID
 	Contact   Contact
 
+	// One flag per conversation and not per Operator, as the schema has it: whoever starred it, everyone who reaches it sees it (F25).
+	Starred bool
+
 	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
 	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
 	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.
@@ -118,6 +121,7 @@ type Target struct {
 	Mode            enums.AgentMode
 	// False when the agent is paused or removed, or there is none: turning the bot on then names one that cannot answer (ADR-0038).
 	AIAgentAvailable bool
+	Starred          bool
 }
 
 // Assignment is one row of conversation_assignments: immutable, because F26 asks for the history and a row that changes is not one.

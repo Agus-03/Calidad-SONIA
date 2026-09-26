@@ -544,6 +544,83 @@ func TestTheModeReportsWhatTheAggregateSaid(t *testing.T) {
 	}
 }
 
+// TestTheStarHasTheReachOfTheThread is F25 as a table: whoever reads the conversation stars it, whatever its status, what the caller
+// cannot read does not exist, and nothing is written for a star it already has (ADR-0035, reglas 2 y 3).
+func TestTheStarHasTheReachOfTheThread(t *testing.T) {
+	me, other := id.New(), id.New()
+
+	for _, tc := range []struct {
+		name      string
+		holder    *uuid.UUID
+		role      enums.OperatorRole
+		shape     func(*Target)
+		starred   bool
+		wantErr   error
+		wantWrite bool
+	}{
+		{"an operator stars its own conversation", &me, enums.OperatorRoleOperator, func(*Target) {}, true, nil, true},
+		{"an operator stars one of the pool, which it reads", nil, enums.OperatorRoleOperator, func(*Target) {}, true, nil, true},
+		{"another's conversation does not exist for an operator", &other, enums.OperatorRoleOperator, func(*Target) {}, true, ErrNotFound, false},
+		{"a supervisor stars any conversation of the team", &other, enums.OperatorRoleSupervisor, func(*Target) {}, true, nil, true},
+		{"a resolved conversation is starred for its follow-up", &me, enums.OperatorRoleOperator,
+			func(t *Target) { t.Status = enums.ConversationStatusResolved }, true, nil, true},
+		{"the star is cleared", &me, enums.OperatorRoleOperator, func(t *Target) { t.Starred = true }, false, nil, true},
+		{"asking for the star it already has writes nothing", &me, enums.OperatorRoleOperator,
+			func(t *Target) { t.Starred = true }, true, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(tc.holder)
+			tc.shape(&target)
+			d.store.targets[target.ConversationID] = target
+
+			got, err := d.service.SetStarred(context.Background(), scopeOf(me, tc.role), target.ConversationID, tc.starred)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("SetStarred: got %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && got != tc.starred {
+				t.Fatalf("answered starred %v, want %v", got, tc.starred)
+			}
+			if _, written := d.aggregate.starred[target.ConversationID]; written != tc.wantWrite {
+				t.Fatalf("written = %v, want %v", written, tc.wantWrite)
+			}
+			// A star is not an answer, so it never takes the pool (ADR-0035, regla 13).
+			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 {
+				t.Fatal("starring assigned the conversation")
+			}
+		})
+	}
+}
+
+// TestTheStarReportsWhatTheAggregateSaid covers the row gone between the read and the write, and a database that did not answer.
+func TestTheStarReportsWhatTheAggregateSaid(t *testing.T) {
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{"the row was gone", conversations.ErrNotFound, ErrNotFound},
+		{"the database did not answer", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			d.aggregate.setStarredErr = tc.err
+			target := d.open(nil)
+
+			if _, err := d.service.SetStarred(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID, true); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("SetStarred: got %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	d := newDesk(&stubStore{})
+	if _, err := d.service.SetStarred(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New(), true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetStarred on a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}
+
 // ADR-0046, section 2.5: the text copied from a suggestion is sent as the Operator's, and the draft is reviewed with the message in
 // the same transaction, as accepted when it left untouched.
 func TestASentSuggestionIsReviewedWithTheMessage(t *testing.T) {

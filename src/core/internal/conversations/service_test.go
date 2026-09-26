@@ -34,6 +34,15 @@ type fakeStore struct {
 	claimErr    error
 	claimedBy   map[uuid.UUID]uuid.UUID
 	modes       map[uuid.UUID]enums.AgentMode
+	starred     map[uuid.UUID]bool
+}
+
+func (f *fakeStore) SetStarred(_ context.Context, conversationID uuid.UUID, starred bool) error {
+	if f.starred == nil {
+		f.starred = map[uuid.UUID]bool{}
+	}
+	f.starred[conversationID] = starred
+	return nil
 }
 
 func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
@@ -419,6 +428,19 @@ func TestSetModeReachesTheStore(t *testing.T) {
 	}
 	if store.modes[conversation] != enums.AgentModeOff {
 		t.Fatalf("the mode did not reach the store: %v", store.modes)
+	}
+}
+
+// TestSetStarredReachesTheStore is the passthrough F25 needs: the inbox never writes the starred column with SQL of its own (regla 1).
+func TestSetStarredReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).SetStarred(context.Background(), conversation, true); err != nil {
+		t.Fatalf("SetStarred: %v", err)
+	}
+	if got, ok := store.starred[conversation]; !ok || !got {
+		t.Fatalf("the star did not reach the store: %v", store.starred)
 	}
 }
 

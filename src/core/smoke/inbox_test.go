@@ -95,6 +95,67 @@ func TestAnOperatorTakesThePoolByAnsweringThroughTheRealProcess(t *testing.T) {
 	}
 }
 
+// TestAStarIsSharedThroughTheRealProcess walks F25 the way the inbox would: one operator stars a conversation of the pool, the other
+// sees the same star on its listing, clearing it clears it for both, and the row keeps its place because a star is not activity
+// (ADR-0036). It fails if the route is not plugged into the process or the listing stops carrying the flag.
+func TestAStarIsSharedThroughTheRealProcess(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	d := buildDesk(ctx, t, pool)
+	first := login(t, core, d.first, walkerPassword)
+	second := login(t, core, d.second, walkerPassword)
+	conversation := d.conversation.String()
+	path := "/api/v1/conversations/" + conversation + "/starred"
+
+	_, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", second, "")
+	starred, activity := starOf(t, body, conversation)
+	if starred {
+		t.Fatalf("the conversation is starred before anyone starred it - %s", body)
+	}
+
+	status, body := call(t, core, http.MethodPatch, path, first, `{"starred":true}`)
+	if status != http.StatusOK {
+		t.Fatalf("starring a conversation of the pool: got %d, want 200 - %s", status, body)
+	}
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", second, "")
+	if got, moved := starOf(t, body, conversation); !got || moved != activity {
+		t.Fatalf("the other operator sees starred %v with activity %q, want true and %q unchanged - %s", got, moved, activity, body)
+	}
+
+	if status, body := call(t, core, http.MethodPatch, path, second, `{"starred":false}`); status != http.StatusOK {
+		t.Fatalf("clearing the star: got %d, want 200 - %s", status, body)
+	}
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", first, "")
+	if got, _ := starOf(t, body, conversation); got {
+		t.Fatalf("the star cleared by one operator is still there for the other - %s", body)
+	}
+}
+
+// starOf reads the star and the last activity of one conversation of an inbox page, and fails when the conversation is not on it.
+func starOf(t *testing.T, body, conversationID string) (bool, string) {
+	t.Helper()
+
+	var page struct {
+		Items []struct {
+			ID             string `json:"id"`
+			Starred        bool   `json:"starred"`
+			LastActivityAt string `json:"last_activity_at"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &page); err != nil {
+		t.Fatalf("the inbox is not json: %v - %s", err, body)
+	}
+	for _, one := range page.Items {
+		if one.ID == conversationID {
+			return one.Starred, one.LastActivityAt
+		}
+	}
+	t.Fatalf("the conversation %s is not on the inbox page - %s", conversationID, body)
+	return false, ""
+}
+
 type drawnMessage struct {
 	SenderType       string
 	Status           string

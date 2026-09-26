@@ -92,6 +92,7 @@ type Aggregate interface {
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
+	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -333,6 +334,33 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	default:
 		return "", err
 	}
+}
+
+// SetStarred marks one conversation for follow-up or clears the mark (F25). The reach is the thread's: whoever can read the
+// conversation can star it, because F25 names no role and the star is a mark on what the caller already sees (ADR-0035, regla 2).
+//
+// A resolved conversation is starred too: a follow-up is what comes after the work, not part of it. And starring never assigns,
+// for the same reason turning the bot off does not (ADR-0035, regla 13).
+func (s *Service) SetStarred(ctx context.Context, scope Scope, conversationID uuid.UUID, starred bool) (bool, error) {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return false, err
+	}
+	if !mayRead(scope, target) {
+		return false, ErrNotFound
+	}
+	// The same as the mode: asking for the state it already has is answered and not written twice.
+	if target.Starred == starred {
+		return starred, nil
+	}
+
+	if err := s.opts.Aggregate.SetStarred(ctx, conversationID, starred); err != nil {
+		if errors.Is(err, conversations.ErrNotFound) {
+			return false, ErrNotFound
+		}
+		return false, err
+	}
+	return starred, nil
 }
 
 // maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of

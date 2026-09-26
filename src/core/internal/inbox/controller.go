@@ -46,6 +46,7 @@ type summaryResponse struct {
 	AIAgentID *string `json:"ai_agent_id"`
 	// False when there is no agent or it is paused or removed: the panel greys the switch out instead of trying it (ADR-0038).
 	AIAgentAvailable bool              `json:"ai_agent_available"`
+	Starred          bool              `json:"starred"`
 	Contact          contactResponse   `json:"contact"`
 	Operator         *operatorResponse `json:"operator"`
 	LastMessage      *messageResponse  `json:"last_message"`
@@ -89,6 +90,7 @@ func present(s Summary) summaryResponse {
 			ID: s.Contact.ID.String(), Name: s.Contact.Name, Lastname: s.Contact.Lastname, PhoneWhatsapp: s.Contact.PhoneWhatsapp,
 		},
 		AIAgentAvailable: s.AIAgentAvailable,
+		Starred:          s.Starred,
 		FailedCount:      s.FailedCount,
 		LastFailedAt:     rfc3339(s.LastFailedAt),
 		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
@@ -340,6 +342,42 @@ func (c *Controller) setMode(gc *gin.Context) {
 		return
 	}
 	soniahttp.OK(gc, modeResponse{ID: conversationID.String(), Mode: string(mode)})
+}
+
+// A pointer so false is a value and not an absence: the binding refuses a zero bool as missing (F25).
+type starredRequest struct {
+	Starred *bool `json:"starred" binding:"required"`
+}
+
+type starredResponse struct {
+	ID      string `json:"id"`
+	Starred bool   `json:"starred"`
+}
+
+// setStarred answers the state the conversation ends with, which is also what a request for the state it already had gets back.
+func (c *Controller) setStarred(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req starredRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "starred is required, true or false").WithCause(err))
+		return
+	}
+
+	starred, err := c.service.SetStarred(gc.Request.Context(), scope, conversationID, *req.Starred)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.OK(gc, starredResponse{ID: conversationID.String(), Starred: starred})
 }
 
 // translate turns what the package knows into what the frontend switches on, and lets anything else fall through as a 500.

@@ -8,7 +8,7 @@
 | **Resuelve** | Qué paquete escribe `conversation_contexts` y `conversation_context_versions` —las dos filas que [struct.md](../../struct.md) §2.4 dejaba sin dueño—, qué produce el reescritor de F04 y qué no, en qué turnos corre, qué pasa cuando falla, y dónde queda la evidencia de un cambio de intención ([ADR-0023](0023-definicion-de-cambio-de-intencion.md)) |
 | **Requisitos afectados** | F04 · F11 · OE2 · OE4 |
 | **Naturaleza** | F04 dice *"El motor actualiza el contexto dinámico en cada turno: inyecta objeciones, intención y datos detectados del cliente"*. **No dice quién lo guarda, con qué se reescribe ni qué pasa si falla**, y los documentos de diseño se contradecían en el primer punto (§1). Todo lo de §2 es decisión del equipo |
-| **Enmienda** | [08-structure-rules.md](../08-structure-rules.md), **regla 3** — `conversation_context_versions` entra en la lista de tablas de evidencia que el cerebro puede escribir · [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§0** — `conversation_contexts` pasa de la lista del cerebro a la del núcleo; **el diagrama de §2**, **el diagrama de §3** y **§4 B.2, paso 5** — el núcleo copia la versión a `conversation_contexts` en la transacción que cierra el turno · [03-capa-prompts.md](../03-capa-prompts.md), **Regla 3, tercer punto** — la reescritura que falla **no se reintenta dentro del turno** |
+| **Enmienda** | [08-structure-rules.md](../08-structure-rules.md), **regla 3** — `conversation_context_versions` entra en la lista de tablas de evidencia que el cerebro puede escribir · [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§0** — `conversation_contexts` pasa de la lista del cerebro a la del núcleo; **el diagrama de §2**, **el diagrama de §3** y **§4 B.2, paso 5** — el núcleo copia la versión a `conversation_contexts` en la transacción que cierra el turno · [03-capa-prompts.md](../03-capa-prompts.md), **Regla 3, tercer punto** — la reescritura que falla **no se reintenta dentro del turno** · [DER/entidades.md](../DER/entidades.md), **`conversation_contexts.extracted_data_json`** — queda sin uso (§2.2) |
 | **Relacionada con** | [ADR-0006](0006-anonimizacion-de-pii.md), [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md), [ADR-0020](0020-idempotencia-de-los-mensajes-salientes.md), [ADR-0023](0023-definicion-de-cambio-de-intencion.md), [ADR-0041](0041-temporizador-del-turno-por-poller.md), [ADR-0045](0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md), [ADR-0046](0046-modo-sugerencia.md), [ADR-0047](0047-extraccion-de-datos-del-contacto.md), [DER/entidades.md](../DER/entidades.md) |
 
 ---
@@ -43,7 +43,7 @@ Quedaban abiertas también cuatro cosas que F04 no dice: qué columnas llena un 
 | `urgency_level` | El reescritor, en una escala de **1 a 3** (sin apuro, pronto, ya). Fuera de la escala, `NULL` |
 | `budget_signal` | El reescritor, en texto libre y corto; `NULL` si la clienta no dijo nada |
 | `primary_intent` | **No es del modelo.** Es la etiqueta de mayor `confidence` en los `detected_intents` del bloque, que es como la define [DER/entidades.md](../DER/entidades.md); ante un empate, la que se dijo primero. Si F11 no leyó nada, queda la anterior |
-| `extracted_data_json` | **No es del reescritor.** Se arrastra sin cambios; hoy está vacío (§4) |
+| `extracted_data_json` | **Sin uso.** Los datos del contacto van a `contact_attributes` ([ADR-0047](0047-extraccion-de-datos-del-contacto.md)) y lo comercial a las columnas de arriba, así que no queda nada que F04 ponga acá. Queda siempre en `{}`, y el DER lo anota |
 
 **`intent_changed`** es la lectura del sistema sobre [ADR-0023](0023-definicion-de-cambio-de-intencion.md): el reescritor dice si el bloque deja sin valor el contexto anterior, y **cuando lo dice escribe el resumen y las objeciones de cero**. Queda sólo en la versión, que es donde OE4 lo compara contra las anotaciones.
 
@@ -89,7 +89,7 @@ El reescritor recibe el contexto anterior y el texto del bloque **ya redactado**
 
 ### Negativas / costos asumidos
 
-- **Una llamada más al proveedor por turno generado**, con su costo. No queda en `generations.cost`, que es de la respuesta: el costo de reescribir **no se registra en ninguna parte**.
+- **Una llamada más al proveedor por turno generado**, con su costo. No queda en `generations.cost`, que es de la respuesta: el costo de reescribir **no se registra en ninguna parte**, y el costo por turno que lea `generations` da de menos. Queda como pendiente en el [índice](README.md).
 - **El SQL del núcleo depende de los nombres de las claves que escribe el cerebro.** Si `rules/rewriter.yaml` o el código cambian una clave, la copia deja la columna en `NULL` **sin fallar**. Lo cubre un test de integración, no el tipo.
 - **Es la segunda enmienda a la regla 3** en la misma fase, después de la que dejó en el núcleo `contact_attributes`. La lista de evidencia crece.
 - **Un turno transferido no actualiza el contexto.** El Operator que recibe la conversación ve el contexto del último bloque que se respondió, no el del pedido de una persona.
@@ -97,7 +97,7 @@ El reescritor recibe el contexto anterior y el texto del bloque **ya redactado**
 - **Sin reintento, un tropiezo del proveedor deja el turno con el contexto anterior.** Es el costo que la Regla 3 ya asumía para cuando se agotaran los reintentos, y ahora se paga en la primera falla.
 - **Un reintento del núcleo sobre un 5xx ([ADR-0020](0020-idempotencia-de-los-mensajes-salientes.md)) deja dos versiones del mismo turno**, porque las versiones no se borran. Se toma la más nueva.
 - **La escala de urgencia de 1 a 3 es una lectura del equipo.** El anteproyecto nombra la columna y ninguna escala.
-- **`extracted_data_json` queda vacío.** ADR-0047 mandó los datos del contacto a `contact_attributes` y lo comercial a las otras columnas de este contexto, así que hoy F04 no tiene nada que poner ahí. La columna existe y no se llena.
+- **`extracted_data_json` queda sin uso.** El DER la atribuye a los *"datos detectados del cliente"* de F04, pero ADR-0047 los mandó a `contact_attributes`. Es una columna del esquema que nunca se llena; sacarla es una migración que no cambia nada de F04.
 - **`primary_intent` se apoya en una `confidence` que el propio modelo declara**, sin calibrar.
 
 ## 5. Alternativas descartadas

@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) · revisado 2026-09-25 (Fase 8 — la nota de `pipeline_steps.version` se lee en plural para la corrida de salida de `blocklist`: [ADR-0042](../02-decisiones/0042-pipeline-de-decision-del-turno.md)) · revisado 2026-09-26 (Fase 9 — `generations.reasoning_json` queda sin uso: la evidencia de F05 es `generation_components`, [ADR-0049](../02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md)) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) · revisado 2026-09-25 (Fase 8 — la nota de `pipeline_steps.version` se lee en plural para la corrida de salida de `blocklist`: [ADR-0042](../02-decisiones/0042-pipeline-de-decision-del-turno.md)) · revisado 2026-09-26 (Fase 9 — `generations.reasoning_json` queda sin uso: la evidencia de F05 es `generation_components`, [ADR-0049](../02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md)) · revisado 2026-09-26 (Fase 9 — `conversation_contexts.extracted_data_json` queda sin uso: los datos del contacto van a `contact_attributes` y lo comercial a las otras columnas del contexto, [ADR-0048](../02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 
@@ -322,7 +322,7 @@ Estado **actual** del contexto dinámico. Una fila por conversación.
 | `objections_json` | jsonb | F04: *"objeciones"* |
 | `urgency_level` | smallint | Nullable |
 | `budget_signal` | varchar | Nullable |
-| `extracted_data_json` | jsonb | F04: *"datos detectados del cliente"* |
+| `extracted_data_json` | jsonb | F04: *"datos detectados del cliente"* · **Sin uso** desde [ADR-0048](../02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md): los datos del contacto van a `contact_attributes` ([ADR-0047](../02-decisiones/0047-extraccion-de-datos-del-contacto.md)) y lo comercial a las columnas de arriba. Queda siempre en `{}` |
 | `created_at` | timestamptz | C06 — toda tabla lo lleva. Cuándo se creó el contexto, es decir **cuándo se procesó el primer bloque** de la conversación |
 | `updated_at` | timestamptz | Última reescritura |
 

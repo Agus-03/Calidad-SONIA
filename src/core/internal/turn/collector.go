@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
 // Twice and not more: the only way to lose the unique index is to another delivery opening the batch, and the attempt that
@@ -71,9 +69,9 @@ func (c *Collector) collect(ctx context.Context, conversationID, messageID uuid.
 		if err != nil {
 			return err
 		}
-		// The same gate that answers today, read here and not trusted from the webhook: a pause committed since must win
-		// (ADR-0038, regla 2). It is read again when the batch closes, because the window leaves up to a minute in between.
-		if target.Mode != enums.AgentModeAutonomous || !target.AIAgentAvailable {
+		// The same gate that answers, read here and not trusted from the webhook: a pause committed since must win (ADR-0038,
+		// regla 2). It is read again when the batch closes, because the window leaves up to a minute in between.
+		if !answers(target.Mode) || !target.AIAgentAvailable {
 			c.log.Info("message not batched",
 				slog.String("conversation_id", conversationID.String()),
 				slog.String("mode", string(target.Mode)),

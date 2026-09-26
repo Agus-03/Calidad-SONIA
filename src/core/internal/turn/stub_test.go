@@ -149,7 +149,19 @@ type stubAggregate struct {
 	notices  []string
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
+	modes    map[uuid.UUID]enums.AgentMode
 	steps    *[]string
+}
+
+func (a *stubAggregate) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	a.record("conversation_mode")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.modes == nil {
+		a.modes = map[uuid.UUID]enums.AgentMode{}
+	}
+	a.modes[conversationID] = mode
+	return nil
 }
 
 func (a *stubAggregate) LinkToBatch(_ context.Context, messageID, batchID uuid.UUID) error {

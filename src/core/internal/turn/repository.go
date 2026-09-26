@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
@@ -208,4 +209,30 @@ func (r *Repository) LinkGeneration(ctx context.Context, generationID, messageID
 		return ErrGenerationNotFound
 	}
 	return nil
+}
+
+// A draft the Operator sent, reviewed by the same statement that links it: accepted when the text left as it was proposed, edited
+// when not (ADR-0046, section 2.5). The predicate makes an id of another conversation, or one already used, a refusal and not a
+// second review. The three values travel as parameters, so a rename in enums.yaml cannot write a status nothing reads (C07).
+const generationReview = `
+UPDATE generations
+SET    message_id = $3, reviewed_by_operator_id = $4, reviewed_at = now(),
+       status = CASE WHEN btrim(completion_text) = $5 THEN $6 ELSE $7 END
+WHERE  id = $1 AND conversation_id = $2 AND status = $8 AND message_id IS NULL
+RETURNING status`
+
+// ReviewGeneration answers ErrGenerationNotFound when the draft is not a pending one of this conversation.
+func (r *Repository) ReviewGeneration(
+	ctx context.Context, generationID, conversationID, messageID, operatorID uuid.UUID, text string,
+) (enums.GenerationStatus, error) {
+	var status enums.GenerationStatus
+	err := r.exec.QueryRow(ctx, generationReview, generationID, conversationID, messageID, operatorID, text,
+		enums.GenerationStatusAccepted, enums.GenerationStatusEdited, enums.GenerationStatusPendingReview).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrGenerationNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("turn: review generation: %w", err)
+	}
+	return status, nil
 }

@@ -72,8 +72,6 @@ func TestAGateThatClosedWhileTheBatchWaitedEndsTheTurnAsProcessed(t *testing.T) 
 		name  string
 		close func(*Target)
 	}{
-		{"the admin moved the conversation to suggestion, which is Fase 9",
-			func(tg *Target) { tg.Mode = enums.AgentModeSuggestion }},
 		{"the admin turned the conversation off", func(tg *Target) { tg.Mode = enums.AgentModeOff }},
 		{"the admin paused or removed the agent", func(tg *Target) { tg.AIAgentAvailable = false }},
 		{"the admin took the agent away from the conversation", func(tg *Target) { tg.AIAgentID = nil }},
@@ -453,8 +451,9 @@ func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing
 
 	h.turn()
 
-	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c).
-	want := []string{"transfer_event", "conversation_waiting", "processed_at"}
+	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c). And the bot of
+	// this conversation goes off with the event, so the AIAgent does not answer the next message (ADR-0045, section 2.7).
+	want := []string{"transfer_event", "conversation_mode", "conversation_waiting", "processed_at"}
 	if got := *h.steps; !slices.Equal(got, want) {
 		t.Fatalf("the writes of a cut that delegates were %v, want %v", got, want)
 	}
@@ -467,6 +466,9 @@ func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing
 	}
 	if event.ConversationID != h.store.target.ConversationID || event.TurnNumber != h.store.batch.TurnNumber {
 		t.Fatalf("the event named %+v, want the conversation and the turn of this batch", event)
+	}
+	if got := h.aggregate.modes[h.store.target.ConversationID]; got != enums.AgentModeOff {
+		t.Fatalf("mode after the transfer = %q, want off: the AIAgent would answer a conversation handed to a person", got)
 	}
 }
 
@@ -519,5 +521,49 @@ func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {
 	}
 	if len(h.store.processed) != 0 {
 		t.Fatal("processed_at was recorded for a transaction that did not commit")
+	}
+}
+
+// ADR-0046, section 2.2: in suggestion mode the brain is asked, the draft stays pending_review, and nothing is written as a message
+// or sent. processed_at is the only write, so a restart does not ask for the same suggestion twice.
+func TestASuggestionIsNeitherWrittenAsAMessageNorSent(t *testing.T) {
+	h := conductor()
+	h.store.target.Mode = enums.AgentModeSuggestion
+
+	h.turn()
+
+	if h.brain.calls != 1 || h.brain.requests[0].Mode != enums.AgentModeSuggestion {
+		t.Fatalf("the brain was called %d times, want once and told the mode is suggestion", h.brain.calls)
+	}
+	if h.sender.calls != 0 || len(h.aggregate.outbound) != 0 {
+		t.Fatalf("a suggestion reached the customer: %d sends, %v written", h.sender.calls, h.aggregate.outbound)
+	}
+	if got := *h.steps; !slices.Equal(got, []string{"processed_at"}) {
+		t.Fatalf("the writes of a suggested turn were %v, want only processed_at", got)
+	}
+}
+
+// ADR-0046, sections 2.3 and 2.7: a cut in suggestion mode tells the customer nothing and transfers nothing, because a person
+// already holds the conversation and nothing leaves without one.
+func TestACutInSuggestionModeSendsNoTextAndTransfersNothing(t *testing.T) {
+	notice := "No podemos procesar ese mensaje."
+	h := conductor()
+	h.store.target.Mode = enums.AgentModeSuggestion
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:    brainclient.OutcomeBlocked,
+		NoticeText: &notice,
+		Transfer:   &brainclient.TransferProposal{Proposed: true, SignalEvaluationID: uuid.New()},
+	}
+
+	h.turn()
+
+	if h.sender.calls != 0 || len(h.aggregate.notices) != 0 {
+		t.Fatal("the fixed text of a cut reached the customer without an Operator")
+	}
+	if len(h.store.transfers) != 0 || len(h.aggregate.modes) != 0 {
+		t.Fatalf("a transfer was written in suggestion mode (H-30): %v, modes %v", h.store.transfers, h.aggregate.modes)
+	}
+	if got := *h.steps; !slices.Equal(got, []string{"conversation_waiting", "processed_at"}) {
+		t.Fatalf("the writes of a cut in suggestion mode were %v", got)
 	}
 }

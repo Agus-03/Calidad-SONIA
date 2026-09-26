@@ -728,3 +728,99 @@ func TestCloseTakesNoMoreThanTheTickAllows(t *testing.T) {
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
 	}
 }
+
+// ADR-0046, section 2.5, against the real DDL: the CASE that tells accepted from edited is SQL, and so is the predicate that refuses
+// a draft already used or of another conversation.
+func TestReviewGenerationMarksTheDraftByWhatTheOperatorSent(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		sent string
+		want enums.GenerationStatus
+	}{
+		{"the draft left as it was proposed is accepted", "hola", enums.GenerationStatusAccepted},
+		{"a draft the Operator changed is edited", "hola, ¿en qué te ayudo?", enums.GenerationStatusEdited},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+				conversationID, _ := conversation(t, ctx, exec)
+				repo := NewRepository(exec)
+				batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+				if err != nil {
+					t.Fatalf("Append: %v", err)
+				}
+				generationID := draft(t, ctx, exec, conversationID, batch.ID)
+				operatorID := operator(t, ctx, exec)
+				messageID := outbound(t, ctx, exec, conversationID)
+
+				status, err := repo.ReviewGeneration(ctx, generationID, conversationID, messageID, operatorID, tc.sent)
+				if err != nil || status != tc.want {
+					t.Fatalf("ReviewGeneration: got %q, %v, want %q", status, err, tc.want)
+				}
+				var linked bool
+				if err := exec.QueryRow(ctx, `SELECT message_id = $2 AND reviewed_by_operator_id = $3 AND reviewed_at IS NOT NULL
+					FROM generations WHERE id = $1`, generationID, messageID, operatorID).Scan(&linked); err != nil || !linked {
+					t.Fatalf("the draft was not linked and reviewed: %v", err)
+				}
+				// The same draft a second time is a refusal and not a second review.
+				if _, err := repo.ReviewGeneration(ctx, generationID, conversationID, messageID, operatorID, tc.sent); !errors.Is(err, ErrGenerationNotFound) {
+					t.Fatalf("a second review: got %v, want ErrGenerationNotFound", err)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+			}
+		})
+	}
+}
+
+// A draft of another conversation is not this one's to review, whatever id the request carried.
+func TestReviewGenerationRefusesADraftOfAnotherConversation(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		mine, _ := conversation(t, ctx, exec)
+		theirs, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, theirs, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+		generationID := draft(t, ctx, exec, theirs, batch.ID)
+
+		_, err = repo.ReviewGeneration(ctx, generationID, mine, outbound(t, ctx, exec, mine), operator(t, ctx, exec), "hola")
+		if !errors.Is(err, ErrGenerationNotFound) {
+			t.Fatalf("ReviewGeneration: got %v, want ErrGenerationNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A generation of suggestion mode, which is what evidence() writes with the one status that makes it a draft.
+func draft(t *testing.T, ctx context.Context, exec db.Executor, conversationID, batchID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	generationID := evidence(t, ctx, exec, conversationID, batchID)
+	if _, err := exec.Exec(ctx, `UPDATE generations SET status = $2 WHERE id = $1`, generationID, enums.GenerationStatusPendingReview); err != nil {
+		t.Fatalf("make it a draft: %v", err)
+	}
+	return generationID
+}
+
+func operator(t *testing.T, ctx context.Context, exec db.Executor) uuid.UUID {
+	t.Helper()
+
+	operatorID := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+		SELECT $1, a.id, 'Revisa', 'Sugerencia', $2, 'x', 'operator', true FROM accounts a LIMIT 1`,
+		operatorID, "review-"+operatorID.String()+"@coop.test"); err != nil {
+		t.Fatalf("insert operator: %v", err)
+	}
+	return operatorID
+}

@@ -75,8 +75,6 @@ func TestCollectOpensNoBatchForAnAIAgentThatCannotAnswer(t *testing.T) {
 		{"a conversation with no agent has nobody to answer it", answering(), nil},
 		{"a paused or removed agent answers nothing, and grouping for it would be pointless",
 			Target{Mode: enums.AgentModeAutonomous, AIAgentAvailable: false}, &agent},
-		{"suggestion mode is Fase 9, and until then nothing groups for it",
-			Target{Mode: enums.AgentModeSuggestion, AIAgentAvailable: true}, &agent},
 		{"an off conversation has no turn of any kind",
 			Target{Mode: enums.AgentModeOff, AIAgentAvailable: true}, &agent},
 	}
@@ -136,5 +134,18 @@ func TestCollectReportsAConversationThatIsNotThere(t *testing.T) {
 	}
 	if len(store.appended) != 0 || len(aggregate.linked) != 0 {
 		t.Fatal("a conversation that does not exist still got a batch")
+	}
+}
+
+// ADR-0046, section 2.1: suggestion groups its messages like autonomous does, because the draft is written from the whole turn.
+func TestCollectGroupsForSuggestionMode(t *testing.T) {
+	agent := uuid.New()
+	collector, store, aggregate := gatherer(Target{Mode: enums.AgentModeSuggestion, AIAgentAvailable: true})
+
+	if err := collector.Collect(context.Background(), store.target.ConversationID, uuid.New(), &agent); err != nil {
+		t.Fatalf("Collect: got %v, want no error", err)
+	}
+	if len(store.appended) != 1 || len(aggregate.linked) != 1 {
+		t.Fatalf("%d batches and %d links, want the message grouped into one batch", len(store.appended), len(aggregate.linked))
 	}
 }

@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Documento** | `docs/design/07-secuencia-del-turno.md` |
-| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§4.1 paso 3 y §4.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage` |
+| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo |
 | **Fecha** | 2026-08-22 |
 | **Base documental** | [Anteproyecto](../SONIA_Anteproyecto.pdf) — F02, F10, F12, F21, F29 · [ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md) (pipeline) · [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) (frontera de procesos) · [03-capa-prompts.md](03-capa-prompts.md) (las cinco reglas) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) — este documento no repite atributos, define **orden y dueño de cada escritura** |
@@ -66,6 +66,7 @@ El cerebro **lee el resto desde PostgreSQL**. No se duplica estado en el cuerpo:
   "outcome":        "generated | blocked | failed",
   "generation_id":  "uuid | null",
   "completion_text":"string | null",
+  "notice_text":    "string | null",
   "transfer": {
     "proposed":             true,
     "signal_evaluation_id": "uuid"

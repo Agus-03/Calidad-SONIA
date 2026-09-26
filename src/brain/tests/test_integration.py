@@ -1,5 +1,6 @@
 # What the unit tests cannot reach: a live PostgreSQL behind the pool, and the lifespan that opens it.
 
+import asyncio
 import os
 
 import pytest
@@ -37,7 +38,8 @@ async def test_the_pool_opens_and_the_connection_answers() -> None:
 def test_the_lifespan_opens_the_pool_and_health_answers_ok() -> None:
     settings = Settings(_env_file=None, database_url=_DSN, brain_internal_token="test-token")
 
-    with TestClient(create_app(settings)) as client:
+    # The client runs its own loop and ignores the policy of conftest.py, and psycopg async cannot run on the Windows default.
+    with TestClient(create_app(settings), backend_options={"loop_factory": asyncio.SelectorEventLoop}) as client:
         response = client.get("/health")
 
     assert response.status_code == 200

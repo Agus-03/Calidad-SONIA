@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **el párrafo de §2.6 sobre los cortes de entrada es una propuesta, pendiente del grupo** |
+| **Estado** | Aceptada · **§2.6 (los cortes de entrada) aceptada por el grupo el 2026-09-26** |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 9 (contexto dinámico y transferencia) |
 | **Resuelve** | Cómo se evalúan `explicit_request` y `no_resolution`, dónde queda la frontera entre `no_resolution` y `frustration`, qué significa `signal_evaluations.threshold_used` para una señal que no tiene puntaje, qué evalúa un turno cortado, y qué pasa con el AIAgent cuando una transferencia ocurre |
@@ -60,7 +60,7 @@ Hay además un hueco que la Fase 8 dejó sin decir: **`out_of_domain` sólo escr
 ### 2.6 Qué evalúa un turno cortado
 
 - **El corte del `triage` y los de salida evalúan las tres**, porque la llamada del `triage` ya corrió. Es lo que el equipo decidió para `explicit_request` y se cumple solo.
-- **Propuesta, pendiente del grupo: los cortes de entrada no evalúan ninguna.** El `blocklist` y el `guardrail` de entrada ([ADR-0043](0043-prompt-injection-en-el-guardrail-de-entrada.md)) cortan **antes** del `triage`, y como §2.1 junta las tres señales en esa llamada, evaluarlas exigiría hacer la llamada igual. **Eso es mandarle al proveedor externo el texto que el corte existe para no procesar**, y en el caso de una inyección de prompt, darle al atacante exactamente la llamada que quería. Se anotan las tres como salteadas en el `detail_json` de la fila que cortó, como ya hace la regla 4 de ADR-0042. **Esto achica la decisión del equipo**, que era evaluar `explicit_request` en todo turno cortado: con §2.1, en estos dos cortes no se puede sin pagar lo anterior.
+- **Los cortes de entrada no evalúan ninguna** (aceptado por el grupo el 2026-09-26). El `blocklist` y el `guardrail` de entrada ([ADR-0043](0043-prompt-injection-en-el-guardrail-de-entrada.md)) cortan **antes** del `triage`, y como §2.1 junta las tres señales en esa llamada, evaluarlas exigiría hacer la llamada igual. **Eso es mandarle al proveedor externo el texto que el corte existe para no procesar**, y en el caso de una inyección de prompt, darle al atacante exactamente la llamada que quería. Se anotan las tres como salteadas en el `detail_json` de la fila que cortó, como ya hace la regla 4 de ADR-0042. **Esto achica la decisión del equipo**, que era evaluar `explicit_request` en todo turno cortado: con §2.1, en estos dos cortes no se puede sin pagar lo anterior.
 
 ### 2.7 Una transferencia apaga el bot de esa conversación
 
@@ -106,7 +106,7 @@ Hay además un hueco que la Fase 8 dejó sin decir: **`out_of_domain` sólo escr
 - **La racha no sobrevive a un cambio de prompt.** El día que cambia `triage.yaml`, todas las rachas en curso vuelven a cero.
 - **Un turno cortado por `explicit_request` o `no_resolution` entra al denominador de OE6 como `in_domain` y sin escalada**, porque [ADR-0024](0024-unidad-y-alcance-de-oe6.md) cuenta como escalada sólo `out_of_domain`. **Ese bloque no fue respondido**, y OE6 dice *"respondidas sin escalada"*. Es la lectura benévola que ADR-0024 ya declaró para la frustración, extendida ahora a bloques que el AIAgent ni siquiera contestó. Hay que decirlo en el informe.
 - **Una conversación transferida y que nadie atiende queda sin ninguna respuesta automática** hasta que un Operator la vuelva a prender.
-- **Si §2.6 se acepta, un pedido de persona en un mensaje que la lista de bloqueo rechaza no se ve**: la clienta recibe el texto fijo del corte y la señal no queda evaluada.
+- **Un pedido de persona en un mensaje que la lista de bloqueo rechaza no se ve** (§2.6): la clienta recibe el texto fijo del corte y la señal no queda evaluada.
 - **La frontera de §2.3 depende del anotador**, y ADR-0021 §3 queda con el argumento debilitado que ADR-0044 ya declaró: el orden no cambia.
 
 ## 5. Alternativas descartadas

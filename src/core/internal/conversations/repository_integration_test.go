@@ -386,6 +386,23 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 			t.Fatalf("a later send moved first_response_at from %v to %v", first, *firstResponse)
 		}
 
+		// Decision O2 through the column F34 reads: the fixed text of a cut turn goes out like any other message and answers
+		// nothing the customer asked, so a conversation whose only outbound row is that text has no response time at all.
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET first_response_at = NULL WHERE id = $1`, conversation.ID); err != nil {
+			t.Fatalf("clear the first response: %v", err)
+		}
+		notice, err := service.RecordSystemOutbound(ctx, conversation.ID, "prefiero que esto lo vea una persona", sentAt)
+		if err != nil {
+			t.Fatalf("RecordSystemOutbound: %v", err)
+		}
+		if err := service.MarkSent(ctx, notice.ID, "wamid.notice", sentAt); err != nil {
+			t.Fatalf("MarkSent on the fixed text: %v", err)
+		}
+		read()
+		if firstResponse != nil {
+			t.Fatalf("the fixed text of a cut turn was taken as the first response: %v", *firstResponse)
+		}
+
 		if err := service.MarkSent(ctx, id.New(), "wamid.nobody", sentAt); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("MarkSent on a message that does not exist: got %v, want ErrNotFound", err)
 		}

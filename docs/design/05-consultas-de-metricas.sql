@@ -587,6 +587,12 @@ ORDER  BY conversaciones DESC;
 --   regla que `first_response_at` (ADR-0035, regla 7). Tomar el pool es otra
 --   cosa y cuenta el primer envío llegue o no, pero eso no es un tiempo de
 --   respuesta.
+-- SUPUESTO S4: el emisor `system` NO cuenta. Es el texto fijo de un turno que el
+--   pipeline cortó (ADR-0042, decisión O2): sale en segundos y no contesta nada
+--   de lo que la clienta preguntó, así que contarlo reportaría un tiempo de
+--   respuesta de una conversación que nadie atendió. `first_response_at` aplica
+--   la misma regla en la escritura. El costo: una conversación cuyo único
+--   saliente es ese texto no aparece acá en ningún grupo.
 
 WITH primer_saliente AS (
     SELECT DISTINCT ON (m.conversation_id)
@@ -594,6 +600,7 @@ WITH primer_saliente AS (
     FROM   messages m
     WHERE  m.direction = 'outbound'
       AND  m.status IN ('sent', 'delivered', 'read')                        -- S3
+      AND  m.sender_type <> 'system'                                        -- S4
     ORDER  BY m.conversation_id, m.created_at
 )
 SELECT p.sender_type,

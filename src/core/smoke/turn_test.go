@@ -226,8 +226,18 @@ func postWebhook(t *testing.T, base, wamid, secret string) int {
 	return postWebhookFrom(t, base, wamid, secret, seededContactPhone)
 }
 
+// What a case writes when it does not care what the customer said: in domain, and about the flat of the seed.
+const seededQuestion = "Hola, el depto de 2 ambientes en Jesus Maria sigue disponible?"
+
 // postWebhookFrom is postWebhook from any number: a number nobody wrote from yet opens a conversation of its own.
 func postWebhookFrom(t *testing.T, base, wamid, secret, from string) int {
+	t.Helper()
+	return postWebhookSaying(t, base, wamid, secret, from, seededQuestion)
+}
+
+// postWebhookSaying is the same webhook with the customer's own words, which is the only lever a case has on what the pipeline
+// decides: the doubled provider answers by echoing them, so what the customer writes is also what the outbound leg reads.
+func postWebhookSaying(t *testing.T, base, wamid, secret, from, said string) int {
 	t.Helper()
 
 	// Meta's shape and not ours: a fixture built from the core's own parser could not catch the parser drifting from Meta.
@@ -235,8 +245,8 @@ func postWebhookFrom(t *testing.T, base, wamid, secret, from string) int {
 		`"value":{"metadata":{"display_phone_number":"%[2]s","phone_number_id":"%[1]s"},`+
 		`"contacts":[{"wa_id":"%[2]s","profile":{"name":"Contacto Demo"}}],`+
 		`"messages":[{"from":"%[2]s","id":"%[3]s","timestamp":"1788700000","type":"text",`+
-		`"text":{"body":"Hola, el depto de 2 ambientes en Jesus Maria sigue disponible?"}}]}}]}]}`,
-		seededPhoneNumberID, from, wamid)
+		`"text":{"body":%[4]q}}]}}]}]}`,
+		seededPhoneNumberID, from, wamid, said)
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payload))

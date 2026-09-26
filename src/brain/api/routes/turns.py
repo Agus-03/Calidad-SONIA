@@ -3,7 +3,6 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import replace
-from decimal import Decimal
 from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -12,23 +11,24 @@ from psycopg import AsyncConnection
 from adapters.llm.base import LLMClient, LLMError
 from adapters.llm.registry import resolve
 from api.schemas.turn import TransferProposal, TurnRequest, TurnResponse
+from classifiers import transfer
 from classifiers.intent import Intent, classify
-from infra import ids
 from infra.enums import (
+    AgentMode,
     GenerationStatus,
     MessageDirection,
     PipelineStep,
     PromptComponentType,
     TransferSignalType,
 )
-from pipeline import notices, runner
+from pipeline import notices, runner, triage
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository import (
-    SignalEvaluation,
     TracedStep,
     Turn,
     TurnNotFound,
-    read_transfer_policy,
+    read_no_resolution_streak,
+    read_transfer_policies,
     read_turn,
     write_generation,
     write_intents,
@@ -87,16 +87,30 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         await _write_trace(request, turn, err.trace.steps)
         return TurnResponse(outcome="failed")
 
+    if trace.halted and trace.halted_at.step != PipelineStep.TRIAGE:
+        # A cut before the triage evaluates no signal: that would send the provider the text the cut refused (ADR-0045, 2.6).
+        trace = _annotated(trace, skipped=transfer.ORDER)
+        await _write_trace(request, turn, trace.steps)
+        return TurnResponse(outcome="blocked", notice_text=_notice(trace.halted_at))
+
+    # The three signals of this call, written whether they fired or not, before anything else can fail (ADR-0014, ADR-0045).
+    async with request.app.state.database.connection() as conn:
+        assessment = await _assess(conn, turn, trace)
+        for evaluation in assessment.evaluations:
+            await write_signal_evaluation(conn, evaluation)
+    trace = _annotated(trace, mode=body.mode, assessment=assessment)
+
+    if assessment.winner is not None and not trace.halted:
+        # Delegates like out_of_domain does: no generation and nothing said to the customer (ADR-0045, section 2.5; O1c).
+        trace = replace(trace, halted_at=_TRIAGE)
+
     if trace.halted:
-        # No generation, and the core drops the conversation to waiting (section 4 B.1). What it does send is the fixed text of
-        # the cut point, which is decision O2. One connection for the trace and the signal: they are the evidence of one cut.
-        async with request.app.state.database.connection() as conn:
-            await write_steps(conn, turn.message_batch_id, trace.steps)
-            transfer = await _delegate(conn, turn, trace)
+        # No generation, and the core drops the conversation to waiting (section 4 B.1) and acts on the proposal.
+        await _write_trace(request, turn, trace.steps)
         return TurnResponse(
             outcome="blocked",
             notice_text=_notice(trace.halted_at),
-            transfer=transfer,
+            transfer=_proposal(assessment),
         )
 
     # What reaches the model from here on is what the leg returned and not what arrived: the redaction of ADR-0006 happens in
@@ -197,6 +211,9 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         # Written once with its verdict, and its text is kept: the evidence of section 4.2 exists so somebody can see what was
         # stopped and with what prompt it was produced. message_id stays NULL for ever, and the core never links it.
         generation = replace(generation, status=GenerationStatus.BLOCKED)
+    elif body.mode == AgentMode.SUGGESTION:
+        # A draft for the Operator and never an answer: nothing leaves on its own in this mode (ADR-0046, section 2.2).
+        generation = replace(generation, status=GenerationStatus.PENDING_REVIEW)
 
     steps = trace.steps + (generated,) + answer.steps
     context["pipeline_steps"] = len(steps)
@@ -266,49 +283,67 @@ def _generated(*, position: int, outcome: str, version: int, latency_ms: int, de
     )
 
 
-# Decision O1c: a question outside the domain is handed to a person, and the evaluation is written whether it proposes anything or
-# not, because a detector whose precision is an objective persists its output even when nothing fired (OE4, ADR-0024).
-#
-# Only the triage delegates, and the other three signals of F12 are not evaluated here: the row of the step that cut records which
-# ones were skipped, which is the way out ADR-0014 left open for this case (ADR-0042, section 2.4).
-async def _delegate(conn: AsyncConnection, turn: Turn, trace: runner.Trace) -> TransferProposal | None:
-    if trace.halted_at is None or trace.halted_at.step != PipelineStep.TRIAGE:
-        return None
+# The step the transfer cuts at, looked up and not rebuilt: the inbound leg is data (ADR-0016).
+_TRIAGE = next(s for s in runner.INBOUND if s.step == PipelineStep.TRIAGE)
 
-    # The row of the step that cut, which the runner appends last before returning: its score is the confidence of the verdict and
-    # its version is the file that decided, which is what classifier_version has to name (regla 9).
-    verdict = trace.steps[-1]
-    policy = await read_transfer_policy(conn, turn.agent.id, TransferSignalType.OUT_OF_DOMAIN)
 
-    evaluation = SignalEvaluation(
-        id=ids.new(),
+# The reads the signals need, on the caller's connection: the policies of the AIAgent and, only when this turn did not resolve,
+# the run it continues (ADR-0045, section 2.2).
+async def _assess(conn: AsyncConnection, turn: Turn, trace: runner.Trace) -> transfer.Assessment:
+    row = next((s for s in trace.steps if s.step == PipelineStep.TRIAGE), None)
+    verdict = triage.verdict_of(row) if row is not None else None
+    version = row.version if row is not None else ""
+    policies = await read_transfer_policies(conn, turn.agent.id) if verdict is not None else {}
+    streak = 0
+    if verdict is not None and verdict.resolved is False:
+        streak = await read_no_resolution_streak(conn, turn, version)
+    return transfer.assess(
         message_batch_id=turn.message_batch_id,
-        signal_type=TransferSignalType.OUT_OF_DOMAIN,
-        # 0 when the model returned no confidence: the column is not nullable, and a verdict with no number is still a verdict.
-        score=verdict.score if verdict.score is not None else Decimal(0),
-        # 0 when there is no policy, which says what happened: nothing was compared against anything.
-        threshold_used=policy.threshold if policy is not None else Decimal(0),
-        classifier_version=verdict.version,
-        # An administrator who turned this signal off, or never configured it, gets no transfer. The conversation still waits for
-        # a person, because that is what the core does with every cut turn — what is lost is the row that counts as an escalation.
-        fired=policy is not None and policy.enabled,
+        verdict=verdict,
+        classifier_version=version,
+        policies=policies,
+        defaults=triage.rules().thresholds,
+        previous_streak=streak,
     )
-    await write_signal_evaluation(conn, evaluation)
 
-    logger.info(
-        "the turn was handed to a person",
-        extra={
-            "context": {
-                "conversation_id": str(turn.conversation_id),
-                "message_batch_id": str(turn.message_batch_id),
-                "signal_evaluation_id": str(evaluation.id),
-                "fired": evaluation.fired,
-            }
-        },
-    )
-    # Always the proposal and never None once the signal was evaluated: proposed = false still names the evidence, and the core
-    # acts on the flag and not on the presence of the object.
-    return TransferProposal(proposed=evaluation.fired, signal_evaluation_id=evaluation.id)
+
+# The winner when one fired; otherwise, on a cut of out_of_domain, that evidence with proposed = false, because the core acts on
+# the flag and the id still names what was evaluated (decision O1c).
+def _proposal(assessment: transfer.Assessment) -> TransferProposal | None:
+    if assessment.winner is not None:
+        return TransferProposal(proposed=True, signal_evaluation_id=assessment.winner.id)
+    evaluated = assessment.of(TransferSignalType.OUT_OF_DOMAIN)
+    if evaluated is None:
+        return None
+    return TransferProposal(proposed=False, signal_evaluation_id=evaluated.id)
+
+
+# What the row of the triage (or of the step that cut before it) says about the signals: which were skipped, which one cut, and the
+# mode, which is how OE6 leaves suggestion out of its denominator (ADR-0044 2.3, ADR-0045 2.5, ADR-0046 2.4).
+def _annotated(
+    trace: runner.Trace,
+    *,
+    mode: AgentMode | None = None,
+    assessment: transfer.Assessment | None = None,
+    skipped: tuple[TransferSignalType, ...] = (),
+) -> runner.Trace:
+    if assessment is not None:
+        index = next((i for i, s in enumerate(trace.steps) if s.step == PipelineStep.TRIAGE), None)
+        skipped = assessment.skipped
+    else:
+        index = len(trace.steps) - 1
+    if index is None or index < 0:
+        return trace
+
+    row = trace.steps[index]
+    detail = dict(row.detail or {})
+    detail["skipped_signals"] = [str(signal) for signal in skipped]
+    if mode is not None:
+        detail["mode"] = str(mode)
+    if assessment is not None and assessment.winner is not None:
+        detail["transfer"] = str(assessment.winner.signal_type)
+    steps = trace.steps[:index] + (replace(row, detail=detail),) + trace.steps[index + 1 :]
+    return replace(trace, steps=steps)
 
 
 # What the customer reads when the pipeline refused the turn (O2), or nothing at all when the step that cut was the triage (O1c).

@@ -7,13 +7,16 @@
 import json
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from typing import Any
 
 from adapters.llm.base import LLMMessage, LLMRefusal
-from infra.enums import PromptComponentType
+from infra.enums import MessageDirection, PromptComponentType, SenderType, TransferSignalType
 from infra.rules import RulesFileError, load
+from pipeline.repository import Message, TracedStep
 from pipeline.step import StepRequest, StepResult
 
 logger = logging.getLogger("sonia.pipeline.triage")
@@ -38,6 +41,9 @@ _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 # guardrail, so whatever text reaches it has already been through the redaction of ADR-0006.
 _MAX_REPORTED = 200
 
+# The signals this call judges besides its own verdict (ADR-0045, section 2.1): the three whose default threshold the file keeps.
+JUDGED = (TransferSignalType.OUT_OF_DOMAIN, TransferSignalType.EXPLICIT_REQUEST, TransferSignalType.NO_RESOLUTION)
+
 
 @dataclass(frozen=True)
 class Rules:
@@ -45,7 +51,10 @@ class Rules:
     marker: str
     system: str
     objective_heading: str
+    previous_heading: str
     user_heading: str
+    # Used when the AIAgent has no policy for a signal, so threshold_used is a number somebody chose (ADR-0045, section 2.4).
+    thresholds: Mapping[TransferSignalType, int]
 
 
 # Frozen because it is data on its way to a row, the same decision as the rest of the pipeline's dataclasses.
@@ -56,6 +65,9 @@ class Verdict:
     # Only evidence, never a decision: a greeting is in_domain like anything else this business attends, and this flag is what
     # lets the measurement of OE6 leave the greetings out of its denominator without a third value in the outcome domain.
     greeting: bool
+    # None is a signal nobody judged, which is written as skipped and never as a no (ADR-0045, section 2.2).
+    explicit_request: bool | None = None
+    resolved: bool | None = None
 
 
 # Read once per process: the file is versioned data, so it changes with a deploy and never between two turns.
@@ -69,12 +81,15 @@ def rules() -> Rules:
     if marker not in system:
         raise RulesFileError(f"triage: the system prompt does not carry the marker {marker!r}")
 
+    thresholds = spec.section("thresholds")
     return Rules(
         version=spec.version,
         marker=marker,
         system=system,
         objective_heading=spec.text("objective"),
+        previous_heading=spec.text("previous"),
         user_heading=spec.text("user"),
+        thresholds={signal: thresholds.integer(signal, minimum=1) for signal in JUDGED},
     )
 
 
@@ -97,16 +112,30 @@ async def run(request: StepRequest) -> StepResult:
             detail={"objective": "missing"},
         )
 
+    previous = last_answer(request.turn.history)
+    user = f"{spec.user_heading}\n{request.text.strip()}"
+    if previous is not None:
+        # Before the message, in the order the conversation happened: the model judges the answer by what came after it.
+        user = f"{spec.previous_heading}\n{previous.strip()}\n\n{user}"
+
     completion = await request.client.complete(
         model=request.turn.agent.llm_model,
         # The objective last, so the instruction that fixes the two labels is read before the text that describes the business.
         system=f"{spec.system}\n\n{spec.objective_heading}\n{objective}",
-        messages=(LLMMessage(role="user", text=f"{spec.user_heading}\n{request.text.strip()}"),),
+        messages=(LLMMessage(role="user", text=user),),
         # Zero so the same message triages the same way twice: this is a verdict a measurement rests on, not prose.
         temperature=0.0,
     )
     verdict = parse(completion.text)
-    detail = {"greeting": verdict.greeting, "model": completion.model}
+    if previous is None:
+        # No answer was shown, so whatever the model said about one is not a judgement of anything (ADR-0045, section 2.2).
+        verdict = Verdict(verdict.label, verdict.confidence, verdict.greeting, verdict.explicit_request, None)
+    detail = {
+        "greeting": verdict.greeting,
+        "model": completion.model,
+        "explicit_request": verdict.explicit_request,
+        "resolved": verdict.resolved,
+    }
 
     if verdict.label == _OUT_OF_DOMAIN:
         # Ends the turn and nobody is told: the customer gets no automatic answer at all and the conversation goes to a person,
@@ -128,6 +157,28 @@ async def run(request: StepRequest) -> StepResult:
         text=request.text,
         score=verdict.confidence,
         detail=detail,
+    )
+
+
+# The answer no_resolution judges: the last thing that went out, and only if the AIAgent wrote it (ADR-0045, section 2.2).
+def last_answer(history: tuple[Message, ...]) -> str | None:
+    for message in reversed(history):
+        if message.direction == MessageDirection.OUTBOUND:
+            return message.content_text if message.sender_type == SenderType.AI_AGENT else None
+    return None
+
+
+# The verdict back from the row the step left, so the route reads what was traced and not a second copy (ADR-0045, section 2.1).
+def verdict_of(step: TracedStep) -> Verdict | None:
+    detail: dict[str, Any] = step.detail or {}
+    if step.outcome not in _VERDICTS or detail.get("objective") == "missing":
+        return None
+    return Verdict(
+        label=step.outcome,
+        confidence=step.score if step.score is not None else Decimal(0),
+        greeting=detail.get("greeting") is True,
+        explicit_request=detail.get("explicit_request"),
+        resolved=detail.get("resolved"),
     )
 
 
@@ -161,7 +212,18 @@ def parse(answer: str) -> Verdict:
     # model which never emits it makes the exclusion of greetings from OE6 quietly empty, which is why it is asked for in the
     # prompt and asserted in the tests.
     greeting = payload.get("greeting")
-    return Verdict(label=label, confidence=confidence, greeting=greeting is True)
+    return Verdict(
+        label=label,
+        confidence=confidence,
+        greeting=greeting is True,
+        # Not a bool is not judged: writing it as false would put a no in the table OE3 reads (ADR-0045, section 2.2).
+        explicit_request=_flag(payload.get("explicit_request")),
+        resolved=_flag(payload.get("resolved")),
+    )
+
+
+def _flag(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 # The one component this step reads, by type and not by position: F01 declares six and the administrator orders them, so the

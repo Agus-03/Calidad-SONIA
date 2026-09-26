@@ -14,7 +14,7 @@ from infra.config import Settings
 from main import create_app
 from infra.enums import MessageDirection, PipelineStep
 from pipeline import notices, runner
-from pipeline.repository import TurnNotFound, read_turn
+from pipeline.repository import TurnNotFound, read_no_resolution_streak, read_turn
 from pipeline.step import Step, StepRequest, StepResult
 
 BATCH_ID = uuid4()
@@ -45,7 +45,8 @@ class FakeConnection:
         self.sent: list[tuple[str, dict]] = []
 
     async def execute(self, sql: str, params: dict | None = None) -> FakeCursor:
-        for table, rows in self.tables.items():
+        # Longest name first, so a statement that joins two tables is keyed by the one it is about and not by dict order.
+        for table, rows in sorted(self.tables.items(), key=lambda item: -len(item[0])):
             if table in sql:
                 self.seen.append(table)
                 self.sent.append((table, params or {}))
@@ -318,6 +319,10 @@ def test_turns_fails_when_the_model_has_no_tariff() -> None:
 
 # doubled is the whole of F11 against the doubled adapter: the classifier answers two intentions, they are written as evidence,
 # and they reach the model that reads the message (ADR-0041, regla 12).
+def policy(signal: str, threshold: int = 1, enabled: bool = True) -> dict:
+    return {"signal_type": signal, "enabled": enabled, "threshold": Decimal(threshold)}
+
+
 def doubled() -> Settings:
     return Settings(
         _env_file=None,
@@ -579,7 +584,9 @@ def test_a_question_outside_the_domain_is_answered_by_a_person_and_never_by_a_te
     signals = [params for table, params in connection.sent if table == "signal_evaluations" and "score" in params]
     assert len(signals) == 1
     assert signals[0]["signal_type"] == "out_of_domain"
-    assert signals[0]["score"] == Decimal("0.91"), "the confidence of the verdict was not what the row kept"
+    # A yes/no signal is 1 against 1 (ADR-0045, section 2.4); the confidence stays in the row of the step.
+    assert signals[0]["score"] == Decimal(1)
+    assert signals[0]["threshold_used"] == Decimal(1), "a threshold nothing was compared against went into the row"
     assert signals[0]["fired"] is False, "a transfer fired for an agent whose administrator never configured this signal"
     assert payload["transfer"] == {"proposed": False, "signal_evaluation_id": str(signals[0]["id"])}
 
@@ -595,7 +602,7 @@ def test_a_question_outside_the_domain_proposes_the_transfer_the_policy_allows(m
         "INBOUND",
         (Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=outside),),
     )
-    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+    connection = FakeConnection(tables(transfer_policies=[policy("out_of_domain")]))
 
     with client(connection, doubled()) as http:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
@@ -605,9 +612,7 @@ def test_a_question_outside_the_domain_proposes_the_transfer_the_policy_allows(m
     assert len(signals) == 1
     assert signals[0]["fired"] is True
     assert payload["transfer"] == {"proposed": True, "signal_evaluation_id": str(signals[0]["id"])}
-    # The threshold that was in force, frozen with the row: moving it later must not rewrite what was measured. Nothing was
-    # compared against it here — the triage returns a verdict and not a score above a line.
-    assert signals[0]["threshold_used"] == Decimal("0.6")
+    assert signals[0]["threshold_used"] == Decimal(1)
     # The file that decided, which is what classifier_version has to name (regla 9).
     assert signals[0]["classifier_version"] == "3"
     # Still no text: a policy that allows the transfer does not turn O1c into an answer.
@@ -625,7 +630,7 @@ def test_a_cut_that_is_not_the_triage_proposes_no_transfer(monkeypatch: pytest.M
         "INBOUND",
         (Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocking),),
     )
-    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+    connection = FakeConnection(tables(transfer_policies=[policy("out_of_domain")]))
 
     with client(connection, doubled()) as http:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
@@ -633,6 +638,14 @@ def test_a_cut_that_is_not_the_triage_proposes_no_transfer(monkeypatch: pytest.M
     assert response.json()["transfer"] is None
     assert "signal_evaluations" not in connection.seen, "a blocked term was counted as a question for a person"
     assert "transfer_policies" not in connection.seen, "a cut that never delegates read the policy anyway"
+    # ADR-0045, section 2.6: the row that cut says which signals were never evaluated, since none has a row of its own.
+    row = next(p for t, p in connection.sent if t == "pipeline_steps" and "position" in p)
+    assert row["detail_json"].obj["skipped_signals"] == [
+        "explicit_request",
+        "frustration",
+        "out_of_domain",
+        "no_resolution",
+    ]
 
 
 # Section 5 again, one step earlier than the generation: a provider that fell over mid-pipeline is a failed turn whose partial
@@ -662,3 +675,84 @@ def test_a_step_that_could_not_decide_fails_the_turn_and_keeps_what_ran(monkeypa
     # has a value for "could not decide" (ADR-0016).
     assert connection.seen.count("pipeline_steps") == 2
     assert "generations" not in connection.seen
+
+
+def written_signals(connection: FakeConnection) -> dict[str, dict]:
+    return {p["signal_type"]: p for t, p in connection.sent if t == "signal_evaluations" and "score" in p}
+
+
+def triage_row(connection: FakeConnection) -> dict:
+    return next(p for t, p in connection.sent if t == "pipeline_steps" and p.get("step") == "triage")
+
+
+# ADR-0014 on the happy path too: a turn that answers still writes the signals it judged, and says which it skipped.
+def test_a_turn_that_answers_still_writes_the_signals_it_judged() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "generated"
+    signals = written_signals(connection)
+    assert set(signals) == {"out_of_domain", "explicit_request"}, "the double shows no answer, so no_resolution is not judged"
+    assert all(p["fired"] is False for p in signals.values())
+    detail = triage_row(connection)["detail_json"].obj
+    assert detail["skipped_signals"] == ["frustration", "no_resolution"]
+    # ADR-0046, section 2.4: the mode is on the row OE6 reads its denominator from.
+    assert detail["mode"] == "autonomous"
+    assert response.json()["transfer"] is None
+
+
+# ADR-0045, section 2.5: a request for a person the policy allows cuts the turn at the triage, with nothing said and no generation.
+def test_a_request_for_a_person_cuts_the_turn_and_proposes_the_transfer() -> None:
+    connection = FakeConnection(
+        tables(
+            messages=[message("hola, quiero hablar con una persona")],
+            transfer_policies=[policy("explicit_request")],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "blocked"
+    assert payload["notice_text"] is None, "the customer asked for a person and got a text of ours"
+    assert payload["generation_id"] is None, "a generation was paid for an answer nobody was going to send"
+    signals = written_signals(connection)
+    assert signals["explicit_request"]["fired"] is True
+    assert payload["transfer"] == {"proposed": True, "signal_evaluation_id": str(signals["explicit_request"]["id"])}
+    assert triage_row(connection)["detail_json"].obj["transfer"] == "explicit_request"
+    assert "generations" not in connection.seen
+
+
+# With no policy the same request does not fire, and the turn goes on and answers (ADR-0045, section 2.5).
+def test_a_request_for_a_person_with_no_policy_is_answered() -> None:
+    connection = FakeConnection(tables(messages=[message("quiero hablar con una persona")]))
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "generated"
+    assert written_signals(connection)["explicit_request"]["score"] == Decimal(1)
+    assert written_signals(connection)["explicit_request"]["fired"] is False
+
+
+# ADR-0046, section 2.2: in suggestion mode the generation is a draft for the Operator and never an answer.
+def test_in_suggestion_mode_the_generation_waits_for_review() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(mode="suggestion"), headers={"X-Internal-Token": "test-token"}).json()
+
+    written = next(p for t, p in connection.sent if t == "generations" and "prompt_rendered" in p)
+    assert written["status"] == "pending_review"
+    assert payload["outcome"] == "generated"
+    assert triage_row(connection)["detail_json"].obj["mode"] == "suggestion"
+
+
+# The run of no_resolution continues from the batch before (ADR-0045, section 2.2).
+async def test_the_run_is_read_from_the_batch_before() -> None:
+    turn = await read_turn(FakeConnection(tables()), BATCH_ID, CONVERSATION_ID, AGENT_ID)
+
+    assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": [{"score": Decimal(2)}]}), turn, "2") == 2
+    assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": []}), turn, "2") == 0

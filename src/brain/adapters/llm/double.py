@@ -21,7 +21,14 @@ INTENT_ANSWER = '[{"label": "consulta_disponibilidad", "confidence": 0.9}, {"lab
 TRIAGE_MARKER = "[TRIAGE]"
 
 # In domain and not a greeting, which is the verdict that does not cut the turn: the doubled stack exists to walk all of it.
-TRIAGE_ANSWER = '{"verdict": "in_domain", "confidence": 0.9, "greeting": false}'
+TRIAGE_ANSWER = '{"verdict": "in_domain", "confidence": 0.9, "greeting": false, "explicit_request": false, "resolved": null}'
+
+# The one message the double reads as a request for a person, so the smoke can walk a transfer with no variable that exists only
+# for tests (ADR-0045, section 2.5).
+TRIAGE_PERSON_TRIGGER = "quiero hablar con una persona"
+TRIAGE_PERSON_ANSWER = (
+    '{"verdict": "in_domain", "confidence": 0.9, "greeting": false, "explicit_request": true, "resolved": null}'
+)
 
 
 class DoubleClient:
@@ -42,11 +49,12 @@ class DoubleClient:
             raise LLMUnavailable(f"{PROVIDER}: the turn reached the model with nothing to answer")
 
         if system and TRIAGE_MARKER in system:
+            answer = TRIAGE_PERSON_ANSWER if TRIAGE_PERSON_TRIGGER in last.lower() else TRIAGE_ANSWER
             return Completion(
-                text=TRIAGE_ANSWER,
+                text=answer,
                 model=model,
                 prompt_tokens=sum(len(m.text.split()) for m in messages),
-                completion_tokens=len(TRIAGE_ANSWER.split()),
+                completion_tokens=len(answer.split()),
             )
 
         if system and INTENT_MARKER in system:

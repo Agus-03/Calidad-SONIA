@@ -168,26 +168,56 @@ class TransferPolicy:
     threshold: Decimal
 
 
-_POLICY = """
-SELECT enabled, threshold
+# Oldest first, so the newest row of a signal wins below: nothing in 0001 makes (ai_agent_id, signal_type) unique.
+_POLICIES = """
+SELECT signal_type, enabled, threshold
   FROM transfer_policies
  WHERE ai_agent_id = %(ai_agent_id)s
-   AND signal_type = %(signal_type)s
    AND deleted_at IS NULL
+ ORDER BY created_at, id
 """
 
 
-# None when this agent has no policy for the signal, which is not the same as one that is disabled: nobody configured it. Either
-# way nothing is proposed, and the conversation still drops to waiting because every cut turn does that (07-secuencia 4.1) — what
-# is lost is the transfer_events row, which is the formal escalation F36 counts and ADR-0024 measures.
-async def read_transfer_policy(
-    conn: AsyncConnection, ai_agent_id: UUID, signal_type: TransferSignalType
-) -> TransferPolicy | None:
-    cursor = await conn.execute(_POLICY, {"ai_agent_id": ai_agent_id, "signal_type": signal_type})
+# A signal missing from the answer has no policy, which is not the same as one that is disabled: nobody configured it. Either way
+# it proposes nothing — what is lost is the transfer_events row, which is the escalation F36 counts (ADR-0045, section 2.4).
+async def read_transfer_policies(
+    conn: AsyncConnection, ai_agent_id: UUID
+) -> dict[TransferSignalType, TransferPolicy]:
+    cursor = await conn.execute(_POLICIES, {"ai_agent_id": ai_agent_id})
+    return {
+        TransferSignalType(row["signal_type"]): TransferPolicy(enabled=row["enabled"], threshold=row["threshold"])
+        for row in await cursor.fetchall()
+    }
+
+
+# The run of the batch just before this one, which only continues under the same prompt and when that batch did not end in a
+# transfer: a conversation an Operator turned back on starts again from zero (ADR-0045, section 2.2).
+_NO_RESOLUTION_STREAK = """
+SELECT se.score
+  FROM signal_evaluations se
+  JOIN message_batches b ON b.id = se.message_batch_id
+ WHERE b.conversation_id = %(conversation_id)s
+   AND b.turn_number = %(turn_number)s - 1
+   AND se.signal_type = %(signal_type)s
+   AND se.classifier_version = %(classifier_version)s
+   AND NOT EXISTS (
+       SELECT 1 FROM transfer_events te
+        WHERE te.conversation_id = b.conversation_id AND te.turn_number = b.turn_number)
+"""
+
+
+async def read_no_resolution_streak(conn: AsyncConnection, turn: Turn, classifier_version: str) -> int:
+    cursor = await conn.execute(
+        _NO_RESOLUTION_STREAK,
+        {
+            "conversation_id": turn.conversation_id,
+            "turn_number": turn.turn_number,
+            "signal_type": TransferSignalType.NO_RESOLUTION,
+            "classifier_version": classifier_version,
+        },
+    )
     row = await cursor.fetchone()
-    if row is None:
-        return None
-    return TransferPolicy(enabled=row["enabled"], threshold=row["threshold"])
+    return int(row["score"]) if row is not None else 0
 
 
 # The write: the only INSERT of a turn, and generations is an evidence table, the only kind the brain may write (regla 3).
@@ -335,11 +365,10 @@ class SignalEvaluation:
     id: UUID
     message_batch_id: UUID
     signal_type: TransferSignalType
-    # Always, and 0 for a signal that does not score. Here it is the confidence the triage returned.
+    # 1 or 0 for a yes/no signal, and the run of turns for no_resolution (ADR-0045, section 2.4).
     score: Decimal
-    # The policy in force when this was evaluated, frozen so moving the threshold later does not rewrite what was measured. For
-    # out_of_domain nothing was compared against it: the triage returns a verdict and not a score above a line, so this column
-    # records the policy that was in force and not a comparison that happened.
+    # What score was compared against, frozen so moving the threshold later does not rewrite what was measured: 1 for a yes/no
+    # signal, the policy's for no_resolution, or the default of triage.yaml when there is no policy (ADR-0045, section 2.4).
     threshold_used: Decimal
     classifier_version: str
     # Not derivable from score and threshold: a signal can be over the line and not fire, because the policy is disabled or

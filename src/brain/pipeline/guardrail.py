@@ -1,5 +1,5 @@
 # The guardrail of ADR-0016, and not the redaction of ADR-0006: it is the net under the checkpoint of 03-capa-prompts regla 4,
-# which does not exist yet because regla 3 forbids the brain to write contact_attributes (decision O10 of ADR-0042).
+# whose extraction half is found() below, handed back to the core because regla 3 forbids the brain contact_attributes (ADR-0047).
 #
 # The two runs do opposite things with the same finding (decision D3): inbound it substitutes and lets the turn go on, outbound
 # it refuses the answer whole and never rewrites it, because that text already reached the provider. ADR-0043 amends the first

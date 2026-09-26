@@ -1,9 +1,6 @@
-# The runner of ADR-0016. It walks one leg of the turn, measures every step and writes nothing itself: the trace it returns is
-# what the caller persists, in the transaction that already holds the rest of the turn's evidence.
-#
-# One leg and not the whole pipeline, because blocklist and guardrail run twice and the second time they decide about a text
-# that does not exist yet — the answer. So the turn is inbound leg, generation, outbound leg, and position is what keeps the
-# three readable in order.
+# The runner of ADR-0016: it walks one leg, measures every step and writes nothing, so the caller persists the trace inside the
+# transaction that holds the rest of the evidence. One leg and not the pipeline, because the turn is inbound leg, generation and
+# outbound leg, and position is what keeps the three readable in order.
 
 import logging
 from collections.abc import Sequence
@@ -19,11 +16,9 @@ from prompts.repository import Component
 
 logger = logging.getLogger("sonia.pipeline.runner")
 
-# The inbound leg, in the order of ADR-0016. A tuple and not a chain of calls because the order of the turn is data: adding a
-# step is adding an entry here, which is also what makes one row map to one module (regla 6).
-#
-# The rest of the leg is still missing, and its absence is a gap in the trace and not a step that let something through:
-# retrieval and grounding, which Fase 12 completes.
+# The inbound leg, in the order of ADR-0016. A tuple because the order of the turn is data: adding a step is adding an entry, and
+# one row maps to one module (regla 6). retrieval and grounding are missing until Fase 12, which is a gap and not a step that
+# let something through (decision D2 of ADR-0042).
 INBOUND: tuple[Step, ...] = (
     # First because it is the cheapest of the seven: a message with a forbidden term must not pay for a model to be refused.
     Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocklist.run),
@@ -36,12 +31,9 @@ INBOUND: tuple[Step, ...] = (
     Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=triage.run),
 )
 
-# The outbound leg: the same two steps, deciding about the answer the model produced. It is a second tuple and not a flag on the
-# first because these two run twice in a turn and the second time the text they decide about does not exist yet (ADR-0016).
-#
-# The generation goes between the two legs and now has its own row, written by the route because that is where it happens: it takes
-# the position right after the leg above, and this leg starts one further along. Position means the order things happened in across
-# the whole turn, which is why the caller passes where to start and no leg counts from one.
+# The outbound leg: the same two steps about the answer the model produced, a second tuple because the text they decide about did
+# not exist when the first ran. The generation takes the position between the two legs and the route writes it, so this leg starts
+# one further along and no leg counts from one.
 OUTBOUND: tuple[Step, ...] = (
     Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.OUTBOUND, run=blocklist.run),
     Step(step=PipelineStep.GUARDRAIL, direction=MessageDirection.OUTBOUND, run=guardrail.run),

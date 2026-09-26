@@ -1,8 +1,6 @@
 # The fixed answer of decision O2: which text the customer gets when the pipeline refused the turn. Not a step and not part of the
-# trace — nothing here decides anything, it only reads what was already decided by the step that cut.
-#
-# It lives next to the steps and not in api/ because what it is keyed by is a cut point of ADR-0016, and the route is the caller
-# that happens to need it. The brain proposes the text and the core is the one that writes the message (07-secuencia 0).
+# trace — it only reads what the step that cut already decided. It lives here and not in api/ because it is keyed by a cut point
+# of ADR-0016; the brain proposes the text and the core writes the message (07-secuencia 0).
 
 from dataclasses import dataclass
 from functools import lru_cache

@@ -88,11 +88,8 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         return TurnResponse(outcome="failed")
 
     if trace.halted:
-        # No generation: the core writes processed_at and drops the conversation to waiting (section 4.1). What it does send is
-        # the fixed text of the cut point, which is decision O2 and the one part of section 4.1 that it amends.
-        #
-        # One connection for the trace and the signal, because they are the evidence of the same cut: a transfer whose evaluation
-        # was lost would be an escalation nobody can explain.
+        # No generation, and the core drops the conversation to waiting (section 4 B.1). What it does send is the fixed text of
+        # the cut point, which is decision O2. One connection for the trace and the signal: they are the evidence of one cut.
         async with request.app.state.database.connection() as conn:
             await write_steps(conn, turn.message_batch_id, trace.steps)
             transfer = await _delegate(conn, turn, trace)
@@ -269,12 +266,11 @@ def _generated(*, position: int, outcome: str, version: int, latency_ms: int, de
     )
 
 
-# Decision O1c: a question outside the domain is not answered, it is handed to a person.
-# proposes anything or not, which is what signal_evaluations exists for — a detector whose precision is an objective has to persist
-# its output even when nothing happened (OE4), and here it is also the denominator ADR-0024 measures "sin escalada" against.
+# Decision O1c: a question outside the domain is handed to a person, and the evaluation is written whether it proposes anything or
+# not, because a detector whose precision is an objective persists its output even when nothing fired (OE4, ADR-0024).
 #
-# Only the triage delegates. A blocklist that refused a term is not a question somebody else can answer better; it is a message
-# this business does not take, and O2 already answers it with a text.
+# Only the triage delegates, and the other three signals of F12 are not evaluated here: the row of the step that cut records which
+# ones were skipped, which is the way out ADR-0014 left open for this case (ADR-0042, section 2.4).
 async def _delegate(conn: AsyncConnection, turn: Turn, trace: runner.Trace) -> TransferProposal | None:
     if trace.halted_at is None or trace.halted_at.step != PipelineStep.TRIAGE:
         return None

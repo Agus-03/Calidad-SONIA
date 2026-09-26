@@ -209,20 +209,12 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 	return res, nil
 }
 
-// The cut of 07-secuencia section 4, in either of its two places: before generating, where there is no evidence at all, or after,
-// where there is a generation whose message_id stays NULL for ever. Neither writes the answer, and the generation that exists is
-// never the thing that goes out.
+// The cut of 07-secuencia section 4, before generating or after: neither writes the answer, and a generation that exists keeps
+// message_id NULL for ever. What goes out is the fixed text of that cut point (decision O2), and no text means the turn stays
+// silent, which is decision O1c. A transfer the brain proposed is written here because the brain evaluated and the core acts.
 //
-// What does go out is the fixed text the brain chose for that cut point (decision O2), so a refused turn does not leave the
-// customer talking to nobody. It amends section 4.1, which was written when a cut answered nothing at all. And when the brain sends
-// no text the turn stays silent, which is decision O1c: a question outside the domain is answered by a person and by nothing else.
-//
-// And when the brain proposes a transfer, the event of F12 is written here too (decision O1c): the brain evaluated the signal and
-// this is the action, which is the whole of "el cerebro propone, el núcleo ejecuta". Only on a cut, because today the only signal
-// that proposes anything is the triage; the leg that answered gains it with the other three signals of F12 in Fase 9.
-//
-// processed_at is written and error_message is not, which is the same reading the pause of ADR-0041 regla 8 gets: the turn ran, and
-// its outcome was not to answer. The conversation drops to waiting either way, because the fixed text answers nobody's question.
+// processed_at is written and error_message is not, the same reading the pause of ADR-0041 regla 8 gets: the turn ran and its
+// outcome was not to answer. The conversation drops to waiting either way (ADR-0042).
 func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, answer brainclient.TurnResponse) error {
 	notice := answer.Notice()
 	fields := []any{

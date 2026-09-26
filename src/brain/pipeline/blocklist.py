@@ -1,12 +1,8 @@
-# The first step of ADR-0016 and the cheapest of the seven: literal terms, no provider, so a message with a forbidden word costs
-# nothing to refuse. It is also the first one that can end a turn, which is why the whole cut of 07-secuencia section 4.1 can be
-# exercised without a model answering anything.
+# The first step of ADR-0016 and the cheapest: literal terms and no provider, so refusing a message costs nothing. One module for
+# the two directions (regla 6), because what changes between the runs is the list and not the way of reading it.
 #
-# One module for the two directions (regla 6), because what changes between the inbound run and the outbound one is the list and
-# not the way of reading it.
-#
-# Two files and one step: blocklist.yaml holds the policy of the business, and profanity.yaml holds the words of decision O6b,
-# which only apply to what the AIAgent answers. Both feed this same reading, because a forbidden term is a forbidden term.
+# Two files feed it: blocklist.yaml is the policy of the business and profanity.yaml the words of decision O6b, read only on the
+# way out. A forbidden term is a forbidden term, so both go through the same reading.
 
 import logging
 import re
@@ -22,10 +18,7 @@ logger = logging.getLogger("sonia.pipeline.blocklist")
 
 _FILE = "blocklist.yaml"
 
-# The words of O6b, kept as a file of their own and not appended to the outbound section above: the two are loaded and versioned
-# by different people —that one by whoever runs the business, this one by the team— and whoever reads a blocked answer has to know
-# which of the two refused it. It holds one list and nothing else, which is what makes it safe to hand to somebody who is only
-# there to add a word.
+# Its own file because the two are loaded by different people, and whoever reads a blocked answer has to know which one refused it.
 _PROFANITY_FILE = "profanity.yaml"
 
 # The outcome domain declared for this step in DER/entidades.md: it lets a text through or it ends the turn. There is no third

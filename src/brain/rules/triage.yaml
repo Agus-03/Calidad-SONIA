@@ -1,17 +1,12 @@
-# The triage of ADR-0016, and the only step of the inbound leg whose verdict is a judgement about meaning and not a match against
-# a file. Versioned as data (regla 9) because changing a word here changes what gets written into pipeline_steps.outcome, and OE6
-# reads that column as its denominator: a prompt that drifts moves the measurement without anything saying so.
-#
-# What it compares against is NOT written here. It is the objective component of the AIAgent (F01), which is what the
-# administrator wrote about the business — a list of topics in this file would be our answer to a question that is theirs.
+# The triage of ADR-0016, versioned as data (regla 9) because OE6 reads its outcome as a denominator: a prompt that drifts
+# moves the measurement with nothing saying so. What it compares against is the objective of the AIAgent and not a list of
+# topics written here (decision D1 of ADR-0042).
 version: 1
 
-# The heading the system prompt opens with, and what the doubled adapter looks for so the whole turn runs in a stack with no key.
-# Both sides hold the same literal; tests/test_triage.py is what keeps them from drifting apart.
+# The heading the doubled adapter looks for, so the turn runs with no key; tests/test_triage.py keeps the two literals together.
 marker: "[TRIAGE]"
 
-# The two labels are the outcome domain DER/entidades.md declares for this step, so the prompt may not invent a third: a verdict
-# outside them is refused when it is read, and the turn fails rather than writing a value nobody can query.
+# The two labels are the outcome domain of DER/entidades.md: a third one is refused when read, and the turn fails.
 system: |-
   [TRIAGE]
 
@@ -32,12 +27,10 @@ system: |-
   Ejemplo de salida:
   {"verdict": "in_domain", "confidence": 0.93, "greeting": false}
 
-# The heading the objective of the AIAgent is appended under, at the end of the system prompt: it is configuration of the agent
-# and not something the customer wrote, so it does not travel in the user message where an instruction could be mistaken for one.
+# The objective goes in the system prompt and not in the user message: it is configuration, not something the customer wrote.
 objective: |-
   [A QUÉ SE DEDICA EL NEGOCIO]
 
-# What the classifier is handed: the messages of the batch, already joined and already redacted by the guardrail that ran before
-# this step (ADR-0006). No history — the verdict is about what was asked in this turn.
+# The messages of the batch, already redacted by the guardrail before it (ADR-0006). No history: the verdict is about this turn.
 user: |-
   [MENSAJE DEL CLIENTE]

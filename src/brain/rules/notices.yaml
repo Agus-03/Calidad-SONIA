@@ -1,24 +1,13 @@
-# The fixed answer of decision O2: one text per cut point, so a turn the pipeline refused does not leave the customer talking to
-# nobody. Versioned data and not code, because what a business says when it cannot answer is the business's wording (regla 9).
+# The fixed answer of decision O2 (ADR-0042): one text per cut point, keyed by the step that cut and the leg it cut on.
+# Versioned data and not code, because what a business says when it cannot answer is the business's wording (regla 9).
 #
-# THIS IS WHAT THE CUSTOMER READS, so it is the one file here written in Spanish and in the voice of the business. Everything else
-# in rules/ is either a list of terms or a prompt for a model; this is a message somebody gets on WhatsApp.
+# THIS IS WHAT THE CUSTOMER READS, the one file in rules/ written in Spanish and in the voice of the business.
 #
-# One entry per cut point, keyed by the step that cut and the leg it cut on. A step with no entry answers nothing, which is not a
-# file half written but a decision: THE TRIAGE HAS NO TEXT AND MAY NOT HAVE ONE (decision O1c). A question outside the domain is
-# not told anything at all — the conversation drops to waiting and a person picks it up, and pipeline/notices.py refuses this file
-# if somebody writes a triage entry into it.
+# THE TRIAGE HAS NO TEXT AND MAY NOT HAVE ONE (decision O1c), and pipeline/notices.py refuses this file if somebody writes one.
+# The other steps with no entry do not cut yet: the inbound guardrail will with ADR-0043, and Fase 12 decides for the rest.
 #
-# WHAT IS NOT HERE AND WHY:
-#   · inbound guardrail — it redacts, it never cuts (pipeline/guardrail.py), so a text for it would be text nobody can reach.
-#   · retrieval, reranking, grounding, generation — none of them cuts a turn yet. Fase 12 decides whether they do, and a step that
-#     starts cutting without an entry here goes silent without warning. That is the cost of keeping the file this simple.
-#
-# WHAT A TEXT MAY NOT DO, because the customer is on the other side and none of this goes through the pipeline again:
-#   · promise a time, or say who is going to answer. Nothing here knows either.
-#   · say what was refused, or why. On the inbound cut it would repeat the term that was blocked; on the outbound one it would tell
-#     the customer that the answer their question produced was unsendable.
-#   · carry a personal datum of anybody's. These texts are fixed, so the redaction of ADR-0006 never looks at them.
+# A TEXT MAY NOT promise a time, say who answers, say what was refused, or carry a personal datum: these are fixed, so the
+# redaction of ADR-0006 never looks at them.
 version: 1
 
 # The customer's own message was refused before anything was generated (07-secuencia B.1).
@@ -26,8 +15,8 @@ inbound:
   blocklist: |-
     No puedo ayudarte con eso por acá. Le paso tu mensaje a una persona del equipo para que lo vea.
 
-# The answer was generated and then refused, so there is a generation with status blocked and no message (07-secuencia B.2). The
-# two texts are the same length of promise on purpose: what the customer reads cannot depend on which of our checks fired.
+# Generated and then refused, so there is a generation with status blocked and no message (07-secuencia B.2). The two texts
+# promise the same amount on purpose: what the customer reads cannot depend on which of our checks fired.
 outbound:
   blocklist: |-
     Prefiero que esto lo vea una persona del equipo. Ya le pasé tu consulta y te va a responder por acá.

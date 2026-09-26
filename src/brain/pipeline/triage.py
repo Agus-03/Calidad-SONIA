@@ -1,14 +1,8 @@
-# The third step of ADR-0016, and the first of the turn that costs a provider call: what a blocklist and a guardrail settle with
-# a file, this one cannot — whether a question belongs to a business is a judgement about meaning, and the business is a
-# different one for every agent (F01). What it compares against is the agent's objective component (decision D1): the domain of
-# an agent is what its administrator wrote, so it travels as configuration and never as a list of topics in this repository.
+# The third step of ADR-0016 and the first that costs a provider call: whether a question belongs to a business is a judgement
+# about meaning, and it compares against the agent's objective component and never a list of topics of ours (decision D1).
 #
-# It runs after the guardrail and not before it, which is part of why the order of ADR-0016 is the order it is: this is the first
-# text of the turn that leaves for a provider, and by here it is the redacted one (ADR-0006).
-#
-# Its verdict is the denominator of OE6, and that is the reason this step exists at all rather than letting the similarity score
-# of the retrieval decide what counts as "within the domain" — a system that decides which questions it was supposed to know
-# improves that metric exactly when it fails to recall (ADR-0016).
+# It runs after the guardrail so the text that leaves for the provider is the redacted one (ADR-0006), and its verdict is the
+# denominator of OE6 — which is why it exists instead of letting a similarity score decide what counted as in domain.
 
 import json
 import logging
@@ -137,12 +131,8 @@ async def run(request: StepRequest) -> StepResult:
     )
 
 
-# Separate from the call so every case below can be tested without a model.
-#
-# Raises where the classifier of F11 returns nothing, and the difference between the two is what their answers are for: an
-# intent nobody could read costs a row of evidence, and a verdict nobody could read decides whether a customer is answered at
-# all. The domain of this step has no value for "could not decide", so returning in_domain here would write a row asserting a
-# check that never happened — which is the thing pipeline_steps exists to prevent (ADR-0016).
+# Separate from the call so every case below can be tested without a model, and it raises where the classifier of F11 returns
+# nothing: this domain has no value for "could not decide", and answering in_domain would assert a check that never ran.
 def parse(answer: str) -> Verdict:
     text = answer.strip()
     if fenced := _FENCE.match(text):

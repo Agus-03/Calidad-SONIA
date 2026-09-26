@@ -1,16 +1,9 @@
-# The guardrail of ADR-0016, and it is not the redaction of ADR-0006: 03-capa-prompts regla 4 puts the redaction in a checkpoint
-# of its own right after the batch closes —extract the datum, encrypt it, persist it, then substitute— and describes this step as
-# "una segunda verificación de que no quedó ningún dato sensible sin redactar". This is the net under that checkpoint.
+# The guardrail of ADR-0016, and not the redaction of ADR-0006: it is the net under the checkpoint of 03-capa-prompts regla 4,
+# which does not exist yet because regla 3 forbids the brain to write contact_attributes (decision O10 of ADR-0042).
 #
-# The checkpoint does not exist yet, so today this net is the only thing substituting anything, and every message with a document
-# number in it comes out of here as modified. That is a gap and not a design: regla 4 step 1 writes contact_attributes, which the
-# brain is not allowed to write (regla 3), so whoever builds it has to settle that first.
-#
-# The two runs find the same thing and do opposite things with it, which is decision D3 of this phase. Inbound it replaces the
-# datum and lets the turn go on (modified): a datum that was successfully redacted is no reason to leave a customer unanswered,
-# and the provider never sees it either way. Outbound it refuses the answer whole (blocked) and never rewrites it, because that
-# text has already been through the external provider — rewriting it would protect nothing ADR-0006 cares about and would only
-# put a marker where the customer's own number was. So an inbound guardrail never cuts a turn, and an outbound one only ever cuts.
+# The two runs do opposite things with the same finding (decision D3): inbound it substitutes and lets the turn go on, outbound
+# it refuses the answer whole and never rewrites it, because that text already reached the provider. ADR-0043 amends the first
+# half — the inbound run will cut for a prompt injection, built in the security phase, so a blocked here is never a datum.
 
 import logging
 import re
@@ -121,12 +114,8 @@ def _inbound(request: StepRequest, version: str, redacted: str, counted: dict[st
     return StepResult(outcome=_MODIFIED, version=version, text=redacted, detail={"redacted": counted})
 
 
-# The answer comes back out untouched, which is what the caller then writes into generations.completion_text: 07-secuencia 4.2
-# keeps the blocked generation precisely so somebody can see what was stopped and with what prompt it was produced.
-#
-# The cost, and it is not hypothetical: an administrator who writes the agency own CBU into a prompt component so the AIAgent can
-# pass it on gets every answer that repeats it refused. This step cannot tell the agency bank account from a customer one, and
-# ADR-0006 is about the customer one.
+# The answer comes back untouched, because 07-secuencia 4.2 keeps the blocked generation so somebody can see what was stopped.
+# Its cost: this step cannot tell the agency's own CBU in a prompt component from a customer's, so it refuses both.
 def _outbound(request: StepRequest, version: str, counted: dict[str, int]) -> StepResult:
     if not counted:
         return StepResult(outcome=_PASS, version=version, text=request.text)

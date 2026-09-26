@@ -362,12 +362,9 @@ INSERT INTO signal_evaluations (
 """
 
 
-# Deleted first like the steps and the intents, and for the same reason: the core asks again when the brain answers a 5xx
-# (ADR-0020), and one turn has to leave one evaluation of a signal and not two. By signal_type and not by batch, because the other
-# three of F12 are evaluated by their own classifiers and are not this one's to remove.
-#
-# A row transfer_events already points at cannot be deleted, and that is the FK doing its job: a retry means the core never got the
-# answer, so the transfer was never written, and if it somehow was, this turn fails loudly instead of duplicating its evidence.
+# Deleted first like the steps and the intents: the core asks again on a 5xx (ADR-0020) and one turn leaves one evaluation per
+# signal. By signal_type, because the other three of F12 belong to their own classifiers. A row transfer_events points at cannot
+# be deleted, and that FK is doing its job: this turn fails loudly instead of duplicating evidence.
 async def write_signal_evaluation(conn: AsyncConnection, evaluation: SignalEvaluation) -> None:
     await conn.execute(
         _SIGNALS_OF_BATCH,

@@ -85,7 +85,7 @@ func TestAnAnswerNobodyMaySendIsKeptUnsentAndTheTurnWaitsForAPerson(t *testing.T
 		t.Error("generations.message_id points at a message: the answer the pipeline refused was linked to one (section 4.2)")
 	}
 	if got.generationCost == "" {
-		t.Error("generations has no cost: a refused answer was paid for and OE2 counts that money too")
+		t.Error("generations has no cost: a refused answer was paid for, and the money is the point of cutting late")
 	}
 	// Decision O2, and the third arm of the sender check of messages: the text is nobody's answer, so it names no sender.
 	if got.noticeSender != "system" {

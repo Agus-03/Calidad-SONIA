@@ -1,31 +1,17 @@
-# The words the AIAgent may not answer with (decision O6b), in a file of their own and not inside the outbound section of
-# blocklist.yaml. Two files because they have two owners: that one is the policy of whoever runs the business, which decision D4
-# ships empty on purpose, and this one is a guard the team keeps loading, because an insult in an answer is a legal exposure and
-# not a matter of taste.
+# The words the AIAgent may not answer with (decision O6b of ADR-0042), in a file of their own because this is a guard of the
+# team and blocklist.yaml is the policy of the business. These words are ours: the anteproyecto declares none.
 #
-# THIS IS THE FILE TO LOAD WORDS INTO. One entry per line, and one line per variant: the comparison is by whole word with case and
-# accents folded (pipeline/blocklist.py), so "puta" does not cover "putas", while "PUTA" and "putá" are already covered by the one
-# below. An entry may hold more than one word. The order only decides which entry a blocked turn reports.
+# THIS IS THE FILE TO LOAD WORDS INTO, one line per variant, because matching is by whole word with case and accents folded
+# (pipeline/blocklist.py): "puta" does not cover "putas", and "culo" does not fire inside "músculo".
 #
-# IT IS THAT WORD AND NOT A PIECE OF ANOTHER, which is what makes a short entry safe: "culo" does not fire on "músculo" nor on
-# "vínculo", and it does fire on "¡CULO!" and on "ese culo." because punctuation is not a letter. The price of that exactness is
-# the line above — "culos", "culón" and "culito" are other words, and each one needs its own line here.
+# AN AMBIGUOUS WORD DOES NOT FILTER AN INSULT, IT GAGS THE AIAGENT: a match ends the turn after the generation was paid for and
+# leaves the customer with no answer, so "forro" and "retrasado" do not belong here (tests/test_blocklist.py refuses them).
 #
-# WHAT IT COSTS TO ADD ONE, so nobody has to discover it in production: a match ends the turn when the generation has already been
-# paid for, the customer is left with no answer at all, and the conversation waits for a person. So an ambiguous word does not
-# filter an insult, it gags the AIAgent until somebody deploys again — "forro" is an insult and also the lining of a jacket,
-# "retrasado" is an insult and also a late payment. Those do not belong here, and tests/test_blocklist.py refuses a handful of
-# them by answering ordinary sentences of a rental business through this list.
-#
-# BUMP THE VERSION BELOW WHEN THE LIST CHANGES. pipeline_steps.version writes it, so a word added without it leaves every earlier
-# row of this step naming a list that no longer exists — the same argument signal_evaluations.classifier_version exists for.
-#
-# And the part that has to be said out loud: these words are ours and not the anteproyecto's, which declares none. They are a seed
-# for O6b, chosen because they insult in every use, and not a requirement of anybody's.
+# BUMP THE VERSION WHEN THE LIST CHANGES: pipeline_steps.version writes it, and without that every earlier row names a list that
+# no longer exists — the argument signal_evaluations.classifier_version exists for.
 version: 1
 
-# Only the outbound run reads this list. Blocking what the customer writes would leave them with no answer for having sworn, and
-# what O6b is about is the AIAgent not being the one who swears.
+# Only the outbound run reads this list: O6b is about the AIAgent not swearing, not about refusing a customer who does.
 terms:
   - hijo de puta
   - hija de puta

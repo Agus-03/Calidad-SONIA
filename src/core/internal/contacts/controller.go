@@ -67,6 +67,16 @@ type labelResponse struct {
 type cardResponse struct {
 	contactResponse
 	Labels []labelResponse `json:"labels"`
+	// What F31 found in the conversations, beside and never over what a person loaded (ADR-0047, sections 2.5 and 2.7).
+	Attributes []attributeResponse `json:"attributes"`
+}
+
+type attributeResponse struct {
+	Key        string   `json:"key"`
+	Value      string   `json:"value"`
+	Source     string   `json:"source"`
+	Confidence *float64 `json:"confidence"`
+	CreatedAt  string   `json:"created_at"`
 }
 
 // sensitiveResponse embeds the card and adds the four. It is a second type and not a flag on the first, because a role that must
@@ -97,12 +107,19 @@ func present(c Contact) contactResponse {
 }
 
 // presentFor is the single place the rule is applied, so adding a handler cannot forget it: the role decides which struct is built.
-func presentFor(role enums.OperatorRole, c Contact, tags []labels.Label) any {
+func presentFor(role enums.OperatorRole, c Contact, tags []labels.Label, attributes []Attribute) any {
 	chips := make([]labelResponse, 0, len(tags))
 	for _, t := range tags {
 		chips = append(chips, labelResponse{ID: t.ID.String(), Name: t.Name, Color: t.Color})
 	}
-	card := cardResponse{contactResponse: present(c), Labels: chips}
+	found := make([]attributeResponse, 0, len(attributes))
+	for _, a := range attributes {
+		found = append(found, attributeResponse{
+			Key: a.Key, Value: a.Value, Source: string(a.Source), Confidence: a.Confidence,
+			CreatedAt: a.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	card := cardResponse{contactResponse: present(c), Labels: chips, Attributes: found}
 
 	if !seesSensitive(role) {
 		return card
@@ -230,8 +247,9 @@ func (c *Controller) create(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
-	// Nil and not a read: a contact created a line ago has been tagged by nobody, so the empty list is the true answer.
-	soniahttp.Created(gc, presentFor(scope.Role, contact, nil))
+	// Nil and not a read: a contact created a line ago has been tagged by nobody and talked in no conversation, so the empty
+	// lists are the true answer.
+	soniahttp.Created(gc, presentFor(scope.Role, contact, nil, nil))
 }
 
 // update reads the body as raw keys first, because which fields arrived is the question: a struct cannot tell a field left out
@@ -462,7 +480,12 @@ func (c *Controller) card(gc *gin.Context, scope Scope, contact Contact) (any, b
 		soniahttp.Fail(gc, c.log, translate(err))
 		return nil, false
 	}
-	return presentFor(scope.Role, contact, tags), true
+	attributes, err := c.service.AttributesOf(gc.Request.Context(), scope, contact.ID)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return nil, false
+	}
+	return presentFor(scope.Role, contact, tags, attributes), true
 }
 
 func (c *Controller) remove(gc *gin.Context) {

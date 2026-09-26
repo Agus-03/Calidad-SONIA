@@ -590,3 +590,81 @@ func TestAContextThatCannotBeAdoptedLeavesTheTurnUnfinished(t *testing.T) {
 		t.Fatalf("the batch reads as finished: processed %v, failed %v", h.store.processed, h.store.failed)
 	}
 }
+
+// ADR-0047, section 2.1: what the brain extracted is handed to contacts/, for the contact of this conversation, inside the
+// transaction that closes the turn and before it is marked done, whatever the turn ended in.
+func TestWhatTheBrainExtractedIsKeptWithTheTurn(t *testing.T) {
+	source := uuid.New()
+	extracted := []brainclient.ExtractedDatum{{Key: "dni", Value: "30123456", Confidence: 1, SourceMessageID: source}}
+	generation := uuid.New()
+	text := "hola"
+
+	for _, tc := range []struct {
+		name     string
+		mode     enums.AgentMode
+		response brainclient.TurnResponse
+		want     []string
+	}{
+		{"an answered turn", enums.AgentModeAutonomous,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text, Extracted: extracted},
+			[]string{"outbound_message", "generation_linked", "conversation_context", "contact_attributes", "processed_at", "message_sent"}},
+		// A request for a person often comes with the DNI, and the checkpoint found it before the cut (section 2.7).
+		{"a turn the triage cut", enums.AgentModeAutonomous,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, Extracted: extracted},
+			[]string{"conversation_waiting", "contact_attributes", "processed_at"}},
+		{"a suggestion", enums.AgentModeSuggestion,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text, Extracted: extracted},
+			[]string{"conversation_context", "contact_attributes", "processed_at"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := conductor()
+			h.store.target.Mode = tc.mode
+			h.brain.response = tc.response
+
+			h.turn()
+
+			if !slices.Equal(*h.steps, tc.want) {
+				t.Fatalf("steps = %v, want %v", *h.steps, tc.want)
+			}
+			if len(h.attributes.contacts) != 1 || h.attributes.contacts[0] != h.store.target.ContactID {
+				t.Fatalf("recorded for %v, want the contact of the conversation %v", h.attributes.contacts, h.store.target.ContactID)
+			}
+			got := h.attributes.recorded
+			if len(got) != 1 || got[0].Key != "dni" || got[0].Value != "30123456" || got[0].SourceMessageID != source {
+				t.Fatalf("recorded = %+v, want the DNI the brain found, with its message", got)
+			}
+		})
+	}
+}
+
+// Nothing found is nothing to hand over: the owner of the table is not asked to write an empty list.
+func TestATurnThatExtractedNothingDoesNotAskContacts(t *testing.T) {
+	h := conductor()
+
+	h.turn()
+
+	if slices.Contains(*h.steps, "contact_attributes") {
+		t.Fatalf("contacts/ was asked to keep nothing: %v", *h.steps)
+	}
+}
+
+// The data and the turn commit together (section 2.1): data that cannot be kept leaves a turn nobody finished and sends nothing.
+func TestExtractedDataThatCannotBeKeptLeavesTheTurnUnfinished(t *testing.T) {
+	h := conductor()
+	generation := uuid.New()
+	text := "hola"
+	h.brain.response = brainclient.TurnResponse{
+		Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text,
+		Extracted: []brainclient.ExtractedDatum{{Key: "email", Value: "a@b.co", Confidence: 0.9, SourceMessageID: uuid.New()}},
+	}
+	h.attributes.err = errors.New("contact_attributes is locked")
+
+	h.turn()
+
+	if h.sender.calls != 0 {
+		t.Fatal("the answer left although the transaction that holds it did not commit")
+	}
+	if h.store.failed[h.store.batch.ID] == "" || len(h.store.processed) != 0 {
+		t.Fatalf("the batch reads as finished: processed %v, failed %v", h.store.processed, h.store.failed)
+	}
+}

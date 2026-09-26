@@ -86,6 +86,12 @@ func TestTargetJoinsTheConversationToItsContact(t *testing.T) {
 		if target.InboxID == uuid.Nil {
 			t.Fatal("the target carries no inbox, so nothing knows which number answers")
 		}
+		// Whose data the brain may extract in the turn (ADR-0047): the contact of this conversation and no other.
+		var contact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, conversationID).Scan(&contact); err != nil ||
+			target.ContactID != contact {
+			t.Fatalf("contact = %v, want %v (%v)", target.ContactID, contact, err)
+		}
 		return rollback
 	})
 

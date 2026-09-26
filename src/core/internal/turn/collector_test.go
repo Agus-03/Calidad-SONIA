@@ -19,8 +19,8 @@ func gatherer(target Target) (*Collector, *stubStore, *stubAggregate) {
 	aggregate := &stubAggregate{steps: steps}
 
 	collector := NewCollector(CollectorOptions{
-		Tx: func(_ context.Context, fn func(Store, Aggregate) error) error {
-			return fn(store, aggregate)
+		Tx: func(_ context.Context, fn func(Store, Aggregate, Attributes) error) error {
+			return fn(store, aggregate, &stubAttributes{})
 		},
 		Window:      10 * time.Second,
 		MaxMessages: 10,

@@ -29,8 +29,10 @@ type Batch struct {
 type Target struct {
 	ConversationID uuid.UUID
 	InboxID        uuid.UUID
-	ContactPhone   string
-	Mode           enums.AgentMode
+	// Whose data the brain may have extracted in this turn (ADR-0047).
+	ContactID    uuid.UUID
+	ContactPhone string
+	Mode         enums.AgentMode
 	// Read here and no longer carried from the webhook: the batch closes up to a minute after the message that opened it, and
 	// the admin may have given the conversation another agent, or none, in between (ADR-0041, regla 8).
 	AIAgentID *uuid.UUID

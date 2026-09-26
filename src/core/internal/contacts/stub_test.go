@@ -2,6 +2,7 @@ package contacts
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -18,6 +19,9 @@ type stubStore struct {
 	assigned map[uuid.UUID][]uuid.UUID
 	tags     map[uuid.UUID][]uuid.UUID
 	err      error
+
+	// What F31 left on each contact, filtered the way the real query filters, so a case can assert what a role is shown.
+	attributes map[uuid.UUID][]Attribute
 }
 
 func newStubStore(rows ...Contact) *stubStore {
@@ -113,6 +117,16 @@ func (s *stubStore) ByID(_ context.Context, scope Scope, contactID uuid.UUID) (C
 		}
 	}
 	return Contact{}, ErrNotFound
+}
+
+func (s *stubStore) Attributes(_ context.Context, contactID uuid.UUID, withSensitive bool) ([]Attribute, error) {
+	out := []Attribute{}
+	for _, a := range s.attributes[contactID] {
+		if withSensitive || !slices.Contains(sensitiveKeys, a.Key) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 func (s *stubStore) Create(_ context.Context, c Contact) error {

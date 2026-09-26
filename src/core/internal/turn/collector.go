@@ -64,7 +64,7 @@ func (c *Collector) Collect(ctx context.Context, conversationID, messageID uuid.
 // One transaction for the batch and the link, because a batch nobody linked leaves the brain reading a turn with no incoming
 // messages, and a link to a batch that rolled back would point at nothing (regla 2, regla 5).
 func (c *Collector) collect(ctx context.Context, conversationID, messageID uuid.UUID) error {
-	return c.tx(ctx, func(store Store, aggregate Aggregate) error {
+	return c.tx(ctx, func(store Store, aggregate Aggregate, _ Attributes) error {
 		target, err := store.Target(ctx, conversationID)
 		if err != nil {
 			return err

@@ -227,6 +227,8 @@ func tearDownCut(t *testing.T, pool db.Pool, customer string) {
 		// After the generations that point at them: a generated turn leaves both since ADR-0048, a suggestion included.
 		{"the context versions", `DELETE FROM conversation_context_versions WHERE conversation_id IN (` + conversations + `)`},
 		{"the current context", `DELETE FROM conversation_contexts WHERE conversation_id IN (` + conversations + `)`},
+		// Before the messages they point at and the contact they belong to: F31 writes them since ADR-0047.
+		{"the contact attributes", `DELETE FROM contact_attributes WHERE contact_id IN (SELECT id FROM contacts WHERE phone_whatsapp = $1)`},
 		{"the messages", `DELETE FROM messages WHERE conversation_id IN (` + conversations + `)`},
 		{"the batches", `DELETE FROM message_batches WHERE conversation_id IN (` + conversations + `)`},
 		{"the assignments", `DELETE FROM conversation_assignments WHERE conversation_id IN (` + conversations + `)`},

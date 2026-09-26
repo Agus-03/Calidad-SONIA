@@ -74,11 +74,14 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 
 	turnRepo := turn.NewRepository(pool)
 
-	// Binds both collaborators to the same transaction, which is what lets it cross packages (regla 5). Shared by the two sides
-	// of the turn: the one that gathers the messages and the one that answers them.
-	turnTx := func(ctx context.Context, fn func(turn.Store, turn.Aggregate) error) error {
+	// The owner of contact_attributes, bound to the turn's transaction so what the brain extracted commits with it (ADR-0047).
+	turnContacts := contacts.NewRepository(pool, cipher)
+
+	// Binds the three collaborators to the same transaction, which is what lets it cross packages (regla 5). Shared by the two
+	// sides of the turn: the one that gathers the messages and the one that answers them.
+	turnTx := func(ctx context.Context, fn func(turn.Store, turn.Aggregate, turn.Attributes) error) error {
 		return db.InTx(ctx, pool, func(exec db.Executor) error {
-			return fn(turnRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+			return fn(turnRepo.WithExecutor(exec), aggregate.WithExecutor(exec), turnContacts.WithExecutor(exec))
 		})
 	}
 

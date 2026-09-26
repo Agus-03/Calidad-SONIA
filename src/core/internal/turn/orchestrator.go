@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -56,6 +57,12 @@ type Aggregate interface {
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 }
 
+// Attributes is contacts/, the owner of contact_attributes: what the brain extracted is written by its repository, inside the
+// transaction that closes the turn (regla 1, ADR-0047 section 2.1).
+type Attributes interface {
+	RecordExtracted(ctx context.Context, contactID uuid.UUID, data []contacts.Extracted) error
+}
+
 type Brain interface {
 	Turn(ctx context.Context, req brainclient.TurnRequest) (brainclient.TurnResponse, error)
 }
@@ -64,8 +71,9 @@ type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
-// TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
-type TxFunc func(ctx context.Context, fn func(Store, Aggregate) error) error
+// TxFunc runs fn in one transaction with the three collaborators bound to it (regla 5), and is a function so a test needs no
+// PostgreSQL.
+type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Attributes) error) error
 
 type Options struct {
 	Tx        TxFunc
@@ -187,7 +195,7 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 		)
 	}
 
-	message, err := o.persist(ctx, batch, conversationID, aiAgentID, answer, time.Now().UTC())
+	message, err := o.persist(ctx, batch, target, aiAgentID, answer, time.Now().UTC())
 	if err != nil {
 		return o.abandon(ctx, batch, err)
 	}
@@ -248,7 +256,7 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 
 	// One transaction for every write of the cut, for the reason section 2 gives about the happy path: either alone leaves a turn
 	// that reads as finished and unattended, or as attended and never finished.
-	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate, attributes Attributes) error {
 		if notice != "" {
 			var err error
 			// Written before it is sent, like every other outbound row: crashing after the send would leave a delivered message
@@ -275,6 +283,10 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 		if err := adopt(ctx, store, answer.GenerationID); err != nil {
 			return err
 		}
+		// A request for a person often comes with the DNI, and the checkpoint found it before the cut (ADR-0047, section 2.7).
+		if err := record(ctx, attributes, target.ContactID, answer); err != nil {
+			return err
+		}
 		return store.MarkProcessed(ctx, batch.ID, at)
 	})
 	if err != nil {
@@ -298,8 +310,11 @@ func (o *Orchestrator) suggested(ctx context.Context, target Target, batch Batch
 		slog.String("batch_id", batch.ID.String()),
 		slog.Bool("generation", answer.GenerationID != nil),
 	)
-	err := o.opts.Tx(ctx, func(store Store, _ Aggregate) error {
+	err := o.opts.Tx(ctx, func(store Store, _ Aggregate, attributes Attributes) error {
 		if err := adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
+		if err := record(ctx, attributes, target.ContactID, answer); err != nil {
 			return err
 		}
 		return store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
@@ -318,6 +333,18 @@ func adopt(ctx context.Context, store Store, generationID *uuid.UUID) error {
 	return store.AdoptContext(ctx, *generationID)
 }
 
+// record hands contacts/ what the brain extracted in this turn; the rules of what is kept are that package's (ADR-0047).
+func record(ctx context.Context, attributes Attributes, contactID uuid.UUID, answer brainclient.TurnResponse) error {
+	if len(answer.Extracted) == 0 {
+		return nil
+	}
+	data := make([]contacts.Extracted, 0, len(answer.Extracted))
+	for _, e := range answer.Extracted {
+		data = append(data, contacts.Extracted{Key: e.Key, Value: e.Value, Confidence: e.Confidence, SourceMessageID: e.SourceMessageID})
+	}
+	return attributes.RecordExtracted(ctx, contactID, data)
+}
+
 // answers is the gate of ADR-0041 regla 8 as ADR-0046 amends it: suggestion opens its turn too, because a draft needs one.
 func answers(mode enums.AgentMode) bool {
 	return mode == enums.AgentModeAutonomous || mode == enums.AgentModeSuggestion
@@ -325,14 +352,14 @@ func answers(mode enums.AgentMode) bool {
 
 // The transaction of 07-secuencia section 2: without it a restart cannot tell a finished turn from one that never ran.
 func (o *Orchestrator) persist(
-	ctx context.Context, batch Batch, conversationID, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
+	ctx context.Context, batch Batch, target Target, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
 ) (conversations.Message, error) {
 	var message conversations.Message
 
-	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate, attributes Attributes) error {
 		var err error
 		// Written before it is sent: crashing after the send would leave a delivered message with no row (F29, C09).
-		if message, err = aggregate.RecordOutbound(ctx, conversationID, aiAgentID, answer.Text(), at); err != nil {
+		if message, err = aggregate.RecordOutbound(ctx, target.ConversationID, aiAgentID, answer.Text(), at); err != nil {
 			return err
 		}
 		// Linked here and not afterwards: a restart in between would leave message_id NULL, which section 5 reads as never sent.
@@ -342,6 +369,9 @@ func (o *Orchestrator) persist(
 			}
 		}
 		if err = adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
+		if err = record(ctx, attributes, target.ContactID, answer); err != nil {
 			return err
 		}
 		return store.MarkProcessed(ctx, batch.ID, at)

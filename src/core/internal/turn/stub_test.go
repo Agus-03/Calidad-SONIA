@@ -36,7 +36,16 @@ type stubStore struct {
 	processed []uuid.UUID
 	failed    map[uuid.UUID]string
 	linked    map[uuid.UUID]uuid.UUID
+	transfers []transfer
 	steps     *[]string
+}
+
+// What a transfer_events row carries, which is what the test asserts about it: the event points at the evidence and duplicates
+// none of it (H-18).
+type transfer struct {
+	ConversationID     uuid.UUID
+	SignalEvaluationID uuid.UUID
+	TurnNumber         int
 }
 
 func (s *stubStore) Append(_ context.Context, conversationID uuid.UUID, window time.Duration, _ int) (Batch, error) {
@@ -113,6 +122,14 @@ func (s *stubStore) LinkGeneration(_ context.Context, generationID, messageID uu
 	return nil
 }
 
+func (s *stubStore) RecordTransfer(_ context.Context, conversationID, signalEvaluationID uuid.UUID, turnNumber int) error {
+	s.record("transfer_event")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.transfers = append(s.transfers, transfer{ConversationID: conversationID, SignalEvaluationID: signalEvaluationID, TurnNumber: turnNumber})
+	return nil
+}
+
 func (s *stubStore) record(step string) {
 	if s.steps != nil {
 		s.mu.Lock()
@@ -129,6 +146,7 @@ type stubAggregate struct {
 	linked   map[uuid.UUID]uuid.UUID
 	waiting  []uuid.UUID
 	outbound []string
+	notices  []string
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
 	steps    *[]string
@@ -165,9 +183,30 @@ func (a *stubAggregate) RecordOutbound(_ context.Context, conversationID, aiAgen
 		ID:              uuid.New(),
 		ConversationID:  conversationID,
 		Direction:       enums.MessageDirectionOutbound,
+		SenderType:      enums.SenderTypeAiAgent,
 		SenderAIAgentID: &aiAgentID,
 		ContentText:     text,
 		SentAt:          at,
+	}, nil
+}
+
+// The fixed text of a cut (decision O2), recorded apart from the answer: a test that could not tell the two writes apart could not
+// say whether what reached the customer was the answer the pipeline refused.
+func (a *stubAggregate) RecordSystemOutbound(_ context.Context, conversationID uuid.UUID, text string, at time.Time) (conversations.Message, error) {
+	if a.recordErr != nil {
+		return conversations.Message{}, a.recordErr
+	}
+	a.record("notice_message")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.notices = append(a.notices, text)
+	return conversations.Message{
+		ID:             uuid.New(),
+		ConversationID: conversationID,
+		Direction:      enums.MessageDirectionOutbound,
+		SenderType:     enums.SenderTypeSystem,
+		ContentText:    text,
+		SentAt:         at,
 	}, nil
 }
 

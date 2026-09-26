@@ -42,6 +42,9 @@ type TurnResponse struct {
 	GenerationID   *uuid.UUID        `json:"generation_id"`
 	CompletionText *string           `json:"completion_text"`
 	Transfer       *TransferProposal `json:"transfer"`
+	// The fixed text of a cut turn (decision O2), which is not a generation and travels in its own field for that reason: a
+	// refused answer must not be sendable (07-secuencia 4.2) and this one is the only thing the customer may read.
+	NoticeText *string `json:"notice_text"`
 }
 
 // PricedModel mirrors api/schemas/models.py: a provider and a model the tariff file of the brain can price.
@@ -82,4 +85,12 @@ func (r TurnResponse) Text() string {
 		return ""
 	}
 	return *r.CompletionText
+}
+
+// Notice is the fixed text of a cut turn, empty when the pipeline decided the customer is told nothing at all (decision O1c).
+func (r TurnResponse) Notice() string {
+	if r.NoticeText == nil {
+		return ""
+	}
+	return *r.NoticeText
 }

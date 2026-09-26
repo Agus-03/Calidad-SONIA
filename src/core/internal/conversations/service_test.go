@@ -280,6 +280,36 @@ func TestRecordOutboundWritesTheRowBeforeAnybodySends(t *testing.T) {
 	}
 }
 
+// The fixed text of a turn the pipeline cut (decision O2): the row says the system wrote it, because no model produced it and no
+// person typed it. Reading it later as an answer of the AIAgent would put words in a model's mouth that it never said (OE2).
+func TestRecordSystemOutboundNamesNoSender(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	message, err := NewService(store, slog.Default()).
+		RecordSystemOutbound(context.Background(), conversation, "le paso tu mensaje a una persona", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RecordSystemOutbound: got %v, want no error", err)
+	}
+
+	if message.SenderType != enums.SenderTypeSystem {
+		t.Fatalf("sender = %q, want system", message.SenderType)
+	}
+	// The third arm of the sender check of messages: system with both sender columns empty (H-09).
+	if message.SenderAIAgentID != nil || message.SenderOperatorID != nil {
+		t.Fatalf("the row named a sender: %+v", message)
+	}
+	if message.Direction != enums.MessageDirectionOutbound {
+		t.Fatalf("direction = %q, want outbound", message.Direction)
+	}
+	if message.WAMID != nil || message.Status != nil {
+		t.Fatalf("the row was written as if it had already been sent: %+v", message)
+	}
+	if len(store.appended) != 1 {
+		t.Fatalf("appended %d rows, want 1", len(store.appended))
+	}
+}
+
 // The turn writes messages through here and never with SQL of its own (regla 1), so the three passthroughs have to exist.
 func TestTheAggregateExposesWhatTheTurnNeeds(t *testing.T) {
 	store := &fakeStore{}

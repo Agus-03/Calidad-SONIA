@@ -35,6 +35,8 @@ type Store interface {
 	MarkProcessed(ctx context.Context, batchID uuid.UUID, at time.Time) error
 	MarkFailed(ctx context.Context, batchID uuid.UUID, reason string) error
 	LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error
+	// The escalation of F12 the brain proposed, pointing at the evidence it evaluated (decision O1c).
+	RecordTransfer(ctx context.Context, conversationID, signalEvaluationID uuid.UUID, turnNumber int) error
 }
 
 // Aggregate is conversations/: this package never writes messages with SQL of its own (regla 1).
@@ -44,6 +46,8 @@ type Aggregate interface {
 	// (07-secuencia secciones 4 y 5).
 	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	RecordOutbound(ctx context.Context, conversationID, aiAgentID uuid.UUID, text string, at time.Time) (conversations.Message, error)
+	// The fixed text of a cut turn (decision O2), whose row names no sender: no model wrote it and no person typed it.
+	RecordSystemOutbound(ctx context.Context, conversationID uuid.UUID, text string, at time.Time) (conversations.Message, error)
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 }
@@ -158,7 +162,7 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 	// decision of the pipeline (07-secuencia section 4) and a failure is nobody deciding anything (section 5).
 	switch {
 	case answer.Outcome == brainclient.OutcomeBlocked:
-		return o.blocked(ctx, batch, conversationID, answer)
+		return o.blocked(ctx, target, batch, answer)
 	case answer.Outcome != brainclient.OutcomeGenerated:
 		// failed, or an outcome this version of the contract does not know. Either way nothing was decided and nothing can be sent.
 		return o.abandon(ctx, batch, fmt.Errorf("%w: outcome %s", ErrNoAnswer, answer.Outcome))
@@ -206,14 +210,27 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 }
 
 // The cut of 07-secuencia section 4, in either of its two places: before generating, where there is no evidence at all, or after,
-// where there is a generation whose message_id stays NULL for ever. Neither writes a message.
+// where there is a generation whose message_id stays NULL for ever. Neither writes the answer, and the generation that exists is
+// never the thing that goes out.
+//
+// What does go out is the fixed text the brain chose for that cut point (decision O2), so a refused turn does not leave the
+// customer talking to nobody. It amends section 4.1, which was written when a cut answered nothing at all. And when the brain sends
+// no text the turn stays silent, which is decision O1c: a question outside the domain is answered by a person and by nothing else.
+//
+// And when the brain proposes a transfer, the event of F12 is written here too (decision O1c): the brain evaluated the signal and
+// this is the action, which is the whole of "el cerebro propone, el núcleo ejecuta". Only on a cut, because today the only signal
+// that proposes anything is the triage; the leg that answered gains it with the other three signals of F12 in Fase 9.
 //
 // processed_at is written and error_message is not, which is the same reading the pause of ADR-0041 regla 8 gets: the turn ran, and
-// its outcome was not to answer. The conversation drops to waiting because somebody has to answer what the bot refused to.
-func (o *Orchestrator) blocked(ctx context.Context, batch Batch, conversationID uuid.UUID, answer brainclient.TurnResponse) error {
+// its outcome was not to answer. The conversation drops to waiting either way, because the fixed text answers nobody's question.
+func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, answer brainclient.TurnResponse) error {
+	notice := answer.Notice()
 	fields := []any{
-		slog.String("conversation_id", conversationID.String()),
+		slog.String("conversation_id", target.ConversationID.String()),
 		slog.String("batch_id", batch.ID.String()),
+		// Whether the customer was told anything, which is the one thing about a cut that a reader cannot infer from the rest.
+		slog.Bool("notice", notice != ""),
+		slog.Bool("transfer", answer.Transfer != nil && answer.Transfer.Proposed),
 	}
 	if answer.GenerationID != nil {
 		// Only when the cut came after generating: that evidence exists and the forensics of a blocked answer start there (section 4.2).
@@ -221,19 +238,43 @@ func (o *Orchestrator) blocked(ctx context.Context, batch Batch, conversationID 
 	}
 	o.opts.Logger.Info("turn blocked", fields...)
 
-	// One transaction for the two writes, for the reason section 2 gives about the happy path: either alone leaves a turn that reads
-	// as finished and unattended, or as attended and never finished.
+	at := time.Now().UTC()
+	var message conversations.Message
+
+	// One transaction for every write of the cut, for the reason section 2 gives about the happy path: either alone leaves a turn
+	// that reads as finished and unattended, or as attended and never finished.
 	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
-		if err := aggregate.MarkWaiting(ctx, conversationID); err != nil {
+		if notice != "" {
+			var err error
+			// Written before it is sent, like every other outbound row: crashing after the send would leave a delivered message
+			// with no row (F29, C09).
+			if message, err = aggregate.RecordSystemOutbound(ctx, target.ConversationID, notice, at); err != nil {
+				return err
+			}
+		}
+		// The action of decision O1c, and only when the brain proposed it: an evaluation that did not fire is evidence the brain
+		// already wrote, and turning it into a transfer here would count an escalation nobody decided.
+		if answer.Transfer != nil && answer.Transfer.Proposed {
+			if err := store.RecordTransfer(ctx, target.ConversationID, answer.Transfer.SignalEvaluationID, batch.TurnNumber); err != nil {
+				return err
+			}
+		}
+		if err := aggregate.MarkWaiting(ctx, target.ConversationID); err != nil {
 			return err
 		}
-		return store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
+		return store.MarkProcessed(ctx, batch.ID, at)
 	})
 	if err != nil {
 		// Nothing committed, so this turn really was not finished by anybody, and that is what the row has to say.
 		return o.abandon(ctx, batch, err)
 	}
-	return nil
+
+	if notice == "" {
+		return nil
+	}
+	// Outside the transaction, because none may span the boundary with another service (ADR-0017 (i).3), and through the same send
+	// as an answer: at most once, with no retry of any kind (ADR-0020).
+	return o.deliver(ctx, target, message, notice)
 }
 
 // The transaction of 07-secuencia section 2: without it a restart cannot tell a finished turn from one that never ran.
@@ -279,6 +320,9 @@ func (o *Orchestrator) deliver(ctx context.Context, target Target, message conve
 	o.opts.Logger.Info("turn answered",
 		slog.String("conversation_id", target.ConversationID.String()),
 		slog.String("wamid", wamid),
+		// Which of the two things a turn can send this was: the answer of the AIAgent, or the fixed text of a cut (decision O2).
+		// Without it, the line above a cut reads as if the answer the pipeline refused had gone out anyway.
+		slog.String("sender_type", string(message.SenderType)),
 	)
 	return nil
 }

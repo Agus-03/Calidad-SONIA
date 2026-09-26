@@ -399,7 +399,94 @@ func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
 			if len(h.store.linked) != 0 {
 				t.Fatal("a blocked generation was linked to a message that was never written")
 			}
+			// Neither response carries a text, which is the silence of decision O1c: the customer is told nothing and a person
+			// picks the conversation up. What the brain does send, when it sends one, is the case below.
+			if len(h.aggregate.notices) != 0 {
+				t.Fatalf("a cut the brain answered with silence sent a text anyway: %v", h.aggregate.notices)
+			}
 		})
+	}
+}
+
+// Decision O2, which is what amends section 4.1: a cut used to leave the customer talking to nobody, and now it leaves one message
+// that the pipeline chose and no model wrote. The conversation still drops to waiting, because the fixed text answers no question.
+func TestACutTurnSendsTheFixedTextAndStillWaitsForAPerson(t *testing.T) {
+	notice := "le paso tu mensaje a una persona del equipo"
+	refused := "esto es lo que el guardrail frenó"
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:        brainclient.OutcomeBlocked,
+		NoticeText:     &notice,
+		CompletionText: &refused,
+	}
+
+	h.turn()
+
+	// The notice first and inside the same transaction as the two writes of the cut: written before it is sent, like every other
+	// outbound row, so a crash after the send cannot leave a delivered message with no row.
+	want := []string{"notice_message", "conversation_waiting", "processed_at", "message_sent"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut with a text were %v, want %v", got, want)
+	}
+	if len(h.sender.texts) != 1 || h.sender.texts[0] != notice {
+		t.Fatalf("what reached the customer was %v, want the fixed text of the cut point", h.sender.texts)
+	}
+	// The rule of section 4.2, and the reason the two texts travel in two fields: the answer the pipeline refused is unsendable,
+	// whatever else the same response carries.
+	if slices.Contains(h.sender.texts, refused) {
+		t.Fatal("the answer the pipeline refused reached the customer")
+	}
+	if len(h.aggregate.outbound) != 0 {
+		t.Fatalf("the fixed text was written as an answer of the AIAgent: %v", h.aggregate.outbound)
+	}
+}
+
+// Decision O1c on this side of the hop: the brain evaluated the signal and this is the action it proposed, written in the same
+// transaction that moves the conversation. The event points at the evidence and duplicates none of it (H-18).
+func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing.T) {
+	signal := uuid.New()
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:  brainclient.OutcomeBlocked,
+		Transfer: &brainclient.TransferProposal{Proposed: true, SignalEvaluationID: signal},
+	}
+
+	h.turn()
+
+	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c).
+	want := []string{"transfer_event", "conversation_waiting", "processed_at"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut that delegates were %v, want %v", got, want)
+	}
+	if len(h.store.transfers) != 1 {
+		t.Fatalf("transfers = %v, want the one the brain proposed", h.store.transfers)
+	}
+	event := h.store.transfers[0]
+	if event.SignalEvaluationID != signal {
+		t.Fatalf("signal_evaluation_id = %v, want the evidence the brain named (%v)", event.SignalEvaluationID, signal)
+	}
+	if event.ConversationID != h.store.target.ConversationID || event.TurnNumber != h.store.batch.TurnNumber {
+		t.Fatalf("the event named %+v, want the conversation and the turn of this batch", event)
+	}
+}
+
+// An evaluation that did not fire is evidence the brain wrote and an action nobody decided: the administrator disabled the signal,
+// or never configured it. The conversation still waits for a person, because that is what every cut does.
+func TestAnEvaluationThatDidNotFireWritesNoTransfer(t *testing.T) {
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:  brainclient.OutcomeBlocked,
+		Transfer: &brainclient.TransferProposal{Proposed: false, SignalEvaluationID: uuid.New()},
+	}
+
+	h.turn()
+
+	if len(h.store.transfers) != 0 {
+		t.Fatalf("a transfer was written for an evaluation that did not fire: %v", h.store.transfers)
+	}
+	want := []string{"conversation_waiting", "processed_at"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut that proposed nothing were %v, want %v", got, want)
 	}
 }
 

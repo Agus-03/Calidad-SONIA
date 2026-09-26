@@ -143,6 +143,21 @@ func (s *Service) RecordOutbound(ctx context.Context, conversationID, aiAgentID 
 	return s.appendOutbound(ctx, s.DraftOutbound(conversationID, aiAgentID, text, at))
 }
 
+// RecordSystemOutbound is the same write-before-send for the fixed text of a turn the pipeline cut (decision O2). No model wrote
+// it and no person typed it, so the row names neither sender, which is the third arm of the sender check of messages (H-09): it is
+// the system talking, and reading it later as an answer of the AIAgent would put words in a model's mouth that it never produced.
+func (s *Service) RecordSystemOutbound(ctx context.Context, conversationID uuid.UUID, text string, at time.Time) (Message, error) {
+	return s.appendOutbound(ctx, Message{
+		ID:             id.New(),
+		ConversationID: conversationID,
+		Direction:      enums.MessageDirectionOutbound,
+		SenderType:     enums.SenderTypeSystem,
+		ContentText:    text,
+		ContentType:    enums.MessageContentTypeText,
+		SentAt:         at,
+	})
+}
+
 // RecordOperatorOutbound is the same write-before-send for an answer a person typed: the sender check of messages wants the
 // operator's id and no agent's, so the row names who wrote it and nothing else (H-09, ADR-0020).
 func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, operatorID uuid.UUID, text string, at time.Time) (Message, error) {

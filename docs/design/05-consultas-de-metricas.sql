@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -283,19 +283,17 @@ WHERE  annotation_type = 'transfer';
 
 
 -- #############################################################################
--- OE4 — Precisión del detector de frustración ≥ 85 %                  [PARCIAL]
+-- OE4 — Precisión del detector de frustración ≥ 85 %                  [OK]
 -- #############################################################################
 --
 -- ORIGEN (7.2, OE4, textual):
 --   "capaz de detectar señales de frustración y cambios de intención con
 --    precisión ≥ 85 % sobre un conjunto de 500 conversaciones etiquetadas"
 --
--- ESTADO: la mitad de FRUSTRACIÓN es escribible desde ADR-0014. La mitad de
---         CAMBIOS DE INTENCIÓN está bloqueada: los datos existen —`detected_intents`
---         permite derivar el cambio comparando bloques consecutivos— pero
---         "cambio de intención" NO ESTÁ DEFINIDO, y bajo la lectura ingenua
---         toda conversación tiene cambios y la métrica colapsa a la tasa base.
---         Decisión abierta en 02-decisiones/README.md.
+-- ESTADO: las dos mitades son escribibles. FRUSTRACIÓN desde ADR-0014, aunque
+--         sus filas recién existen con el detector de la Fase 16 (ADR-0044).
+--         CAMBIOS DE INTENCIÓN desde ADR-0023, que lo define, y ADR-0048, que
+--         guarda la predicción del reescritor: ver la sección de abajo.
 --
 -- DEFINICIÓN OPERATIVA (frustración)
 --   Numerador  : conversaciones con detección de frustración cuyo gold es 'frustration'.
@@ -367,34 +365,47 @@ GROUP  BY d.umbral
 ORDER  BY d.umbral;
 
 
--- OE4 · cambios de intención                                       [BLOQUEADA]
--- DESBLOQUEA: definir qué cuenta como "cambio de intención".
+-- OE4 · cambios de intención                                             [OK]
 --
--- La predicción ES derivable —abajo está la derivación ingenua— pero bajo esa
--- lectura una conversación normal (consulta_zona → consulta_disponibilidad →
--- consulta_precio) tiene dos "cambios", la predicción es casi siempre verdadera
--- y la precisión colapsa a la tasa base. OE4 pone el cambio de intención al lado
--- de la frustración, como señal que amerita derivar a un humano: eso sugiere un
--- cambio DISRUPTIVO, y esa definición no existe en ningún lado.
+-- DEFINICIÓN (ADR-0023): un cambio de intención es el que INVALIDA el contexto
+-- acumulado y obliga al reescritor de F04 a descartar el resumen en lugar de
+-- extenderlo. No lo es pasar de una intención a otra del mismo negocio: bajo
+-- esa lectura ingenua casi toda conversación cambia y la precisión colapsa a
+-- la tasa base. El gold es `conversation_annotations` con annotation_type =
+-- 'intent' y gold_value 'intent_change' | 'none'.
+--
+-- PREDICCIÓN (ADR-0048): `intent_changed` en el `content` de cada fila de
+-- `conversation_context_versions`, que es la lectura del reescritor.
+-- Unidad: la conversación, como en frustración.
+--
+-- SUPUESTOS
+--   S1. Una versión sin `intent_changed` —el reescritor no lo devolvió— no es
+--       una detección: se lee como "no dijo", nunca como true.
+--   S2. Se agrupa por `rewritten_by_model` porque la versión de `rewriter.yaml`
+--       no queda en la fila: dos versiones del prompt con el mismo modelo se
+--       mezclan. Es el mismo hueco que `detected_intents` (README, Fase 7).
 
-WITH dominante AS (                    -- intención dominante de cada bloque
-    SELECT DISTINCT ON (mb.id)
-           mb.conversation_id, mb.id AS batch_id, mb.closed_at, di.intent_label
-    FROM   message_batches mb
-    JOIN   detected_intents di ON di.message_batch_id = mb.id
-    ORDER  BY mb.id, di.confidence DESC
+WITH gold AS (
+    SELECT ca.conversation_id, ca.gold_value
+    FROM   conversation_annotations ca
+    WHERE  ca.annotation_type = 'intent'
 ),
-cambios AS (
-    SELECT conversation_id, intent_label,
-           lag(intent_label) OVER (PARTITION BY conversation_id ORDER BY closed_at) AS anterior
-    FROM   dominante
+detectado AS (
+    SELECT ccv.conversation_id,
+           ccv.rewritten_by_model
+    FROM   conversation_context_versions ccv
+    WHERE  (ccv.content->>'intent_changed')::boolean      -- S1: null no es detección
+    GROUP  BY ccv.conversation_id, ccv.rewritten_by_model
 )
-SELECT conversation_id,
-       bool_or(anterior IS NOT NULL AND intent_label <> anterior) AS detecto_cambio
-FROM   cambios
-GROUP  BY conversation_id;
--- …y acá iría el JOIN contra conversation_annotations (annotation_type='intent'),
---    en cuanto el dominio de `gold_value` para 'intent' esté declarado.
+SELECT d.rewritten_by_model,                                   -- S2
+       count(*)                                                  AS detecciones,
+       count(*) FILTER (WHERE g.gold_value = 'intent_change')    AS aciertos,
+       round(100.0 * count(*) FILTER (WHERE g.gold_value = 'intent_change')
+             / count(*), 2)                                       AS precision_pct
+FROM   detectado d
+JOIN   gold g ON g.conversation_id = d.conversation_id
+GROUP  BY d.rewritten_by_model
+ORDER  BY d.rewritten_by_model;
 
 
 -- #############################################################################
@@ -728,8 +739,9 @@ ORDER  BY semana_local;
 -- OE2 / OE7 (tono) / F36.c — Consistencia de tono              [BLOQUEADA]
 -- #############################################################################
 --
--- DESBLOQUEA: H-22 — decisión diferida al Paso 11.
---             Ver 02-decisiones/README.md, "métrica de consistencia de tono".
+-- DESBLOQUEA: H-22 — la escala y el corte, diferidos al Paso 11. El instrumento
+--             ya lo decidió ADR-0044 §2.2. Ver 02-decisiones/README.md,
+--             "métrica de consistencia de tono".
 --
 -- ORIGEN — el anteproyecto dice TRES cosas distintas:
 --   · 5.3  : "consistencia de tono de marca medida por EVALUACIÓN HUMANA en más
@@ -740,8 +752,9 @@ ORDER  BY semana_local;
 --   hay que reconciliarla por escrito en el informe final igual.
 --
 -- QUÉ FALTA
---   (a) Quién juzga: humano · LLM-as-judge · clasificador entrenado. De eso
---       depende si `tone_evaluations` necesita `judge_type` y evaluador humano.
+--   (a) RESUELTO (ADR-0044 §2.2) — juzga un LLM (LLM-as-a-judge), para OE2 y
+--       OE7, así que `tone_evaluations` no necesita evaluador humano. La
+--       evaluación humana que promete 5.3 queda para reconciliar en el informe.
 --   (b) Escala de `tone_score` y punto de corte. Hoy es `numeric` sin declarar.
 --   (c) Unidad: respuesta o conversación. El modelo soporta las dos
 --       (`generation_id` es nullable), así que NO es decisión de modelado.
@@ -943,9 +956,9 @@ ORDER  BY conversion_pct DESC NULLS LAST;
 -- =============================================================================
 --
 --   OE1  [OK]         · con ADR-0015 (`active` versionado + `ai_agent_id`)
---   OE2  [BLOQUEADA]  · H-22 — falta definición del instrumento y del corte
+--   OE2  [BLOQUEADA]  · H-22 — instrumento decidido (ADR-0044); faltan escala y corte
 --   OE3  [OK]         · con ADR-0014 (precision, unidad = conversación)
---   OE4  [PARCIAL]    · frustración OK con ADR-0014; intención sin definir
+--   OE4  [OK]         · frustración con ADR-0014; intención con ADR-0023 y ADR-0048
 --   OE5  [NO-SQL]     · cobertura de tests
 --   OE6  [OK]         · con ADR-0016 (a) y ADR-0024 (b) y (c)
 --   OE7  [PARCIAL]    · resolución autónoma OK; tono bloqueado por H-22

@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) · la lista de marcadores del paso 2 de la Regla 4 enmendada 2026-09-25 (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) decisión D6: `[CUIT]` y `[CUIL]` se emiten como un único `[CUIT/CUIL]`) · el paso 1 de la Regla 4 y §4.3 enmendados 2026-09-26 (Fase 9 — [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md): el *checkpoint* extrae y sustituye, y lo extraído lo cifra y persiste el núcleo al cerrar el turno) · el tercer punto de la Regla 3 enmendado 2026-09-26 (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md): la reescritura que falla no se reintenta dentro del turno) · el paso 1 de la Regla 4, §4.3 y §4.5 alineados 2026-09-26 con ADR-0047 §2.6 (sin consentimiento el DNI no se guarda) y con ADR-0048 (`extracted_data_json` queda vacío) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) · la lista de marcadores del paso 2 de la Regla 4 enmendada 2026-09-25 (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) decisión D6: `[CUIT]` y `[CUIL]` se emiten como un único `[CUIT/CUIL]`) · el paso 1 de la Regla 4 y §4.3 enmendados 2026-09-26 (Fase 9 — [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md): el *checkpoint* extrae y sustituye, y lo extraído lo cifra y persiste el núcleo al cerrar el turno) · el tercer punto de la Regla 3 enmendado 2026-09-26 (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md): la reescritura que falla no se reintenta dentro del turno) · el paso 1 de la Regla 4, §4.3 y §4.5 alineados 2026-09-26 con ADR-0047 §2.6 (sin consentimiento el DNI no se guarda) y con ADR-0048 (`extracted_data_json` queda vacío), y el presupuesto del ejemplo copiado como lo dijo la clienta, sin moneda, con el contexto renderizado como lo hace `rewriter.yaml` |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -194,11 +194,11 @@ Se extrae el DNI. Si Lucía dio su consentimiento, el núcleo lo cifra y lo pers
 ```json
 {
   "turn_number": 5,
-  "summary": "Lucía busca depto de 2 ambientes en Jesús María, presupuesto hasta $350.000. Preguntó disponibilidad puntual.",
+  "summary": "Lucía busca depto de 2 ambientes en Jesús María, con presupuesto de hasta 350 mil. Preguntó disponibilidad puntual.",
   "primary_intent": "consulta_disponibilidad",
   "objections_json": [],
   "urgency_level": 3,
-  "budget_signal": "350000_ARS",
+  "budget_signal": "hasta 350mil",
   "extracted_data_json": {}
 }
 ```
@@ -219,8 +219,10 @@ Se extrae el DNI. Si Lucía dio su consentimiento, el núcleo lo cifra y lo pers
 **`user`** del bloque 5 — contexto → RAG → lo que pidió → pregunta redactada:
 ```
 [CONTEXTO DE LA CONVERSACIÓN]
-Intención: consulta_disponibilidad · Presupuesto: $350.000
-Zona: Jesús María, 2 ambientes · Urgencia: 3/5
+Resumen: Lucía busca depto de 2 ambientes en Jesús María, con presupuesto de hasta 350 mil. Preguntó disponibilidad puntual.
+Intención principal: consulta_disponibilidad
+Urgencia (1 a 3): 3
+Presupuesto: hasta 350mil
 
 [BASE DE CONOCIMIENTO]
 1. Depto 2 ambientes, Jesús María, zona centro. $320.000/mes + expensas. Disponible desde el 1°.

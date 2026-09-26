@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
-| **Fecha** | 2026-08-10 |
+| **Estado** | Aceptada · la semántica de `pipeline_steps.version` enmendada por [ADR-0042](0042-pipeline-de-decision-del-turno.md) (en la corrida de salida de `blocklist` la columna nombra **dos** archivos versionados, `1+profanity1`) |
+| **Fecha** | 2026-08-10 · enmendada 2026-09-25 (Fase 8) |
 | **Etapa** | Diseño — Paso 6 (validación cruzada de las métricas) |
 | **Resuelve** | **H-23** — la configuración de recuperación del RAG no se congela con la evidencia. Habilita además la definición no circular de OE6 (**H-24**) |
 | **Requisitos afectados** | OE6 · F06, F12 |

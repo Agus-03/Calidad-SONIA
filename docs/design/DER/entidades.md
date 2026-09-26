@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) · revisado 2026-09-25 (Fase 8 — la nota de `pipeline_steps.version` se lee en plural para la corrida de salida de `blocklist`: [ADR-0042](../02-decisiones/0042-pipeline-de-decision-del-turno.md)) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 

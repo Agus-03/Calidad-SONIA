@@ -12,6 +12,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
 
@@ -118,7 +119,7 @@ func TestWhoMayAnswerIsTheHolderOrThePool(t *testing.T) {
 			d := newDesk(&stubStore{})
 			target := d.open(tc.holder)
 
-			message, err := d.service.Send(context.Background(), scopeOf(me, tc.role), target.ConversationID, "  te paso la dirección  ")
+			message, err := d.service.Send(context.Background(), scopeOf(me, tc.role), target.ConversationID, "  te paso la dirección  ", nil)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Send: got %v, want %v", err, tc.wantErr)
 			}
@@ -164,7 +165,7 @@ func TestLosingThePoolRaceWritesNothingAndSendsNothing(t *testing.T) {
 	d.aggregate.claimErr = conversations.ErrTaken
 	target := d.open(nil)
 
-	_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+	_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 	if !errors.Is(err, ErrTaken) {
 		t.Fatalf("Send: got %v, want ErrTaken", err)
 	}
@@ -195,7 +196,7 @@ func TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten(t *testing.T) {
 			tc.shape(&target)
 			d.store.targets[target.ConversationID] = target
 
-			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, tc.text)
+			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, tc.text, nil)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Send: got %v, want %v", err, tc.wantErr)
 			}
@@ -206,7 +207,7 @@ func TestAnAnswerMetaWouldRefuseIsRefusedBeforeItIsWritten(t *testing.T) {
 	}
 
 	d := newDesk(&stubStore{})
-	if _, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New(), "hola"); !errors.Is(err, ErrNotFound) {
+	if _, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New(), "hola", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Send to a conversation that does not exist: got %v, want ErrNotFound", err)
 	}
 }
@@ -233,7 +234,7 @@ func TestAFailedSendIsTheRowSaidFailedAndNeverRetried(t *testing.T) {
 			me := id.New()
 			target := d.open(nil)
 
-			message, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola")
+			message, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 			if err != nil {
 				t.Fatalf("Send: got %v, want the failed row and no error", err)
 			}
@@ -276,7 +277,7 @@ func TestANumberThatCannotSendIsRefusedBeforeWriting(t *testing.T) {
 			tc.shape(d)
 			target := d.open(nil)
 
-			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("Send: got %v, want %v", err, tc.want)
 			}
@@ -295,7 +296,7 @@ func TestADeliveredAnswerIsNeverReportedAsAnError(t *testing.T) {
 	d.aggregate.markSentErr = errors.New("connection reset")
 	target := d.open(nil)
 
-	message, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+	message, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 	if err != nil {
 		t.Fatalf("Send: got %v, want the sent answer", err)
 	}
@@ -308,7 +309,7 @@ func TestADeliveredAnswerIsNeverReportedAsAnError(t *testing.T) {
 	d.sender.err = errors.New("timeout")
 	d.aggregate.markFailedErr = errors.New("connection reset")
 	target = d.open(nil)
-	message, err = d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+	message, err = d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 	if err != nil || message.Status == nil || *message.Status != enums.MessageStatusFailed {
 		t.Fatalf("got %v and status %v, want failed and no error", err, message.Status)
 	}
@@ -323,7 +324,7 @@ func TestClosingTheTabDoesNotCutTheSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	message, err := d.service.Send(ctx, scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+	message, err := d.service.Send(ctx, scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -353,7 +354,7 @@ func TestAWriteThatFailsInsideTheTransactionSendsNothing(t *testing.T) {
 			target := d.open(nil)
 			tc.shape(d)
 
-			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola")
+			_, err := d.service.Send(context.Background(), scopeOf(id.New(), enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
 			if !errors.Is(err, boom) {
 				t.Fatalf("Send: got %v, want the underlying failure", err)
 			}
@@ -471,8 +472,8 @@ func TestTheModeChangesOnlyWhenItMakesSense(t *testing.T) {
 		{"turning the bot off", func(*Target) {}, enums.AgentModeOff, nil, true},
 		{"turning it back on", func(t *Target) { t.Mode = enums.AgentModeOff }, enums.AgentModeAutonomous, nil, true},
 		{"asking for the mode it already has writes nothing", func(*Target) {}, enums.AgentModeAutonomous, nil, false},
-		{"suggestion waits for Fase 9: stored now, the orchestrator would read it as silence",
-			func(*Target) {}, enums.AgentModeSuggestion, ErrModeNotAvailable, false},
+		{"suggestion is one of the three since ADR-0046 amended regla 11",
+			func(*Target) {}, enums.AgentModeSuggestion, nil, true},
 		{"a word that is not a mode of F02", func(*Target) {}, enums.AgentMode("robot"), ErrUnknownMode, false},
 		{"a conversation born without an agent has no bot to turn on",
 			func(t *Target) { t.AIAgentID, t.Mode = nil, enums.AgentModeOff }, enums.AgentModeAutonomous, ErrNoAIAgent, false},
@@ -540,5 +541,80 @@ func TestTheModeReportsWhatTheAggregateSaid(t *testing.T) {
 	d := newDesk(&stubStore{})
 	if _, err := d.service.SetMode(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetMode on a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}
+
+// ADR-0046, section 2.5: the text copied from a suggestion is sent as the Operator's, and the draft is reviewed with the message in
+// the same transaction, as accepted when it left untouched.
+func TestASentSuggestionIsReviewedWithTheMessage(t *testing.T) {
+	me := id.New()
+	d := newDesk(&stubStore{})
+	target := d.open(&me)
+	draft := id.New()
+
+	message, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "  Sí, tenemos dos.  ", &draft)
+	if err != nil {
+		t.Fatalf("Send: got %v, want the answer sent", err)
+	}
+	if message.SenderType != enums.SenderTypeOperator {
+		t.Fatalf("sender_type = %q, want operator: the Operator sent it and may have changed it", message.SenderType)
+	}
+	if len(d.reviews.reviewed) != 1 {
+		t.Fatalf("reviews = %v, want the draft reviewed once", d.reviews.reviewed)
+	}
+	got := d.reviews.reviewed[0]
+	if got.generationID != draft || got.messageID != message.ID || got.operatorID != me || got.text != "Sí, tenemos dos." {
+		t.Fatalf("the review named %+v, want this draft, this message, this Operator and the trimmed text", got)
+	}
+}
+
+// An answer written alone names no suggestion, and nothing is reviewed.
+func TestAnAnswerWithNoSuggestionReviewsNothing(t *testing.T) {
+	me := id.New()
+	d := newDesk(&stubStore{})
+	target := d.open(&me)
+
+	if _, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola", nil); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(d.reviews.reviewed) != 0 {
+		t.Fatalf("a draft was reviewed for an answer that named none: %v", d.reviews.reviewed)
+	}
+}
+
+// A draft of another conversation, or one already sent, refuses the whole send: the answer and its review commit together.
+func TestASuggestionThatIsNotPendingRefusesTheSend(t *testing.T) {
+	me := id.New()
+	d := newDesk(&stubStore{})
+	target := d.open(&me)
+	d.reviews.err = turn.ErrGenerationNotFound
+	draft := id.New()
+
+	_, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola", &draft)
+	if !errors.Is(err, ErrSuggestionNotPending) {
+		t.Fatalf("Send: got %v, want ErrSuggestionNotPending", err)
+	}
+	if d.sender.calls != 0 {
+		t.Fatal("the answer left although its review was refused")
+	}
+}
+
+// The draft is read with the reach of the thread: what the Operator cannot read it cannot copy (ADR-0035, regla 2).
+func TestTheSuggestionIsReadWithTheReachOfTheThread(t *testing.T) {
+	me, other := id.New(), id.New()
+	d := newDesk(&stubStore{})
+	mine := d.open(&me)
+	theirs := d.open(&other)
+	d.store.suggestions = map[uuid.UUID]Suggestion{
+		mine.ConversationID:   {GenerationID: id.New(), Text: "Sí, tenemos dos."},
+		theirs.ConversationID: {GenerationID: id.New(), Text: "otra"},
+	}
+
+	got, err := d.service.Suggestion(context.Background(), scopeOf(me, enums.OperatorRoleOperator), mine.ConversationID)
+	if err != nil || got.Text != "Sí, tenemos dos." {
+		t.Fatalf("Suggestion: got %+v, %v, want the draft of my conversation", got, err)
+	}
+	if _, err := d.service.Suggestion(context.Background(), scopeOf(me, enums.OperatorRoleOperator), theirs.ConversationID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Suggestion of another's: got %v, want ErrNotFound", err)
 	}
 }

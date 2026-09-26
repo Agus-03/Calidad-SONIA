@@ -7,7 +7,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// Written once so the four routes of one conversation cannot drift apart.
+// Written once so the five routes of one conversation cannot drift apart.
 const routeBase = "/conversations"
 
 // The three roles enter every route, and what each one reaches is decided inside: refusing the listing to an operator would take away
@@ -19,6 +19,8 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodGet, Path: routeBase + "/:id/messages", Roles: enums.OperatorRoleValues, Handler: c.thread},
 		// The same rule for every role, applied by the service: the conversation is the caller's or the pool's (ADR-0035, regla 5).
 		{Method: http.MethodPost, Path: routeBase + "/:id/messages", Roles: enums.OperatorRoleValues, Handler: c.send},
+		// The draft of suggestion mode, with the reach of the thread: what the Operator cannot read it cannot copy (ADR-0046).
+		{Method: http.MethodGet, Path: routeBase + "/:id/suggestion", Roles: enums.OperatorRoleValues, Handler: c.suggestion},
 		// The operator switches the bot of what it holds, as F27 and Anexo B give it; supervisor and admin, of any conversation of the
 		// account. The service tells them apart (ADR-0037, regla 4).
 		{Method: http.MethodPatch, Path: routeBase + "/:id/mode", Roles: enums.OperatorRoleValues, Handler: c.setMode},

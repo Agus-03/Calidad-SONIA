@@ -296,3 +296,26 @@ func scanThreadMessage(row pgx.Row) (ThreadMessage, error) {
 	}
 	return m, nil
 }
+
+// The newest draft still pending, read from generations, which the brain writes: the ownership rule restricts writes and not reads.
+// An older pending one is a suggestion nobody used, and it stays as it is (ADR-0046, section 2.6).
+const suggestionSelect = `
+SELECT   g.id, g.completion_text, g.created_at
+FROM     generations g
+WHERE    g.conversation_id = $1 AND g.status = $2 AND g.message_id IS NULL
+ORDER BY g.created_at DESC, g.id DESC
+LIMIT    1`
+
+// PendingSuggestion answers ErrNoSuggestion when there is no draft waiting, which is the normal state of most conversations.
+func (r *Repository) PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error) {
+	var s Suggestion
+	err := r.exec.QueryRow(ctx, suggestionSelect, conversationID, enums.GenerationStatusPendingReview).
+		Scan(&s.GenerationID, &s.Text, &s.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Suggestion{}, ErrNoSuggestion
+	}
+	if err != nil {
+		return Suggestion{}, fmt.Errorf("inbox: read suggestion: %w", err)
+	}
+	return s, nil
+}

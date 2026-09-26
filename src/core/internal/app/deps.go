@@ -134,9 +134,9 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Repo:      deskRepo,
 		Aggregate: aggregate,
 		// Binds the assignment and the aggregate to one transaction: taking the pool and writing the answer commit together (regla 5).
-		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate) error) error {
+		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate, inbox.Reviews) error) error {
 			return db.InTx(ctx, pool, func(exec db.Executor) error {
-				return fn(deskRepo.WithExecutor(exec), aggregate.WithExecutor(exec))
+				return fn(deskRepo.WithExecutor(exec), aggregate.WithExecutor(exec), turnRepo.WithExecutor(exec))
 			})
 		},
 		Channel: channelRepo,

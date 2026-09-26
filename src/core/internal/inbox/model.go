@@ -139,3 +139,11 @@ type Page struct {
 	// Nil when the page reached the end, so "there is no more" is told apart from "the next page happens to be empty" (ADR-0036, regla 6).
 	Next *Cursor
 }
+
+// Suggestion is the draft of the AIAgent waiting for the Operator in suggestion mode: it is copied into the box and sent as the
+// Operator's, or ignored (ADR-0046, section 2.5).
+type Suggestion struct {
+	GenerationID uuid.UUID
+	Text         string
+	CreatedAt    time.Time
+}

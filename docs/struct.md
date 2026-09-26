@@ -244,7 +244,7 @@ sonia/
 
 Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las escribe. Es la regla 1 de `CLAUDE.md` puesta en una lista: **escribir en la tabla de otro se hace por su repositorio, dentro de la transacción de quien conduce**, nunca con SQL propio.
 
-### 2.1. Núcleo (Go) — 24 tablas
+### 2.1. Núcleo (Go) — 25 tablas
 
 | Paquete | Tablas | Nota |
 |---|---|---|
@@ -259,16 +259,16 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 | `quick_replies/` | `quick_replies` | La lee el cerebro (F07), no la escribe |
 | `reminders/` | `reminders` | |
 | `sales/` | `sales` | |
-| `turn/` | `message_batches` · `transfer_events` | Más `generations.message_id`, en la misma transacción (regla 5) |
+| `turn/` | `message_batches` · `transfer_events` · `conversation_contexts` | Más `generations.message_id`, en la misma transacción (regla 5). `conversation_contexts` es la copia de la versión que usó la generación (ADR-0048) |
 | `whatsapp/` | `inboxes` · `webhook_events` | |
 
-### 2.2. Cerebro (Python) — 7 tablas, todas de evidencia
+### 2.2. Cerebro (Python) — 8 tablas, todas de evidencia
 
-La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conversations`, `messages` ni `contact_attributes`.** Lo que no es evidencia lo devuelve, y el núcleo lo persiste y lo envía.
+La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conversations`, `messages`, `contact_attributes` ni `conversation_contexts`.** Lo que no es evidencia lo devuelve, y el núcleo lo persiste y lo envía.
 
 | Tablas | Nota |
 |---|---|
-| `pipeline_steps` · `generations` · `retrieval_logs` · `signal_evaluations` · `detected_intents` · `document_chunks` | Las seis que nombra la regla 3 |
+| `pipeline_steps` · `generations` · `retrieval_logs` · `signal_evaluations` · `detected_intents` · `document_chunks` · `conversation_context_versions` | Las siete que nombra la regla 3 (la última, desde ADR-0048) |
 | `generation_components` | Por adyacencia a `generations`; la regla 3 no la nombra |
 
 ### 2.3. Fuera de los dos despliegues — 2 tablas
@@ -278,7 +278,7 @@ La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conve
 | `conversation_annotations` | `test/datasets/` | *Ground truth* de OE3 y OE4 (ADR-0014) |
 | `tone_evaluations` | `test/evals/` | El juicio de tono de F36; `reporting/` la lee |
 
-### 2.4. Sin dueño declarado — 4 tablas
+### 2.4. Sin dueño declarado — 2 tablas
 
 No es un olvido de este documento: **son decisiones que todavía no se tomaron**, y ponerles un paquete acá sería inventarlas.
 
@@ -286,5 +286,3 @@ No es un olvido de este documento: **son decisiones que todavía no se tomaron**
 |---|---|
 | `accounts` | Fila única por invariante. Hoy la crea quien instala —`make seed-admin`— y ningún paquete la reclama |
 | `transfer_policies` | El umbral es configuración mutable y F12 es del cerebro, pero la regla 3 le prohíbe escribir lo que no es evidencia |
-| `conversation_contexts` | El cerebro produce el resumen y el núcleo lo persiste; falta decir cuál paquete del núcleo |
-| `conversation_context_versions` | La misma decisión que la anterior, y se resuelve con ella |

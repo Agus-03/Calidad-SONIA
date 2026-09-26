@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Documento** | `docs/design/07-secuencia-del-turno.md` |
-| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo · **§1 y el diagrama de §2 enmendados 2026-09-26** (Fase 9 — [ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)): hasta la Fase 16 el cerebro escribe **tres** `signal_evaluations` y no cuatro; `frustration` queda registrada como salteada en el `detail_json` del `triage` · **§0, §1, el diagrama de §2 y §3 enmendados 2026-09-26** (Fase 9): `contact_attributes` la escribe el núcleo ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)); una transferencia apaga el bot de esa conversación ([ADR-0045](02-decisiones/0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md)); y en modo sugerencia no hay botón de rechazo, el mensaje lo manda el Operator y la sugerencia ignorada queda en `pending_review` ([ADR-0046](02-decisiones/0046-modo-sugerencia.md)) |
+| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo · **§1 y el diagrama de §2 enmendados 2026-09-26** (Fase 9 — [ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)): hasta la Fase 16 el cerebro escribe **tres** `signal_evaluations` y no cuatro; `frustration` queda registrada como salteada en el `detail_json` del `triage` · **§0, §1, el diagrama de §2 y §3 enmendados 2026-09-26** (Fase 9): `contact_attributes` la escribe el núcleo ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)); una transferencia apaga el bot de esa conversación ([ADR-0045](02-decisiones/0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md)); y en modo sugerencia no hay botón de rechazo, el mensaje lo manda el Operator y la sugerencia ignorada queda en `pending_review` ([ADR-0046](02-decisiones/0046-modo-sugerencia.md)) · **§0, los diagramas de §2 y §3 y §4 B.2 paso 5 enmendados 2026-09-26** (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)): el cerebro escribe `conversation_context_versions` y el núcleo copia la versión que usó la generación a `conversation_contexts`, en la transacción que cierra el turno |
 | **Fecha** | 2026-08-22 |
 | **Base documental** | [Anteproyecto](../SONIA_Anteproyecto.pdf) — F02, F10, F12, F21, F29 · [ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md) (pipeline) · [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) (frontera de procesos) · [03-capa-prompts.md](03-capa-prompts.md) (las cinco reglas) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) — este documento no repite atributos, define **orden y dueño de cada escritura** |
@@ -28,8 +28,8 @@ De ahí sale la regla operativa: **el cerebro nunca escribe `conversations` ni `
 
 | Escritor | Se despliega | Escribe |
 |---|---|---|
-| **Núcleo** (Go) | Sí | `webhook_events` · `messages` · `conversations` · `message_batches` · `transfer_events` · `conversation_assignments` · `contacts` · `operators` · `labels` · `contact_labels` · `conversation_labels` · `reminders` · `sales` · `quick_replies` · `internal_notes` · `inboxes` · `meta_templates` · `audit_logs` · `contact_attributes` (lo que el cerebro extrajo, [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)) · ABM de `ai_agents`, `prompt_components`, `prompt_component_versions`, `transfer_policies` |
-| **Cerebro** (Python) | Sí | `pipeline_steps` · `detected_intents` · `signal_evaluations` · `conversation_contexts` (+ versiones) · `generations` · `generation_components` · `retrieval_logs` · `documents` · `document_chunks` (modo `worker`) |
+| **Núcleo** (Go) | Sí | `webhook_events` · `messages` · `conversations` · `message_batches` · `transfer_events` · `conversation_assignments` · `contacts` · `operators` · `labels` · `contact_labels` · `conversation_labels` · `reminders` · `sales` · `quick_replies` · `internal_notes` · `inboxes` · `meta_templates` · `audit_logs` · `contact_attributes` (lo que el cerebro extrajo, [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)) · `conversation_contexts` (la copia de la versión que usó la generación, [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)) · ABM de `ai_agents`, `prompt_components`, `prompt_component_versions`, `transfer_policies` |
+| **Cerebro** (Python) | Sí | `pipeline_steps` · `detected_intents` · `signal_evaluations` · `conversation_context_versions` · `generations` · `generation_components` · `retrieval_logs` · `documents` · `document_chunks` (modo `worker`) |
 | **Instrumental de evaluación** (Python) | **No** — offline | `conversation_annotations` · `tone_evaluations` |
 
 > **Son tres escritores, no dos.** [ADR-0017 (i).2](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) lo declara desde la revisión del Paso 8. Y la separación del instrumental no es organizativa: como sus dos tablas son la verdad de terreno de OE3/OE4 y el juicio de tono de OE2, que su único escritor **no se despliegue** es lo que impide que el sistema evaluado escriba su propia nota.
@@ -128,6 +128,7 @@ sequenceDiagram
     Note over N,DB: una sola transacción
     N->>DB: INSERT messages (outbound, wamid NULL)
     N->>DB: UPDATE generations SET message_id
+    N->>DB: INSERT o UPDATE conversation_contexts · la versión que usó la generación (ADR-0048)
     N->>DB: INSERT contact_attributes · lo extraído, cifrado (ADR-0047)
     N->>DB: INSERT transfer_events · UPDATE conversations, mode=off (si hay transferencia)
     N->>DB: UPDATE message_batches SET processed_at
@@ -175,6 +176,7 @@ sequenceDiagram
     C->>DB: pipeline completo (igual que el camino feliz)
     C->>DB: INSERT generations · status=pending_review · message_id NULL
     C-->>N: outcome=generated
+    N->>DB: INSERT o UPDATE conversation_contexts · UPDATE message_batches SET processed_at (ADR-0048)
     N->>O: WS · propuesta para revisar
 
     alt Copia la sugerencia y la envía tal cual
@@ -229,7 +231,7 @@ El `guardrail` de salida rechaza la respuesta ya generada.
 | 2 | Cerebro | `INSERT generations` con **`status = 'blocked'`** y `message_id NULL`, más sus `generation_components`. La evidencia se conserva: hay que poder mostrar *qué* se frenó y con qué prompt se produjo |
 | 3 | Cerebro | Responde `outcome = 'blocked'` **con `generation_id`** — la evidencia existe y hay que poder señalarla |
 | 4 | Núcleo | No escribe `messages`. `generations.message_id` queda NULL para siempre |
-| 5 | Núcleo | `UPDATE conversations SET status = 'waiting'` **+ `UPDATE message_batches SET processed_at`** + WS |
+| 5 | Núcleo | `UPDATE conversations SET status = 'waiting'` **+ `UPDATE message_batches SET processed_at`** + la copia de la versión a `conversation_contexts` ([ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)) + WS |
 
 > **`blocked` es un valor nuevo de `GenerationStatus`** (decisión del Paso 8, ya aplicada al catálogo). Los cinco valores originales —`auto_sent · pending_review · accepted · edited · rejected`— **describen todos resultados de revisión humana**, porque la enumeración es anterior a ADR-0016, que introdujo el guardrail de salida. Usar `rejected` sería afirmar que un operador la rechazó, que es falso; dejarla en `auto_sent` sería afirmar que salió sin revisión, que también es falso. Sin el valor nuevo, mirando sólo `generations` no se distingue una respuesta bloqueada de una **huérfana por caída del cerebro** (§5): las dos tienen `message_id NULL`.
 >

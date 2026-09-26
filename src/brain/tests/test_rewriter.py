@@ -68,7 +68,7 @@ def written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **overrides: object
     payload: dict = {
         "version": 1,
         "marker": "[REESCRITOR DE CONTEXTO]",
-        "system": "[REESCRITOR DE CONTEXTO]\nmantené el contexto.",
+        "system": "[REESCRITOR DE CONTEXTO]\nmantené el contexto, con {max_objections} objeciones y urgencia de 1 a {urgency_max}.",
         "previous": "[CONTEXTO ANTERIOR]",
         "user": "[MENSAJE DEL CLIENTE]",
         "max_objections": 2,
@@ -77,7 +77,7 @@ def written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **overrides: object
             "summary": "Resumen:",
             "primary_intent": "Intención principal:",
             "objections": "Objeciones:",
-            "urgency_level": "Urgencia (1 a 3):",
+            "urgency_level": "Urgencia (1 a {urgency_max}):",
             "budget_signal": "Presupuesto:",
         },
     }
@@ -106,9 +106,35 @@ async def test_the_double_answers_the_rewriter_and_not_with_an_echo() -> None:
 
 
 def test_a_prompt_that_lost_the_marker_is_refused_while_loading(tmp_path, monkeypatch) -> None:
-    written(tmp_path, monkeypatch, system="mantené el contexto.")
+    written(tmp_path, monkeypatch, system="mantené el contexto, con {max_objections} y {urgency_max}.")
     with pytest.raises(RulesFileError):
         rewriter.rules()
+
+
+# The caps are read from the keys of the file, so a prompt that lost one would ask for a scale the parser no longer enforces.
+@pytest.mark.parametrize("lost", ["{max_objections}", "{urgency_max}"])
+def test_a_prompt_that_lost_a_cap_is_refused_while_loading(tmp_path, monkeypatch, lost: str) -> None:
+    system = "[REESCRITOR DE CONTEXTO]\ncon {max_objections} objeciones y urgencia de 1 a {urgency_max}.".replace(lost, "")
+    written(tmp_path, monkeypatch, system=system)
+    with pytest.raises(RulesFileError):
+        rewriter.rules()
+
+
+def test_the_model_reads_the_caps_the_parser_enforces(tmp_path, monkeypatch) -> None:
+    written(tmp_path, monkeypatch, max_objections=4, urgency_max=5)
+    spec = rewriter.rules()
+
+    assert "con 4 objeciones y urgencia de 1 a 5." in spec.system
+    assert "{" not in spec.system, "a placeholder reached the model unfilled"
+    assert spec.labels["urgency_level"] == "Urgencia (1 a 5):"
+
+
+# The shipped file: its JSON example keeps its braces, and it names no currency the customer never said (prompt-engineer, v2).
+def test_the_shipped_prompt_fills_the_caps_and_keeps_its_example() -> None:
+    system = rewriter.rules().system
+    assert "Como máximo 5" in system and "de 1 a 3" in system
+    assert '"budget_signal": "hasta 350 mil"' in system
+    assert "ARS" not in system
 
 
 async def test_the_context_there_was_reaches_the_model_before_the_message() -> None:
@@ -166,12 +192,21 @@ def test_the_objections_are_capped_deduplicated_and_only_text(tmp_path, monkeypa
     written(tmp_path, monkeypatch)
     answer = json.dumps({"summary": "algo", "objections": ["el precio", 3, "el precio", " ", "la zona", "la demora"]})
 
-    assert rewriter.parse(answer, rewriter.rules()).objections == ("el precio", "la zona")
+    # The most recent: the model appends the objection of this batch at the end, and a cap that kept the first ones would drop it.
+    assert rewriter.parse(answer, rewriter.rules()).objections == ("la zona", "la demora")
 
 
-def test_a_budget_that_is_a_paragraph_is_not_a_signal() -> None:
-    answer = json.dumps({"summary": "algo", "budget_signal": "x" * 61})
-    assert rewriter.parse(answer, rewriter.rules()).budget_signal is None
+# Cut and not dropped: null would read as "the customer said nothing about money", which is false.
+def test_a_budget_that_came_out_too_long_is_cut_at_a_word() -> None:
+    long = "hasta 350 mil pesos por mes, aunque podría estirarse un poco si incluye las expensas del edificio"
+    got = rewriter.parse(json.dumps({"summary": "algo", "budget_signal": long}), rewriter.rules()).budget_signal
+
+    assert got is not None and len(got) <= 60 and long.startswith(got) and long[len(got)] == " "
+
+
+def test_a_text_with_no_space_to_cut_at_is_cut_at_the_limit() -> None:
+    got = rewriter.parse(json.dumps({"summary": "algo", "budget_signal": "x" * 61}), rewriter.rules()).budget_signal
+    assert got == "x" * 60
 
 
 @pytest.mark.parametrize(("value", "expected"), [(True, True), (False, False), ("true", None), (None, None)])

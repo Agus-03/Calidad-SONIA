@@ -20,8 +20,12 @@ _MAX_REPORTED = 200
 # varchar with no limit in the schema, but a budget signal is a few words: anything longer is a paragraph the model wrote instead.
 _MAX_BUDGET = 60
 
-# The same bound for one objection, which the prompt asks for "en pocas palabras".
+# The same bound for one objection, which the prompt asks for "en menos de diez palabras".
 _MAX_OBJECTION = 120
+
+# Where the two caps go in the text, so the model reads the numbers the parser enforces and not a copy that drifts from them.
+_MAX_OBJECTIONS = "{max_objections}"
+_URGENCY_MAX = "{urgency_max}"
 
 # The lines of the rendered context, in the order they are read: what the customer wants before what stands in the way.
 _RENDERED = ("summary", "primary_intent", "objections", "urgency_level", "budget_signal")
@@ -49,18 +53,29 @@ def rules() -> Rules:
     # answer the rewrite with prose, every rewrite would fail, and the fallback would hide it.
     if marker not in system:
         raise RulesFileError(f"rewriter: the system prompt does not carry the marker {marker!r}")
+    # The same reason for the caps: a prompt that lost one would ask for a scale the parser no longer enforces.
+    for placeholder in (_MAX_OBJECTIONS, _URGENCY_MAX):
+        if placeholder not in system:
+            raise RulesFileError(f"rewriter: the system prompt does not carry {placeholder}")
 
+    max_objections = spec.integer("max_objections", minimum=1)
+    urgency_max = spec.integer("urgency_max", minimum=1)
     render = spec.section("render")
     return Rules(
         version=spec.version,
         marker=marker,
-        system=system,
+        system=_filled(system, max_objections, urgency_max),
         previous_heading=spec.text("previous"),
         user_heading=spec.text("user"),
-        max_objections=spec.integer("max_objections", minimum=1),
-        urgency_max=spec.integer("urgency_max", minimum=1),
-        labels={key: render.text(key) for key in _RENDERED},
+        max_objections=max_objections,
+        urgency_max=urgency_max,
+        labels={key: _filled(render.text(key), max_objections, urgency_max) for key in _RENDERED},
     )
+
+
+# replace and not format: the prompt carries a JSON example whose braces format would read as fields.
+def _filled(text: str, max_objections: int, urgency_max: int) -> str:
+    return text.replace(_MAX_OBJECTIONS, str(max_objections)).replace(_URGENCY_MAX, str(urgency_max))
 
 
 # One rewrite and what it cost, which is what conversation_context_versions keeps besides the context itself.
@@ -157,18 +172,18 @@ def _prompted(context: Context) -> dict:
     }
 
 
+# The most recent when there are too many: the model appends what the customer just said, so the first ones are the oldest and the
+# last one is the objection of this batch (ADR-0048).
 def _objections(value: object, limit: int) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     out: list[str] = []
     for item in value:
         text = _short(item, _MAX_OBJECTION)
-        # The same objection twice is one objection, which the prompt already asks the model not to repeat.
+        # The same objection twice is one objection, which the prompt asks the model not to repeat.
         if text is not None and text not in out:
             out.append(text)
-        if len(out) == limit:
-            break
-    return tuple(out)
+    return tuple(out[-limit:])
 
 
 # Out of the scale is not judged, the same reading as a flag that is not a bool: writing it would put a number nobody asked for.
@@ -178,7 +193,13 @@ def _urgency(value: object, top: int) -> int | None:
     return value
 
 
+# Cut and not dropped: a budget that came out too long is still the budget, and null would read as "the customer said nothing".
+# At the last space within the limit, so the stored text does not end halfway through a word.
 def _short(value: object, limit: int) -> str | None:
-    if not isinstance(value, str) or not value.strip() or len(value.strip()) > limit:
+    if not isinstance(value, str) or not value.strip():
         return None
-    return value.strip()
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    return cut[: cut.rfind(" ")].rstrip() if " " in cut else cut

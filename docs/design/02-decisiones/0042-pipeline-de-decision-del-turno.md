@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
-| **Fecha** | 2026-09-25 |
+| **Estado** | Aceptada · **decisión D3 y la tabla de §2.4 enmendadas por [ADR-0043](0043-prompt-injection-en-el-guardrail-de-entrada.md)**: el `guardrail` de entrada pasa a poder cortar, y sólo por una inyección de prompt. La redacción de ADR-0006 sigue sustituyendo y dejando seguir el turno, y la mitad de D3 que gobierna la corrida de salida no se toca |
+| **Fecha** | 2026-09-25 · D3 enmendada el mismo día, al cerrar la fase |
 | **Etapa** | Construcción — Fase 8 (pipeline de decisión) |
 | **Resuelve** | Cuáles de los ocho pasos de [ADR-0016](0016-rastro-del-pipeline-de-respuesta.md) se construyen en esta fase y cuáles se difieren, qué corta un turno y qué no, qué lee la clienta cuando el pipeline la deja sin respuesta, y quién atiende lo que el AIAgent no contestó |
 | **Requisitos afectados** | F01 (el `objective` es lo que define el dominio) · F02 · F12 · F29 · F36 · OE2 · OE6 (el veredicto de `triage` es su denominador) |

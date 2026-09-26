@@ -171,6 +171,8 @@ func (c *Controller) list(gc *gin.Context) {
 type threadMessageResponse struct {
 	messageResponse
 	SenderOperator *operatorResponse `json:"sender_operator"`
+	// What the frontend asks F05 about; null for what nobody generated (ADR-0049).
+	GenerationID *string `json:"generation_id"`
 }
 
 type threadPageResponse struct {
@@ -212,6 +214,10 @@ func (c *Controller) thread(gc *gin.Context) {
 		if m.SenderOperator != nil {
 			drawn.SenderOperator = &operatorResponse{ID: m.SenderOperator.ID.String(), Name: m.SenderOperator.Name, Lastname: m.SenderOperator.Lastname}
 		}
+		if m.GenerationID != nil {
+			generation := m.GenerationID.String()
+			drawn.GenerationID = &generation
+		}
 		items = append(items, drawn)
 	}
 	body := threadPageResponse{Items: items}
@@ -226,6 +232,8 @@ func (c *Controller) thread(gc *gin.Context) {
 // one code (ADR-0035, regla 9). The binding still refuses a body that is not json at all.
 type sendRequest struct {
 	Text string `json:"text"`
+	// The suggestion the text was copied from, when it was: absent is an answer the Operator wrote alone (ADR-0046, section 2.5).
+	GenerationID *string `json:"generation_id"`
 }
 
 // send answers 201 with the row whether Meta took it or not: the row exists either way, and its status is what the operator has to
@@ -247,12 +255,56 @@ func (c *Controller) send(gc *gin.Context) {
 		return
 	}
 
-	message, err := c.service.Send(gc.Request.Context(), scope, conversationID, req.Text)
+	var generationID *uuid.UUID
+	if req.GenerationID != nil {
+		parsed, err := uuid.Parse(*req.GenerationID)
+		if err != nil {
+			soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_generation_id", "the generation id is not a uuid").WithCause(err))
+			return
+		}
+		generationID = &parsed
+	}
+
+	message, err := c.service.Send(gc.Request.Context(), scope, conversationID, req.Text, generationID)
 	if err != nil {
 		soniahttp.Fail(gc, c.log, translate(err))
 		return
 	}
 	soniahttp.Created(gc, presentMessage(message))
+}
+
+type suggestionResponse struct {
+	GenerationID string `json:"generation_id"`
+	Text         string `json:"text"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// suggestion answers 204 when there is no draft waiting, which is not an error: most conversations have none (ADR-0046, 2.5).
+func (c *Controller) suggestion(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+
+	s, err := c.service.Suggestion(gc.Request.Context(), scope, conversationID)
+	if errors.Is(err, ErrNoSuggestion) {
+		soniahttp.NoContent(gc)
+		return
+	}
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.OK(gc, suggestionResponse{
+		GenerationID: s.GenerationID.String(),
+		Text:         s.Text,
+		CreatedAt:    s.CreatedAt.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 type modeRequest struct {
@@ -295,6 +347,8 @@ func translate(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
+	case errors.Is(err, ErrGenerationNotFound):
+		return soniahttp.NotFound("generation_not_found", "no such generation in this conversation").WithCause(err)
 	case errors.Is(err, ErrTaken):
 		return soniahttp.Conflict("conversation_taken", "another operator is attending this conversation").WithCause(err)
 	case errors.Is(err, ErrResolved):
@@ -305,8 +359,8 @@ func translate(err error) error {
 		return soniahttp.BadRequest("invalid_text", "the answer cannot be empty").WithCause(err)
 	case errors.Is(err, ErrUnknownMode):
 		return soniahttp.BadRequest("invalid_mode", "the mode is not one of autonomous, suggestion, off").WithCause(err)
-	case errors.Is(err, ErrModeNotAvailable):
-		return soniahttp.BadRequest("mode_not_available", "only autonomous and off can be chosen for now").WithCause(err)
+	case errors.Is(err, ErrSuggestionNotPending):
+		return soniahttp.Conflict("suggestion_not_pending", "the suggestion is not a pending one of this conversation").WithCause(err)
 	case errors.Is(err, ErrNoAIAgent):
 		return soniahttp.Conflict("no_ai_agent", "the conversation has no agent to turn on").WithCause(err)
 	case errors.Is(err, ErrAIAgentUnavailable):

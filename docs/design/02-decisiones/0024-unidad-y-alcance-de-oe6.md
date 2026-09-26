@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · §2, §3 y §4 enmendadas el 2026-09-20 por [ADR-0041](0041-temporizador-del-turno-por-poller.md) — el alcance se acota a las conversaciones en modo autónomo |
+| **Estado** | Aceptada · §2, §3 y §4 enmendadas el 2026-09-20 por [ADR-0041](0041-temporizador-del-turno-por-poller.md) — el alcance se acota a las conversaciones en modo autónomo · **§2, §3, §4 y §5 enmendadas el 2026-09-26 por [ADR-0046](0046-modo-sugerencia.md)**: el modo `suggestion` vuelve a abrir bloque, y el alcance autónomo se sostiene con un filtro sobre el `detail_json` del `triage` en vez de con la ausencia del bloque. La alternativa descartada el 2026-09-20 queda adoptada con otro argumento: el modo la necesita para funcionar |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 11 anticipado (definición de métrica) |
 | **Resuelve** | La parte de **H-24** que ADR-0016 dejó abierta |

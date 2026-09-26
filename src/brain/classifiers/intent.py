@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -10,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from adapters.llm.base import LLMClient, LLMMessage
+from adapters.llm.base import LLMClient, LLMMessage, unfenced
 
 logger = logging.getLogger("sonia.classifiers.intent")
 
@@ -19,10 +18,6 @@ _RULES_FILE = Path(__file__).resolve().parent.parent / "rules" / "intent.yaml"
 
 # The scale of the example in 03-capa-prompts section 4.4, and enough for a number nobody compares beyond two digits.
 _SCALE = Decimal("0.01")
-
-# An answer that came wrapped in a code fence is the most common way a model ignores "sin bloques de código", and unwrapping it
-# is cheaper than losing the whole classification over three backticks.
-_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 # varchar with no limit in the schema, but a label is a label: anything longer is a sentence the model wrote instead of one.
 _MAX_LABEL = 60
@@ -115,9 +110,7 @@ async def classify(*, client: LLMClient, model: str, message: str) -> tuple[Inte
 
 # Separate from the call so the parsing can be tested without a model, which is where every case below actually lives.
 def parse(answer: str, max_intents: int) -> tuple[Intent, ...]:
-    text = answer.strip()
-    if fenced := _FENCE.match(text):
-        text = fenced.group(1)
+    text = unfenced(answer)
 
     try:
         payload = json.loads(text)

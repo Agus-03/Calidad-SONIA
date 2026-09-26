@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) · la lista de marcadores del paso 2 de la Regla 4 enmendada 2026-09-25 (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) decisión D6: `[CUIT]` y `[CUIL]` se emiten como un único `[CUIT/CUIL]`) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) · la lista de marcadores del paso 2 de la Regla 4 enmendada 2026-09-25 (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) decisión D6: `[CUIT]` y `[CUIL]` se emiten como un único `[CUIT/CUIL]`) · el paso 1 de la Regla 4 y §4.3 enmendados 2026-09-26 (Fase 9 — [ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md): el *checkpoint* extrae y sustituye, y lo extraído lo cifra y persiste el núcleo al cerrar el turno) · el tercer punto de la Regla 3 enmendado 2026-09-26 (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md): la reescritura que falla no se reintenta dentro del turno) · el paso 1 de la Regla 4, §4.3 y §4.5 alineados 2026-09-26 con ADR-0047 §2.6 (sin consentimiento el DNI no se guarda) y con ADR-0048 (`extracted_data_json` queda vacío), y el presupuesto del ejemplo copiado como lo dijo la clienta, sin moneda, con el contexto renderizado como lo hace `rewriter.yaml` |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -84,7 +84,7 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 - **Creación:** al procesarse el primer bloque de la conversación. Antes de eso no existe fila (`conversations 1 — 0..1 conversation_contexts`, ya fijado en [relaciones.md:62](DER/relaciones.md#L62)).
 - **Reescritura:** una vez por bloque cerrado y procesado (no por mensaje individual).
-- **Ante falla de la reescritura** (el modelo que actualiza el contexto no responde, da error o hace timeout): se reintenta un número acotado de veces; si sigue fallando, la generación de ese bloque se produce igual, usando la última versión de contexto disponible. No se bloquea al cliente por una falla interna.
+- **Ante falla de la reescritura** (el modelo que actualiza el contexto no responde, da error o hace timeout): **no se reintenta dentro del turno** —enmendado por [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md): el núcleo espera diez segundos por todo el turno y un segundo intento no entra; el reintento es el bloque siguiente—, y la generación de ese bloque se produce igual, usando la última versión de contexto disponible. No se bloquea al cliente por una falla interna.
 
 **Justificación.** F04 no describe qué hacer ante una falla — describe el mecanismo en funcionamiento normal. Bloquear el turno hasta lograr la reescritura contradice la expectativa de reactividad casi inmediata de WhatsApp. El riesgo asumido es responder un bloque con contexto desactualizado en un turno puntual; se corrige solo en el bloque siguiente que sí funcione.
 
@@ -94,7 +94,7 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 **Decisión.** Un único checkpoint, inmediatamente después de que el `message_batch` cierra:
 
-1. Se extrae el dato personal del texto crudo del bloque (F31) y se cifra y persiste en `contact_attributes` (con `source_message_id`).
+1. Se extrae el dato personal del texto crudo del bloque (F31). **El *checkpoint* no lo persiste**: viaja en la respuesta del turno y el núcleo lo cifra y lo escribe en `contact_attributes` (con `source_message_id`) en la transacción que cierra el turno, **sólo si el contacto tiene consentimiento vigente** ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md) §2.6).
 2. Se sustituye el valor por su marcador de tipo (`[DNI]`, `[CUIT/CUIL]`, `[CBU]` — ADR-0006, enmendado por [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) D6: los once dígitos de un CUIT y de un CUIL no se distinguen en texto libre, así que comparten marcador).
 3. **Todo lo que sigue** — detección de intención, reescritura del contexto, consulta de RAG, armado de `system`/`user`, generación — trabaja exclusivamente sobre el texto ya redactado.
 
@@ -164,7 +164,7 @@ El agregador los agrupa en un `message_batch`: los tres entran al mismo bloque p
 
 ### 4.3. Checkpoint de redacción (Regla 4)
 
-Se extrae el DNI, se cifra y persiste en `contact_attributes` (`source_message_id` = el del mensaje 3). Texto redactado, el único que se usa de acá en adelante:
+Se extrae el DNI. Si Lucía dio su consentimiento, el núcleo lo cifra y lo persiste en `contact_attributes` al cerrar el turno (`source_message_id` = el del mensaje 3); si no, no se guarda ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md) §2.6). Texto redactado, el único que se usa de acá en adelante:
 
 > "Hola buenas. Vi el depto de 2 ambientes en Jesús María que publicaron. Mi DNI es **[DNI]** y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil."
 
@@ -186,7 +186,7 @@ Se extrae el DNI, se cifra y persiste en `contact_attributes` (`source_message_i
   "objections_json": [],
   "urgency_level": 2,
   "budget_signal": null,
-  "extracted_data_json": {"zona_interes": "Jesús María", "ambientes": 2}
+  "extracted_data_json": {}
 }
 ```
 
@@ -194,12 +194,12 @@ Se extrae el DNI, se cifra y persiste en `contact_attributes` (`source_message_i
 ```json
 {
   "turn_number": 5,
-  "summary": "Lucía busca depto de 2 ambientes en Jesús María, presupuesto hasta $350.000. Preguntó disponibilidad puntual.",
+  "summary": "Lucía busca depto de 2 ambientes en Jesús María, con presupuesto de hasta 350 mil. Preguntó disponibilidad puntual.",
   "primary_intent": "consulta_disponibilidad",
   "objections_json": [],
   "urgency_level": 3,
-  "budget_signal": "350000_ARS",
-  "extracted_data_json": {"zona_interes": "Jesús María", "ambientes": 2, "presupuesto_max": 350000}
+  "budget_signal": "hasta 350mil",
+  "extracted_data_json": {}
 }
 ```
 
@@ -219,8 +219,10 @@ Se extrae el DNI, se cifra y persiste en `contact_attributes` (`source_message_i
 **`user`** del bloque 5 — contexto → RAG → lo que pidió → pregunta redactada:
 ```
 [CONTEXTO DE LA CONVERSACIÓN]
-Intención: consulta_disponibilidad · Presupuesto: $350.000
-Zona: Jesús María, 2 ambientes · Urgencia: 3/5
+Resumen: Lucía busca depto de 2 ambientes en Jesús María, con presupuesto de hasta 350 mil. Preguntó disponibilidad puntual.
+Intención principal: consulta_disponibilidad
+Urgencia (1 a 3): 3
+Presupuesto: hasta 350mil
 
 [BASE DE CONOCIMIENTO]
 1. Depto 2 ambientes, Jesús María, zona centro. $320.000/mes + expensas. Disponible desde el 1°.

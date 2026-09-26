@@ -86,6 +86,12 @@ func TestTargetJoinsTheConversationToItsContact(t *testing.T) {
 		if target.InboxID == uuid.Nil {
 			t.Fatal("the target carries no inbox, so nothing knows which number answers")
 		}
+		// Whose data the brain may extract in the turn (ADR-0047): the contact of this conversation and no other.
+		var contact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, conversationID).Scan(&contact); err != nil ||
+			target.ContactID != contact {
+			t.Fatalf("contact = %v, want %v (%v)", target.ContactID, contact, err)
+		}
 		return rollback
 	})
 
@@ -726,5 +732,192 @@ func TestCloseTakesNoMoreThanTheTickAllows(t *testing.T) {
 
 	if !errors.Is(err, rollback) {
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// ADR-0046, section 2.5, against the real DDL: the CASE that tells accepted from edited is SQL, and so is the predicate that refuses
+// a draft already used or of another conversation.
+func TestReviewGenerationMarksTheDraftByWhatTheOperatorSent(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		sent string
+		want enums.GenerationStatus
+	}{
+		{"the draft left as it was proposed is accepted", "hola", enums.GenerationStatusAccepted},
+		{"a draft the Operator changed is edited", "hola, ¿en qué te ayudo?", enums.GenerationStatusEdited},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+				conversationID, _ := conversation(t, ctx, exec)
+				repo := NewRepository(exec)
+				batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+				if err != nil {
+					t.Fatalf("Append: %v", err)
+				}
+				generationID := draft(t, ctx, exec, conversationID, batch.ID)
+				operatorID := operator(t, ctx, exec)
+				messageID := outbound(t, ctx, exec, conversationID)
+
+				status, err := repo.ReviewGeneration(ctx, generationID, conversationID, messageID, operatorID, tc.sent)
+				if err != nil || status != tc.want {
+					t.Fatalf("ReviewGeneration: got %q, %v, want %q", status, err, tc.want)
+				}
+				var linked bool
+				if err := exec.QueryRow(ctx, `SELECT message_id = $2 AND reviewed_by_operator_id = $3 AND reviewed_at IS NOT NULL
+					FROM generations WHERE id = $1`, generationID, messageID, operatorID).Scan(&linked); err != nil || !linked {
+					t.Fatalf("the draft was not linked and reviewed: %v", err)
+				}
+				// The same draft a second time is a refusal and not a second review.
+				if _, err := repo.ReviewGeneration(ctx, generationID, conversationID, messageID, operatorID, tc.sent); !errors.Is(err, ErrGenerationNotFound) {
+					t.Fatalf("a second review: got %v, want ErrGenerationNotFound", err)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+			}
+		})
+	}
+}
+
+// A draft of another conversation is not this one's to review, whatever id the request carried.
+func TestReviewGenerationRefusesADraftOfAnotherConversation(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		mine, _ := conversation(t, ctx, exec)
+		theirs, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, theirs, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+		generationID := draft(t, ctx, exec, theirs, batch.ID)
+
+		_, err = repo.ReviewGeneration(ctx, generationID, mine, outbound(t, ctx, exec, mine), operator(t, ctx, exec), "hola")
+		if !errors.Is(err, ErrGenerationNotFound) {
+			t.Fatalf("ReviewGeneration: got %v, want ErrGenerationNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A generation of suggestion mode, which is what evidence() writes with the one status that makes it a draft.
+func draft(t *testing.T, ctx context.Context, exec db.Executor, conversationID, batchID uuid.UUID) uuid.UUID {
+	t.Helper()
+
+	generationID := evidence(t, ctx, exec, conversationID, batchID)
+	if _, err := exec.Exec(ctx, `UPDATE generations SET status = $2 WHERE id = $1`, generationID, enums.GenerationStatusPendingReview); err != nil {
+		t.Fatalf("make it a draft: %v", err)
+	}
+	return generationID
+}
+
+func operator(t *testing.T, ctx context.Context, exec db.Executor) uuid.UUID {
+	t.Helper()
+
+	operatorID := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO operators (id, account_id, name, lastname, email, password_hash, role, active)
+		SELECT $1, a.id, 'Revisa', 'Sugerencia', $2, 'x', 'operator', true FROM accounts a LIMIT 1`,
+		operatorID, "review-"+operatorID.String()+"@coop.test"); err != nil {
+		t.Fatalf("insert operator: %v", err)
+	}
+	return operatorID
+}
+
+// ADR-0048, against the real DDL: the copy is SQL that reads the keys of a JSON the brain wrote, so only PostgreSQL can say the two
+// still agree, and the forward-only predicate is what keeps a generation that fell back from rewinding the current context.
+func TestAdoptContextCopiesTheVersionAndOnlyMovesForward(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+
+		newer := evidence(t, ctx, exec, conversationID, batch.ID)
+		given(t, ctx, exec, newer, conversationID, 2,
+			`{"summary": "Busca un 2 ambientes.", "primary_intent": "consulta_precio", "objections_json": ["el precio"],
+			  "urgency_level": 2, "budget_signal": "hasta 350000 ARS", "extracted_data_json": {}, "intent_changed": false}`)
+		if err := repo.AdoptContext(ctx, newer); err != nil {
+			t.Fatalf("AdoptContext: %v", err)
+		}
+
+		older := evidence(t, ctx, exec, conversationID, batch.ID)
+		given(t, ctx, exec, older, conversationID, 1, `{"summary": "Saludó.", "objections_json": [], "extracted_data_json": {}}`)
+		if err := repo.AdoptContext(ctx, older); err != nil {
+			t.Fatalf("AdoptContext of an older version: %v", err)
+		}
+
+		var turnNumber int
+		var urgency int16
+		var summary, intent, budget, objections string
+		if err := exec.QueryRow(ctx, `
+			SELECT turn_number, summary, primary_intent, objections_json::text, urgency_level, budget_signal
+			FROM   conversation_contexts WHERE conversation_id = $1`, conversationID).
+			Scan(&turnNumber, &summary, &intent, &objections, &urgency, &budget); err != nil {
+			t.Fatalf("reading the current context: %v", err)
+		}
+		if turnNumber != 2 || summary != "Busca un 2 ambientes." || intent != "consulta_precio" || objections != `["el precio"]` ||
+			urgency != 2 || budget != "hasta 350000 ARS" {
+			t.Fatalf("current context = turn %d, %q, %q, %s, %d, %q — want the version of turn 2, untouched by turn 1",
+				turnNumber, summary, intent, objections, urgency, budget)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// A first turn whose rewrite failed names no version, and there is nothing to make current (03-capa-prompts, Regla 3).
+func TestAdoptContextOfAGenerationWithNoVersionWritesNothing(t *testing.T) {
+	ctx := context.Background()
+
+	err := db.InTx(ctx, integrationPool(t), func(exec db.Executor) error {
+		conversationID, _ := conversation(t, ctx, exec)
+		repo := NewRepository(exec)
+		batch, err := repo.Append(ctx, conversationID, time.Second, 10)
+		if err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+
+		if err := repo.AdoptContext(ctx, evidence(t, ctx, exec, conversationID, batch.ID)); err != nil {
+			t.Fatalf("AdoptContext: %v", err)
+		}
+		var rows int
+		if err := exec.QueryRow(ctx, `SELECT count(*) FROM conversation_contexts WHERE conversation_id = $1`, conversationID).
+			Scan(&rows); err != nil || rows != 0 {
+			t.Fatalf("conversation_contexts rows = %d (%v), want none", rows, err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// The version the brain writes before the generation, and the pointer it gives that generation (ADR-0048).
+func given(t *testing.T, ctx context.Context, exec db.Executor, generationID, conversationID uuid.UUID, turnNumber int, content string) {
+	t.Helper()
+
+	versionID := id.New()
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO conversation_context_versions (id, conversation_id, turn_number, content, rewritten_by_model, latency_ms)
+		VALUES ($1, $2, $3, $4::jsonb, 'double', 5)`, versionID, conversationID, turnNumber, content); err != nil {
+		t.Fatalf("insert context version: %v", err)
+	}
+	if _, err := exec.Exec(ctx, `UPDATE generations SET conversation_context_version_id = $2 WHERE id = $1`,
+		generationID, versionID); err != nil {
+		t.Fatalf("point the generation at its context: %v", err)
 	}
 }

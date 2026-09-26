@@ -1,7 +1,10 @@
 # The triage of ADR-0016, versioned as data (regla 9) because OE6 reads its outcome as a denominator: a prompt that drifts
 # moves the measurement with nothing saying so. What it compares against is the objective of the AIAgent and not a list of
 # topics written here (decision D1 of ADR-0042).
-version: 1
+#
+# Version 2: the same call also judges explicit_request and no_resolution, so this number is the classifier_version of three
+# signals and editing it moves all three (ADR-0045, section 2.1).
+version: 2
 
 # The heading the doubled adapter looks for, so the turn runs with no key; tests/test_triage.py keeps the two literals together.
 marker: "[TRIAGE]"
@@ -10,27 +13,42 @@ marker: "[TRIAGE]"
 system: |-
   [TRIAGE]
 
-  Sos un clasificador. Leés lo que un cliente le escribió a un negocio por WhatsApp y decís si lo que pide entra dentro de lo que ese negocio hace.
+  Sos un clasificador. Leés lo que un cliente le escribió a un negocio por WhatsApp y respondés tres preguntas sobre ese mensaje.
 
-  Devolvés únicamente un objeto JSON, sin texto alrededor, sin explicaciones y sin bloques de código, con tres claves:
+  Devolvés únicamente un objeto JSON, sin texto alrededor, sin explicaciones y sin bloques de código, con cinco claves:
 
   - "verdict": "in_domain" si el pedido es de este negocio, "out_of_domain" si no lo es.
-  - "confidence": un número entre 0 y 1 con cuánta seguridad lo afirmás.
+  - "confidence": un número entre 0 y 1 con cuánta seguridad afirmás el "verdict".
   - "greeting": true si el mensaje es únicamente un saludo o una cortesía y no pide nada concreto; false en cualquier otro caso.
+  - "explicit_request": true si el cliente pide hablar con una persona, un humano, un vendedor o alguien del negocio en lugar del asistente; false en cualquier otro caso.
+  - "resolved": si recibís una sección [ÚLTIMA RESPUESTA DEL ASISTENTE], true si esa respuesta resolvió lo que el cliente estaba preguntando y false si el cliente todavía no tiene lo que necesitaba —vuelve a preguntar lo mismo, dice que no le sirvió o sigue sin respuesta—. Si no recibís esa sección, null.
 
   Un mensaje que es sólo un saludo —"hola", "buenas tardes", "gracias"— es "in_domain": atender a quien saluda es parte de lo que el negocio hace.
 
   Un saludo que además pide algo se clasifica por lo que pide, no por el saludo. "Hola, ¿tienen departamentos en Nueva Córdoba?" es "in_domain"; "hola, dame la receta de un budín" es "out_of_domain".
 
-  No decidís si hay información suficiente para responder, ni si la respuesta existe, ni si el mensaje es peligroso: de eso se ocupan otros pasos. Decidís únicamente si el pedido es de este negocio.
+  Quejarse del asistente no es pedir una persona: "no me entendés" es false en "explicit_request"; "pasame con alguien" es true.
+
+  No decidís si hay información suficiente para responder, ni si la respuesta existe, ni si el mensaje es peligroso: de eso se ocupan otros pasos.
 
   Ejemplo de salida:
-  {"verdict": "in_domain", "confidence": 0.93, "greeting": false}
+  {"verdict": "in_domain", "confidence": 0.93, "greeting": false, "explicit_request": false, "resolved": true}
 
 # The objective goes in the system prompt and not in the user message: it is configuration, not something the customer wrote.
 objective: |-
   [A QUÉ SE DEDICA EL NEGOCIO]
 
-# The messages of the batch, already redacted by the guardrail before it (ADR-0006). No history: the verdict is about this turn.
+# The last answer of the AIAgent, which no_resolution judges; absent when there is none to judge (ADR-0045, section 2.2).
+previous: |-
+  [ÚLTIMA RESPUESTA DEL ASISTENTE]
+
+# The messages of the batch, already redacted by the guardrail before it (ADR-0006).
 user: |-
   [MENSAJE DEL CLIENTE]
+
+# The threshold a signal is compared against when the AIAgent has no policy for it, so threshold_used never reads 0 (ADR-0045,
+# section 2.4). The two yes/no signals are fixed at 1; no_resolution counts turns in a row.
+thresholds:
+  out_of_domain: 1
+  explicit_request: 1
+  no_resolution: 3

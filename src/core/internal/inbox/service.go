@@ -13,6 +13,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
 
@@ -20,6 +21,10 @@ var (
 	// ErrNotFound covers a conversation that does not exist and one this operator cannot reach: telling them apart would confirm
 	// to an operator that another's conversation exists, which is what contacts/ already answers too (ADR-0035, regla 3).
 	ErrNotFound = errors.New("inbox: conversation not found")
+
+	// ErrGenerationNotFound is a generation that does not exist or is not of the conversation in the path: F05 reads one answer of
+	// one thread, never an id guessed from another (ADR-0049).
+	ErrGenerationNotFound = errors.New("inbox: generation not found")
 
 	// ErrTaken is somebody else holding the conversation: the pool race lost, or a supervisor answering a chat that is not theirs
 	// (ADR-0035, reglas 6 y 8).
@@ -36,9 +41,12 @@ var (
 	// ErrUnknownMode is a word that is not one of the three of F02, told apart from a real mode this phase does not offer yet.
 	ErrUnknownMode = errors.New("inbox: the mode is not one of autonomous, suggestion, off")
 
-	// ErrModeNotAvailable is suggestion before Fase 9: accepting it would store a mode the orchestrator reads as silence, since the
-	// review cycle that makes it a mode does not exist yet (ADR-0035, regla 11).
-	ErrModeNotAvailable = errors.New("inbox: only autonomous and off are available until the suggestion cycle exists")
+	// ErrNoSuggestion is no draft waiting, which is how most conversations are: nothing to copy (ADR-0046, section 2.5).
+	ErrNoSuggestion = errors.New("inbox: the conversation has no pending suggestion")
+
+	// ErrSuggestionNotPending is a generation_id that is not a pending draft of this conversation: another's, or one already sent.
+	// Refused with nothing written, because the answer and its review commit together (ADR-0046, section 2.5).
+	ErrSuggestionNotPending = errors.New("inbox: the suggestion is not a pending one of this conversation")
 
 	// ErrNoAIAgent refuses to turn on a bot the conversation was born without: conversations.ErrNoAIAgent, seen from here (ADR-0035, regla 12).
 	ErrNoAIAgent = errors.New("inbox: the conversation has no agent to turn on")
@@ -67,6 +75,8 @@ type store interface {
 	List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error)
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
+	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
+	Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error)
 }
 
 // Store is what this package writes inside the transaction it conducts. Exported because internal/app/deps.go binds it to that
@@ -84,13 +94,20 @@ type Aggregate interface {
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 }
 
+// Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
+type Reviews interface {
+	ReviewGeneration(
+		ctx context.Context, generationID, conversationID, messageID, operatorID uuid.UUID, text string,
+	) (enums.GenerationStatus, error)
+}
+
 // Channel is the one question this package asks whatsapp/ before sending: which number, with which token.
 type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
 // TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
-type TxFunc func(ctx context.Context, fn func(Store, Aggregate) error) error
+type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Reviews) error) error
 
 type Options struct {
 	// Pool-bound: the reads, and the two writes after the send, which happen outside any transaction.
@@ -174,7 +191,9 @@ func mayRead(scope Scope, t Target) bool {
 // happens in the same transaction as the row, so losing the race writes nothing and sends nothing (ADR-0035, reglas 7 y 8).
 //
 // A send that Meta refuses is not an error of this call: the row exists, it says failed, and the caller gets it back to show.
-func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUID, text string) (Message, error) {
+//
+// generationID names the suggestion the text was copied from, and its review commits with the message or neither does (ADR-0046).
+func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUID, text string, generationID *uuid.UUID) (Message, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return Message{}, ErrEmptyText
@@ -203,7 +222,7 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 	}
 
 	var message conversations.Message
-	err = s.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+	err = s.opts.Tx(ctx, func(store Store, aggregate Aggregate, reviews Reviews) error {
 		if target.OperatorID == nil {
 			if err := claim(ctx, store, aggregate, target, scope.OperatorID); err != nil {
 				return err
@@ -211,13 +230,38 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 		}
 		var err error
 		message, err = aggregate.RecordOperatorOutbound(ctx, target.ConversationID, scope.OperatorID, text, now)
-		return err
+		if err != nil || generationID == nil {
+			return err
+		}
+		return review(ctx, reviews, *generationID, target.ConversationID, message.ID, scope.OperatorID, text)
 	})
 	if err != nil {
 		return Message{}, err
 	}
 
 	return s.deliver(ctx, target, inbox, message), nil
+}
+
+// review marks the draft accepted or edited, compared with the trimmed text the Operator sent (ADR-0046, section 2.5).
+func review(ctx context.Context, reviews Reviews, generationID, conversationID, messageID, operatorID uuid.UUID, text string) error {
+	_, err := reviews.ReviewGeneration(ctx, generationID, conversationID, messageID, operatorID, text)
+	if errors.Is(err, turn.ErrGenerationNotFound) {
+		return ErrSuggestionNotPending
+	}
+	return err
+}
+
+// Suggestion answers the draft waiting in the conversation, with the reach of the thread: what the Operator cannot read it cannot
+// copy either (ADR-0035, regla 2).
+func (s *Service) Suggestion(ctx context.Context, scope Scope, conversationID uuid.UUID) (Suggestion, error) {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return Suggestion{}, err
+	}
+	if !mayRead(scope, target) {
+		return Suggestion{}, ErrNotFound
+	}
+	return s.opts.Repo.PendingSuggestion(ctx, conversationID)
 }
 
 // channelFor answers the number the conversation sends from, or ErrChannelUnavailable when it is known now that no send can leave.
@@ -242,13 +286,11 @@ func (s *Service) channelFor(ctx context.Context, target Target) (whatsapp.Inbox
 // It does not take the conversation out of the pool: answering is what assigns, and turning the bot off is not an answer (ADR-0035, regla 13).
 //
 // The orchestrator reads the mode when a turn starts, so an answer the brain is already generating still goes out after the bot is
-// turned off. The gap is a declared cost, closed in Fase 9 when the three modes branch the orchestrator (ADR-0035 §4).
+// turned off. The gap is a declared cost (ADR-0035 §4).
 func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.UUID, mode enums.AgentMode) (enums.AgentMode, error) {
+	// All three of F02 since ADR-0046 amended regla 11 of ADR-0035: suggestion has its turn and its draft now.
 	if !mode.IsValid() {
 		return "", ErrUnknownMode
-	}
-	if mode == enums.AgentModeSuggestion {
-		return "", ErrModeNotAvailable
 	}
 
 	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)

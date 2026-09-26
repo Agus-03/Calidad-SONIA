@@ -26,6 +26,43 @@
         "title": "DraftComponent",
         "type": "object"
       },
+      "ExtractedDatum": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "key": {
+            "enum": [
+              "dni",
+              "cuit_cuil",
+              "cbu",
+              "first_name",
+              "last_name",
+              "email"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "source_message_id": {
+            "format": "uuid",
+            "title": "Source Message Id",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "confidence",
+          "source_message_id"
+        ],
+        "title": "ExtractedDatum",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -207,6 +244,14 @@
               }
             ],
             "title": "Completion Text"
+          },
+          "extracted": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExtractedDatum"
+            },
+            "title": "Extracted",
+            "type": "array"
           },
           "generation_id": {
             "anyOf": [

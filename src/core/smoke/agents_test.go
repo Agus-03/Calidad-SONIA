@@ -18,9 +18,11 @@ import (
 // answer the priced list from a stub, and none of them can fail if the core is not asking the deployed brain, or the brain is not
 // reading its own pricing.yaml.
 func TestTheAdminManagesAnAIAgentThroughTheRealProcess(t *testing.T) {
-	core, _, pool := stack(t)
+	core, brain, pool := stack(t)
 	ctx := context.Background()
 	waitForHealth(t, core)
+	// The priced list is the brain's, so a brain still starting would fail this case for a reason that is not ADR-0038.
+	waitForHealth(t, brain)
 
 	var account uuid.UUID
 	if err := pool.QueryRow(ctx, `SELECT id FROM accounts LIMIT 1`).Scan(&account); err != nil {

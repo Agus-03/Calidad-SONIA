@@ -1,5 +1,5 @@
 # The guardrail of ADR-0016, and not the redaction of ADR-0006: it is the net under the checkpoint of 03-capa-prompts regla 4,
-# which does not exist yet because regla 3 forbids the brain to write contact_attributes (decision O10 of ADR-0042).
+# whose extraction half is found() below, handed back to the core because regla 3 forbids the brain contact_attributes (ADR-0047).
 #
 # The two runs do opposite things with the same finding (decision D3): inbound it substitutes and lets the turn go on, outbound
 # it refuses the answer whole and never rewrites it, because that text already reached the provider. ADR-0043 amends the first
@@ -159,3 +159,24 @@ def _redact(text: str, redactions: tuple[Redaction, ...]) -> tuple[str, dict[str
             counted[rule.type] = counted.get(rule.type, 0) + replaced
 
     return text, counted
+
+
+# The checkpoint of 03-capa-prompts Regla 4 as ADR-0047 left it: the values the redaction replaces, found by the same patterns in
+# the same order, so what is extracted is exactly what the provider never sees. Digits only, so one datum written two ways is one
+# value and "the same value writes nothing" can hold (ADR-0047, sections 2.5 and 2.7).
+def found(text: str) -> tuple[tuple[str, str], ...]:
+    lowered = text.casefold()
+    out: list[tuple[str, str]] = []
+
+    for rule in rules().redactions:
+        if rule.context and not any(word.search(lowered) for word in rule.context):
+            continue
+
+        def keep(match: re.Match[str], rule: Redaction = rule) -> str:
+            out.append((rule.type, re.sub(r"\D", "", match.group(0))))
+            return rule.marker
+
+        # Substituted as it goes, like _redact: a CBU taken here is not read again by the shorter patterns after it.
+        text = rule.pattern.sub(keep, text)
+
+    return tuple(out)

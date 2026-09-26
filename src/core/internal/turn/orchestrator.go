@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
@@ -37,6 +38,8 @@ type Store interface {
 	LinkGeneration(ctx context.Context, generationID, messageID uuid.UUID) error
 	// The escalation of F12 the brain proposed, pointing at the evidence it evaluated (decision O1c).
 	RecordTransfer(ctx context.Context, conversationID, signalEvaluationID uuid.UUID, turnNumber int) error
+	// The context of F04 the generation was given, made the current one in the transaction that closes the turn (ADR-0048).
+	AdoptContext(ctx context.Context, generationID uuid.UUID) error
 }
 
 // Aggregate is conversations/: this package never writes messages with SQL of its own (regla 1).
@@ -45,11 +48,19 @@ type Aggregate interface {
 	// Where a turn that produced no answer leaves the conversation, because somebody has to answer what the bot did not
 	// (07-secuencia secciones 4 y 5).
 	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
+	// How a transfer turns the bot of that one conversation off, in the transaction that writes it (ADR-0045, section 2.7).
+	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	RecordOutbound(ctx context.Context, conversationID, aiAgentID uuid.UUID, text string, at time.Time) (conversations.Message, error)
 	// The fixed text of a cut turn (decision O2), whose row names no sender: no model wrote it and no person typed it.
 	RecordSystemOutbound(ctx context.Context, conversationID uuid.UUID, text string, at time.Time) (conversations.Message, error)
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
+}
+
+// Attributes is contacts/, the owner of contact_attributes: what the brain extracted is written by its repository, inside the
+// transaction that closes the turn (regla 1, ADR-0047 section 2.1).
+type Attributes interface {
+	RecordExtracted(ctx context.Context, contactID uuid.UUID, data []contacts.Extracted) error
 }
 
 type Brain interface {
@@ -60,8 +71,9 @@ type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
-// TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
-type TxFunc func(ctx context.Context, fn func(Store, Aggregate) error) error
+// TxFunc runs fn in one transaction with the three collaborators bound to it (regla 5), and is a function so a test needs no
+// PostgreSQL.
+type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Attributes) error) error
 
 type Options struct {
 	Tx        TxFunc
@@ -140,8 +152,7 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 	}
 	// The three conditions of ADR-0038 regla 2, read again now: the batch waited up to a minute, and a pause, a removal or a
 	// change of mode that committed in between has to win over what was true when the customer wrote (ADR-0041, regla 8).
-	// The three modes branch the orchestrator in Fase 9; until then only the autonomous one answers by itself (F02).
-	if target.Mode != enums.AgentModeAutonomous || !target.AIAgentAvailable || target.AIAgentID == nil {
+	if !answers(target.Mode) || !target.AIAgentAvailable || target.AIAgentID == nil {
 		o.opts.Logger.Info("turn not answered",
 			slog.String("conversation_id", conversationID.String()),
 			slog.String("mode", string(target.Mode)),
@@ -172,6 +183,11 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 		return o.abandon(ctx, batch, fmt.Errorf("%w: generated with an empty text", ErrNoAnswer))
 	}
 
+	if target.Mode == enums.AgentModeSuggestion {
+		// A draft the Operator copies or ignores: nothing leaves on its own, and the turn is done (ADR-0046, sections 2.2 and 2.5).
+		return o.suggested(ctx, target, batch, answer)
+	}
+
 	if answer.GenerationID == nil {
 		// The customer still gets the answer, but a generation nobody can find is indistinguishable from one nobody wrote (OE2).
 		o.opts.Logger.Warn("turn answered with no evidence to link",
@@ -179,7 +195,7 @@ func (o *Orchestrator) run(ctx context.Context, batch Batch) error {
 		)
 	}
 
-	message, err := o.persist(ctx, batch, conversationID, aiAgentID, answer, time.Now().UTC())
+	message, err := o.persist(ctx, batch, target, aiAgentID, answer, time.Now().UTC())
 	if err != nil {
 		return o.abandon(ctx, batch, err)
 	}
@@ -217,12 +233,17 @@ func (o *Orchestrator) ask(ctx context.Context, batch Batch, aiAgentID uuid.UUID
 // outcome was not to answer. The conversation drops to waiting either way (ADR-0042).
 func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, answer brainclient.TurnResponse) error {
 	notice := answer.Notice()
+	transfers := answer.Transfer != nil && answer.Transfer.Proposed
+	if target.Mode == enums.AgentModeSuggestion {
+		// Nothing reaches the customer without an Operator, and a person already holds the conversation (ADR-0046, 2.3 and 2.7).
+		notice, transfers = "", false
+	}
 	fields := []any{
 		slog.String("conversation_id", target.ConversationID.String()),
 		slog.String("batch_id", batch.ID.String()),
 		// Whether the customer was told anything, which is the one thing about a cut that a reader cannot infer from the rest.
 		slog.Bool("notice", notice != ""),
-		slog.Bool("transfer", answer.Transfer != nil && answer.Transfer.Proposed),
+		slog.Bool("transfer", transfers),
 	}
 	if answer.GenerationID != nil {
 		// Only when the cut came after generating: that evidence exists and the forensics of a blocked answer start there (section 4.2).
@@ -235,7 +256,7 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 
 	// One transaction for every write of the cut, for the reason section 2 gives about the happy path: either alone leaves a turn
 	// that reads as finished and unattended, or as attended and never finished.
-	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate, attributes Attributes) error {
 		if notice != "" {
 			var err error
 			// Written before it is sent, like every other outbound row: crashing after the send would leave a delivered message
@@ -246,12 +267,24 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 		}
 		// The action of decision O1c, and only when the brain proposed it: an evaluation that did not fire is evidence the brain
 		// already wrote, and turning it into a transfer here would count an escalation nobody decided.
-		if answer.Transfer != nil && answer.Transfer.Proposed {
+		if transfers {
 			if err := store.RecordTransfer(ctx, target.ConversationID, answer.Transfer.SignalEvaluationID, batch.TurnNumber); err != nil {
+				return err
+			}
+			// A transferred conversation is not answered by the AIAgent again until an Operator turns it back on (ADR-0045, 2.7).
+			if err := aggregate.SetMode(ctx, target.ConversationID, enums.AgentModeOff); err != nil {
 				return err
 			}
 		}
 		if err := aggregate.MarkWaiting(ctx, target.ConversationID); err != nil {
+			return err
+		}
+		// A cut after generating still read what the customer wrote, and the next turn is owed that context (ADR-0048).
+		if err := adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
+		// A request for a person often comes with the DNI, and the checkpoint found it before the cut (ADR-0047, section 2.7).
+		if err := record(ctx, attributes, target.ContactID, answer); err != nil {
 			return err
 		}
 		return store.MarkProcessed(ctx, batch.ID, at)
@@ -269,16 +302,64 @@ func (o *Orchestrator) blocked(ctx context.Context, target Target, batch Batch, 
 	return o.deliver(ctx, target, message, notice)
 }
 
+// suggested closes a turn whose answer is a draft: the generation stays pending_review with no message, and only processed_at is
+// written, so a restart does not ask the brain for the same suggestion twice (ADR-0046, section 2.2).
+func (o *Orchestrator) suggested(ctx context.Context, target Target, batch Batch, answer brainclient.TurnResponse) error {
+	o.opts.Logger.Info("turn suggested",
+		slog.String("conversation_id", target.ConversationID.String()),
+		slog.String("batch_id", batch.ID.String()),
+		slog.Bool("generation", answer.GenerationID != nil),
+	)
+	err := o.opts.Tx(ctx, func(store Store, _ Aggregate, attributes Attributes) error {
+		if err := adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
+		if err := record(ctx, attributes, target.ContactID, answer); err != nil {
+			return err
+		}
+		return store.MarkProcessed(ctx, batch.ID, time.Now().UTC())
+	})
+	if err != nil {
+		return o.abandon(ctx, batch, err)
+	}
+	return nil
+}
+
+// adopt is AdoptContext for the turns that generated: with no generation there is no context this turn was given (ADR-0048).
+func adopt(ctx context.Context, store Store, generationID *uuid.UUID) error {
+	if generationID == nil {
+		return nil
+	}
+	return store.AdoptContext(ctx, *generationID)
+}
+
+// record hands contacts/ what the brain extracted in this turn; the rules of what is kept are that package's (ADR-0047).
+func record(ctx context.Context, attributes Attributes, contactID uuid.UUID, answer brainclient.TurnResponse) error {
+	if len(answer.Extracted) == 0 {
+		return nil
+	}
+	data := make([]contacts.Extracted, 0, len(answer.Extracted))
+	for _, e := range answer.Extracted {
+		data = append(data, contacts.Extracted{Key: e.Key, Value: e.Value, Confidence: e.Confidence, SourceMessageID: e.SourceMessageID})
+	}
+	return attributes.RecordExtracted(ctx, contactID, data)
+}
+
+// answers is the gate of ADR-0041 regla 8 as ADR-0046 amends it: suggestion opens its turn too, because a draft needs one.
+func answers(mode enums.AgentMode) bool {
+	return mode == enums.AgentModeAutonomous || mode == enums.AgentModeSuggestion
+}
+
 // The transaction of 07-secuencia section 2: without it a restart cannot tell a finished turn from one that never ran.
 func (o *Orchestrator) persist(
-	ctx context.Context, batch Batch, conversationID, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
+	ctx context.Context, batch Batch, target Target, aiAgentID uuid.UUID, answer brainclient.TurnResponse, at time.Time,
 ) (conversations.Message, error) {
 	var message conversations.Message
 
-	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate) error {
+	err := o.opts.Tx(ctx, func(store Store, aggregate Aggregate, attributes Attributes) error {
 		var err error
 		// Written before it is sent: crashing after the send would leave a delivered message with no row (F29, C09).
-		if message, err = aggregate.RecordOutbound(ctx, conversationID, aiAgentID, answer.Text(), at); err != nil {
+		if message, err = aggregate.RecordOutbound(ctx, target.ConversationID, aiAgentID, answer.Text(), at); err != nil {
 			return err
 		}
 		// Linked here and not afterwards: a restart in between would leave message_id NULL, which section 5 reads as never sent.
@@ -286,6 +367,12 @@ func (o *Orchestrator) persist(
 			if err = store.LinkGeneration(ctx, *answer.GenerationID, message.ID); err != nil {
 				return err
 			}
+		}
+		if err = adopt(ctx, store, answer.GenerationID); err != nil {
+			return err
+		}
+		if err = record(ctx, attributes, target.ContactID, answer); err != nil {
+			return err
 		}
 		return store.MarkProcessed(ctx, batch.ID, at)
 	})

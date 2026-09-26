@@ -14,7 +14,7 @@ from infra.config import Settings
 from main import create_app
 from infra.enums import MessageDirection, PipelineStep
 from pipeline import notices, runner
-from pipeline.repository import TurnNotFound, read_turn
+from pipeline.repository import TurnNotFound, read_no_resolution_streak, read_turn
 from pipeline.step import Step, StepRequest, StepResult
 
 BATCH_ID = uuid4()
@@ -45,7 +45,8 @@ class FakeConnection:
         self.sent: list[tuple[str, dict]] = []
 
     async def execute(self, sql: str, params: dict | None = None) -> FakeCursor:
-        for table, rows in self.tables.items():
+        # Longest name first, so a statement that joins two tables is keyed by the one it is about and not by dict order.
+        for table, rows in sorted(self.tables.items(), key=lambda item: -len(item[0])):
             if table in sql:
                 self.seen.append(table)
                 self.sent.append((table, params or {}))
@@ -72,6 +73,8 @@ class FakeDatabase:
 
 def message(text: str, direction: str = "inbound", sender: str = "contact") -> dict:
     return {
+        # Its own id, which is what an extracted datum names as the message it was said in (ADR-0047).
+        "id": uuid4(),
         "direction": direction,
         "sender_type": sender,
         "content_text": text,
@@ -155,7 +158,7 @@ def test_turns_answers_the_contract_of_section_1(settings: Settings) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer", "notice_text"}
+    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer", "notice_text", "extracted"}
     # failed and never blocked: this deployment has no key for the provider the row names, which is not a rejection.
     assert payload["outcome"] == "failed"
     assert payload["transfer"] is None
@@ -318,6 +321,10 @@ def test_turns_fails_when_the_model_has_no_tariff() -> None:
 
 # doubled is the whole of F11 against the doubled adapter: the classifier answers two intentions, they are written as evidence,
 # and they reach the model that reads the message (ADR-0041, regla 12).
+def policy(signal: str, threshold: int = 1, enabled: bool = True) -> dict:
+    return {"signal_type": signal, "enabled": enabled, "threshold": Decimal(threshold)}
+
+
 def doubled() -> Settings:
     return Settings(
         _env_file=None,
@@ -579,7 +586,9 @@ def test_a_question_outside_the_domain_is_answered_by_a_person_and_never_by_a_te
     signals = [params for table, params in connection.sent if table == "signal_evaluations" and "score" in params]
     assert len(signals) == 1
     assert signals[0]["signal_type"] == "out_of_domain"
-    assert signals[0]["score"] == Decimal("0.91"), "the confidence of the verdict was not what the row kept"
+    # A yes/no signal is 1 against 1 (ADR-0045, section 2.4); the confidence stays in the row of the step.
+    assert signals[0]["score"] == Decimal(1)
+    assert signals[0]["threshold_used"] == Decimal(1), "a threshold nothing was compared against went into the row"
     assert signals[0]["fired"] is False, "a transfer fired for an agent whose administrator never configured this signal"
     assert payload["transfer"] == {"proposed": False, "signal_evaluation_id": str(signals[0]["id"])}
 
@@ -595,7 +604,7 @@ def test_a_question_outside_the_domain_proposes_the_transfer_the_policy_allows(m
         "INBOUND",
         (Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=outside),),
     )
-    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+    connection = FakeConnection(tables(transfer_policies=[policy("out_of_domain")]))
 
     with client(connection, doubled()) as http:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
@@ -605,9 +614,7 @@ def test_a_question_outside_the_domain_proposes_the_transfer_the_policy_allows(m
     assert len(signals) == 1
     assert signals[0]["fired"] is True
     assert payload["transfer"] == {"proposed": True, "signal_evaluation_id": str(signals[0]["id"])}
-    # The threshold that was in force, frozen with the row: moving it later must not rewrite what was measured. Nothing was
-    # compared against it here — the triage returns a verdict and not a score above a line.
-    assert signals[0]["threshold_used"] == Decimal("0.6")
+    assert signals[0]["threshold_used"] == Decimal(1)
     # The file that decided, which is what classifier_version has to name (regla 9).
     assert signals[0]["classifier_version"] == "3"
     # Still no text: a policy that allows the transfer does not turn O1c into an answer.
@@ -625,7 +632,7 @@ def test_a_cut_that_is_not_the_triage_proposes_no_transfer(monkeypatch: pytest.M
         "INBOUND",
         (Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocking),),
     )
-    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+    connection = FakeConnection(tables(transfer_policies=[policy("out_of_domain")]))
 
     with client(connection, doubled()) as http:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
@@ -633,6 +640,14 @@ def test_a_cut_that_is_not_the_triage_proposes_no_transfer(monkeypatch: pytest.M
     assert response.json()["transfer"] is None
     assert "signal_evaluations" not in connection.seen, "a blocked term was counted as a question for a person"
     assert "transfer_policies" not in connection.seen, "a cut that never delegates read the policy anyway"
+    # ADR-0045, section 2.6: the row that cut says which signals were never evaluated, since none has a row of its own.
+    row = next(p for t, p in connection.sent if t == "pipeline_steps" and "position" in p)
+    assert row["detail_json"].obj["skipped_signals"] == [
+        "explicit_request",
+        "frustration",
+        "out_of_domain",
+        "no_resolution",
+    ]
 
 
 # Section 5 again, one step earlier than the generation: a provider that fell over mid-pipeline is a failed turn whose partial
@@ -662,3 +677,283 @@ def test_a_step_that_could_not_decide_fails_the_turn_and_keeps_what_ran(monkeypa
     # has a value for "could not decide" (ADR-0016).
     assert connection.seen.count("pipeline_steps") == 2
     assert "generations" not in connection.seen
+
+
+def written_signals(connection: FakeConnection) -> dict[str, dict]:
+    return {p["signal_type"]: p for t, p in connection.sent if t == "signal_evaluations" and "score" in p}
+
+
+def triage_row(connection: FakeConnection) -> dict:
+    return next(p for t, p in connection.sent if t == "pipeline_steps" and p.get("step") == "triage")
+
+
+# ADR-0014 on the happy path too: a turn that answers still writes the signals it judged, and says which it skipped.
+def test_a_turn_that_answers_still_writes_the_signals_it_judged() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "generated"
+    signals = written_signals(connection)
+    assert set(signals) == {"out_of_domain", "explicit_request"}, "the double shows no answer, so no_resolution is not judged"
+    assert all(p["fired"] is False for p in signals.values())
+    detail = triage_row(connection)["detail_json"].obj
+    assert detail["skipped_signals"] == ["frustration", "no_resolution"]
+    # ADR-0046, section 2.4: the mode is on the row OE6 reads its denominator from.
+    assert detail["mode"] == "autonomous"
+    assert response.json()["transfer"] is None
+
+
+# ADR-0045, section 2.5: a request for a person the policy allows cuts the turn at the triage, with nothing said and no generation.
+def test_a_request_for_a_person_cuts_the_turn_and_proposes_the_transfer() -> None:
+    connection = FakeConnection(
+        tables(
+            messages=[message("hola, quiero hablar con una persona")],
+            transfer_policies=[policy("explicit_request")],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "blocked"
+    assert payload["notice_text"] is None, "the customer asked for a person and got a text of ours"
+    assert payload["generation_id"] is None, "a generation was paid for an answer nobody was going to send"
+    signals = written_signals(connection)
+    assert signals["explicit_request"]["fired"] is True
+    assert payload["transfer"] == {"proposed": True, "signal_evaluation_id": str(signals["explicit_request"]["id"])}
+    assert triage_row(connection)["detail_json"].obj["transfer"] == "explicit_request"
+    assert "generations" not in connection.seen
+
+
+# With no policy the same request does not fire, and the turn goes on and answers (ADR-0045, section 2.5).
+def test_a_request_for_a_person_with_no_policy_is_answered() -> None:
+    connection = FakeConnection(tables(messages=[message("quiero hablar con una persona")]))
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "generated"
+    assert written_signals(connection)["explicit_request"]["score"] == Decimal(1)
+    assert written_signals(connection)["explicit_request"]["fired"] is False
+
+
+# ADR-0046, section 2.2: in suggestion mode the generation is a draft for the Operator and never an answer.
+def test_in_suggestion_mode_the_generation_waits_for_review() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(mode="suggestion"), headers={"X-Internal-Token": "test-token"}).json()
+
+    written = next(p for t, p in connection.sent if t == "generations" and "prompt_rendered" in p)
+    assert written["status"] == "pending_review"
+    assert payload["outcome"] == "generated"
+    assert triage_row(connection)["detail_json"].obj["mode"] == "suggestion"
+
+
+# The run of no_resolution continues from the batch before (ADR-0045, section 2.2).
+async def test_the_run_is_read_from_the_batch_before() -> None:
+    turn = await read_turn(FakeConnection(tables()), BATCH_ID, CONVERSATION_ID, AGENT_ID)
+
+    assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": [{"score": Decimal(2)}]}), turn, "2") == 2
+    assert await read_no_resolution_streak(FakeConnection({"signal_evaluations": []}), turn, "2") == 0
+
+
+# ADR-0048: the context of F04 as the turn reads it and leaves it. conversation_contexts is read and never written here: the core
+# copies the version into it when it closes the turn.
+VERSION_ID = uuid4()
+
+
+def current_context(summary: str = "Venía preguntando por Nueva Córdoba.") -> dict:
+    return {
+        "turn_number": 1,
+        "summary": summary,
+        "primary_intent": "consulta_zona",
+        "objections_json": [],
+        "urgency_level": None,
+        "budget_signal": None,
+        "extracted_data_json": {},
+    }
+
+
+def sent_to(connection: FakeConnection, table: str, key: str) -> list[dict]:
+    return [params for name, params in connection.sent if name == table and key in params]
+
+
+def without_rewriter():
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def down(self, **kwargs: object):
+        if double_module.REWRITER_MARKER in str(kwargs.get("system") or ""):
+            raise LLMUnavailable("double: the rewriter is down")
+        return await original(self, **kwargs)
+
+    return double_module, original, down
+
+
+def test_a_generated_turn_leaves_its_context_version_and_the_generation_points_at_it() -> None:
+    connection = FakeConnection(tables(conversation_contexts=[], conversation_context_versions=[]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    # The double echoes the envelope, so the answer shows the rewritten context reached the model under its heading (Regla 1).
+    assert "[CONTEXTO DE LA CONVERSACIÓN]" in payload["completion_text"]
+    assert "[doblado] el cliente consulta" in payload["completion_text"]
+    version = sent_to(connection, "conversation_context_versions", "content")[0]
+    generation = sent_to(connection, "generations", "prompt_rendered")[0]
+    assert generation["context_version_id"] == version["id"], "the generation does not name the context it was given"
+    # Before the generation, which has a foreign key to it.
+    assert connection.seen.index("conversation_context_versions") < connection.seen.index("generations")
+    assert version["turn_number"] == 1 and version["rewritten_by_model"] == "command-a-03-2025"
+    # primary_intent is the dominant label of F11 and never the rewriter's (DER/entidades.md).
+    assert version["content"].obj["primary_intent"] == "consulta_disponibilidad"
+
+
+# Regla 3: a rewrite that fell over does not take the answer with it, and the generation is given the context there was.
+def test_a_rewrite_that_fails_answers_with_the_context_there_was(caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(
+        tables(conversation_contexts=[current_context()], conversation_context_versions=[{"id": VERSION_ID}])
+    )
+    double_module, original, down = without_rewriter()
+
+    double_module.DoubleClient.complete = down
+    try:
+        with caplog.at_level(logging.WARNING, logger="sonia.api.turns"):
+            with client(connection, doubled()) as http:
+                response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    payload = response.json()
+    assert payload["outcome"] == "generated", "a rewrite that fell over took the customer's answer with it"
+    assert "Venía preguntando por Nueva Córdoba." in payload["completion_text"]
+    assert "context not rewritten" in caplog.text, "the gap in the evidence was not reported"
+    assert sent_to(connection, "conversation_context_versions", "content") == [], "a version was written for no rewrite"
+    assert sent_to(connection, "generations", "prompt_rendered")[0]["context_version_id"] == VERSION_ID
+
+
+def test_a_first_turn_whose_rewrite_fails_answers_with_no_context() -> None:
+    connection = FakeConnection(tables(conversation_contexts=[], conversation_context_versions=[]))
+    double_module, original, down = without_rewriter()
+
+    double_module.DoubleClient.complete = down
+    try:
+        with client(connection, doubled()) as http:
+            response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert response.json()["outcome"] == "generated"
+    assert "[CONTEXTO DE LA CONVERSACIÓN]" not in response.json()["completion_text"]
+    assert sent_to(connection, "generations", "prompt_rendered")[0]["context_version_id"] is None
+
+
+# A turn cut at the triage has no answer to give a context to, so it neither reads nor rewrites one (ADR-0048).
+def test_a_turn_cut_at_the_triage_does_not_rewrite_the_context() -> None:
+    connection = FakeConnection(
+        tables(
+            messages=[message("quiero hablar con una persona")],
+            transfer_policies=[policy("explicit_request")],
+            conversation_contexts=[current_context()],
+            conversation_context_versions=[],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["outcome"] == "blocked"
+    assert "conversation_contexts" not in connection.seen
+    assert "conversation_context_versions" not in connection.seen
+
+
+# ADR-0047: what the turn hands the core about the contact. The agent of these cases has the toggle on.
+def extracting(**overrides: list[dict]) -> dict[str, list[dict]]:
+    base = tables(**overrides)
+    base["ai_agents"] = [{**base["ai_agents"][0], "extraction_enabled": True}]
+    return base
+
+
+def test_a_generated_turn_hands_the_core_what_the_customer_said_about_themselves() -> None:
+    connection = FakeConnection(extracting(messages=[message("hola, me llamo Lucía Pérez y mi DNI es 30.123.456")]))
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "generated"
+    got = {e["key"]: e for e in payload["extracted"]}
+    # The DNI by the pattern of the checkpoint, in digits only; the name by the model, over the redacted text.
+    assert got["dni"]["value"] == "30123456" and got["dni"]["confidence"] == 1.0
+    assert got["first_name"]["value"] == "Lucía" and got["last_name"]["value"] == "Pérez"
+    assert "30.123.456" not in payload["completion_text"], "the DNI reached the model the extraction runs beside"
+
+
+def test_with_the_toggle_off_nothing_is_extracted_and_the_extractor_is_never_asked() -> None:
+    connection = FakeConnection(tables(messages=[message("me llamo Lucía Pérez, DNI 30123456")]))
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+    asked: list[str] = []
+
+    async def watching(self, **kwargs: object):
+        asked.append(str(kwargs.get("system") or ""))
+        return await original(self, **kwargs)
+
+    double_module.DoubleClient.complete = watching
+    try:
+        with client(connection, doubled()) as http:
+            payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert payload["extracted"] == []
+    assert not [s for s in asked if double_module.EXTRACTION_MARKER in s], "the extractor was called with the toggle off"
+
+
+# A request for a person often comes with the DNI: the checkpoint half runs on the turn the triage cut, the model half does not.
+def test_a_turn_cut_at_the_triage_still_hands_over_what_the_checkpoint_found() -> None:
+    connection = FakeConnection(
+        extracting(
+            messages=[message("quiero hablar con una persona, me llamo Lucía Pérez y mi DNI es 30123456")],
+            transfer_policies=[policy("explicit_request")],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "blocked"
+    assert [e["key"] for e in payload["extracted"]] == ["dni"]
+
+
+def test_an_extractor_that_falls_over_does_not_take_the_answer_with_it(caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(extracting(messages=[message("me llamo Lucía Pérez, DNI 30123456")]))
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def down(self, **kwargs: object):
+        if double_module.EXTRACTION_MARKER in str(kwargs.get("system") or ""):
+            raise LLMUnavailable("double: the extractor is down")
+        return await original(self, **kwargs)
+
+    double_module.DoubleClient.complete = down
+    try:
+        with caplog.at_level(logging.WARNING, logger="sonia.api.turns"):
+            with client(connection, doubled()) as http:
+                payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert payload["outcome"] == "generated"
+    assert "contact data not extracted" in caplog.text
+    # The checkpoint half does not depend on the model, so the DNI still travels.
+    assert [e["key"] for e in payload["extracted"]] == ["dni"]

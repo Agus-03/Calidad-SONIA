@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§1 y §2 enmendadas por [ADR-0044](0044-senal-de-frustracion-diferida-a-la-fase-16.md)**: hasta la Fase 16 se evalúan tres señales, no cuatro, porque `frustration` queda salteada. El orden no cambia, pero ADR-0044 acota `frustration` a la frustración con el agente, y eso debilita el argumento de §3 que la separa de la *"capacidad del sistema"* |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 6 (pendiente abierto por ADR-0014) |
 | **Resuelve** | La regla de atribución que F12 no declara |

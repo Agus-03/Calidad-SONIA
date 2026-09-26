@@ -46,6 +46,9 @@ type outcome struct {
 	// The two halves of F11: the evidence the brain wrote, and whether the list reached the prompt that answered.
 	intents          int
 	promptHasIntents bool
+	// F04: the context reached the prompt, and it is this turn's version, which the core made the current one (ADR-0048).
+	promptHasContext bool
+	contextOfTurn    bool
 }
 
 func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
@@ -100,6 +103,12 @@ func TestAWebhookBecomesAnAnsweredTurnWithItsEvidence(t *testing.T) {
 	}
 	if !got.promptHasIntents {
 		t.Error("prompt_rendered carries no list of requests: the intents were detected and never used (F11)")
+	}
+	if !got.promptHasContext {
+		t.Error("prompt_rendered carries no context: the rewrite of F04 never reached the answer")
+	}
+	if !got.contextOfTurn {
+		t.Error("the generation was not given this turn's context version, or the core did not make it the current one (ADR-0048)")
 	}
 }
 
@@ -284,7 +293,11 @@ SELECT b.processed_at IS NOT NULL,
         WHERE  pc.ai_agent_id = g.ai_agent_id AND pc.active AND pc.deleted_at IS NULL
           AND  NOT EXISTS (SELECT 1 FROM generation_components gc
                            JOIN   prompt_component_versions v ON v.id = gc.prompt_component_version_id
-                           WHERE  gc.generation_id = g.id AND v.prompt_component_id = pc.id))
+                           WHERE  gc.generation_id = g.id AND v.prompt_component_id = pc.id)),
+       position('[CONTEXTO DE LA CONVERSACIÓN]' in g.prompt_rendered) > 0,
+       EXISTS (SELECT 1 FROM conversation_context_versions v
+               JOIN   conversation_contexts cc ON cc.conversation_id = v.conversation_id AND cc.turn_number = v.turn_number
+               WHERE  v.id = g.conversation_context_version_id AND v.turn_number = b.turn_number)
 FROM   messages i
 JOIN   message_batches b ON b.id = i.message_batch_id
 JOIN   generations g ON g.message_batch_id = b.id
@@ -301,7 +314,7 @@ func awaitTurn(ctx context.Context, t *testing.T, pool db.Pool, wamid string) ou
 			&got.batchProcessed, &got.batchError, &got.messageDirection, &got.messageStatus,
 			&got.messageHasWamid, &got.generationCost, &got.generationState,
 			&got.promptHasComponents, &got.promptHasEnvelope, &got.promptHasIntents, &got.intents,
-			&got.assembled, &got.missing,
+			&got.assembled, &got.missing, &got.promptHasContext, &got.contextOfTurn,
 		)
 		switch {
 		case err == nil:

@@ -45,6 +45,16 @@ type TurnResponse struct {
 	// The fixed text of a cut turn (decision O2), which is not a generation and travels in its own field for that reason: a
 	// refused answer must not be sendable (07-secuencia 4.2) and this one is the only thing the customer may read.
 	NoticeText *string `json:"notice_text"`
+	// What the brain found about the contact, in the clear: the core encrypts it and decides what is kept (ADR-0047, 2.1).
+	Extracted []ExtractedDatum `json:"extracted"`
+}
+
+// ExtractedDatum mirrors api/schemas/turn.py. The key is one of the six of ADR-0047, and contacts/ refuses any other.
+type ExtractedDatum struct {
+	Key             string    `json:"key"`
+	Value           string    `json:"value"`
+	Confidence      float64   `json:"confidence"`
+	SourceMessageID uuid.UUID `json:"source_message_id"`
 }
 
 // PricedModel mirrors api/schemas/models.py: a provider and a model the tariff file of the brain can price.

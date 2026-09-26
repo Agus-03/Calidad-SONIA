@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -1088,5 +1089,131 @@ func TestTheSearchReachesTheNameAndThePhoneAndNothingElse(t *testing.T) {
 	})
 	if !errors.Is(err, rollback) {
 		t.Fatalf("InTx: %v", err)
+	}
+}
+
+// ADR-0047 against the real DDL: nothing sensitive without a consent in force (2.6), nothing over a manual value (2.5), a new
+// value retires the extracted one it replaces and the same value writes nothing, a key outside the list is never stored, and the
+// value lands encrypted. The card read hides the sensitive keys from whoever may not read them (2.7).
+func TestWhatTheBrainExtractedIsKeptByTheRulesOfADR0047(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account := seededAccount(t, pool)
+	cipher := testCipher(t)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		repo := NewRepository(exec, cipher)
+		contact := newContact(account, uniquePhone(), "Lucía", "Pérez")
+		if err := repo.Create(ctx, contact); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		assignTo(t, ctx, exec, contact.ID, nil)
+		source := id.New()
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO messages (id, conversation_id, direction, sender_type, content_text, content_type, sent_at)
+			SELECT $1, c.id, 'inbound', 'contact', 'mi DNI es 30123456', 'text', now() FROM conversations c WHERE c.contact_id = $2`,
+			source, contact.ID); err != nil {
+			t.Fatalf("seed the message: %v", err)
+		}
+		datum := func(key, value string) Extracted {
+			return Extracted{Key: key, Value: value, Confidence: 0.9, SourceMessageID: source}
+		}
+		live := func() map[string]string {
+			attrs, err := repo.Attributes(ctx, contact.ID, true)
+			if err != nil {
+				t.Fatalf("Attributes: %v", err)
+			}
+			out := map[string]string{}
+			for _, a := range attrs {
+				out[a.Key] = a.Value
+			}
+			return out
+		}
+
+		// Without consent: the name is kept, the DNI is not, and a key outside the list is never stored.
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{
+			datum("dni", "30123456"), datum("first_name", "Lucía"), datum("telefono", "351555"),
+		}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		if got := live(); len(got) != 1 || got["first_name"] != "Lucía" {
+			t.Fatalf("attributes = %v, want only the name: no consent for the DNI, and telefono is not a key", got)
+		}
+
+		// With consent in force the DNI is kept, encrypted.
+		if _, err := exec.Exec(ctx, `UPDATE contacts SET consent_given_at = now() WHERE id = $1`, contact.ID); err != nil {
+			t.Fatalf("give consent: %v", err)
+		}
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{datum("dni", "30123456")}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		var stored []byte
+		if err := exec.QueryRow(ctx, `SELECT value_encrypted FROM contact_attributes WHERE contact_id = $1 AND key = 'dni'`,
+			contact.ID).Scan(&stored); err != nil || strings.Contains(string(stored), "30123456") {
+			t.Fatalf("the DNI in the row: %q (%v), want ciphertext", stored, err)
+		}
+
+		// The same value writes nothing; a new one retires the old.
+		count := func() (live, all int) {
+			if err := exec.QueryRow(ctx, `SELECT count(*) FILTER (WHERE deleted_at IS NULL), count(*) FROM contact_attributes
+				WHERE contact_id = $1 AND key = 'first_name'`, contact.ID).Scan(&live, &all); err != nil {
+				t.Fatalf("count: %v", err)
+			}
+			return live, all
+		}
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{datum("first_name", "Lucía")}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		if l, a := count(); l != 1 || a != 1 {
+			t.Fatalf("the same name twice left %d live of %d rows, want 1 of 1", l, a)
+		}
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{datum("first_name", "Lu")}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		if l, a := count(); l != 1 || a != 2 || live()["first_name"] != "Lu" {
+			t.Fatalf("a new name left %d live of %d rows (%v), want the new one live and the old one retired", l, a, live())
+		}
+
+		// A manual value wins: nothing extracted is written over it.
+		manual, err := cipher.Encrypt("lucia@coop.test")
+		if err != nil {
+			t.Fatalf("Encrypt: %v", err)
+		}
+		if _, err := exec.Exec(ctx, `INSERT INTO contact_attributes (id, contact_id, key, value_encrypted, source)
+			VALUES ($1, $2, 'email', $3, 'manual')`, id.New(), contact.ID, manual); err != nil {
+			t.Fatalf("seed the manual email: %v", err)
+		}
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{datum("email", "otra@coop.test")}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		if got := live()["email"]; got != "lucia@coop.test" {
+			t.Fatalf("email = %q, want the manual one untouched", got)
+		}
+
+		// A revocation after the consent is a consent no longer in force.
+		if _, err := exec.Exec(ctx, `UPDATE contacts SET consent_revoked_at = now() + interval '1 second' WHERE id = $1`, contact.ID); err != nil {
+			t.Fatalf("revoke consent: %v", err)
+		}
+		if err := repo.RecordExtracted(ctx, contact.ID, []Extracted{datum("cbu", "0170099220000067797151")}); err != nil {
+			t.Fatalf("RecordExtracted: %v", err)
+		}
+		if _, has := live()["cbu"]; has {
+			t.Fatal("a CBU was kept after the consent was revoked")
+		}
+
+		// The read without the sensitive keys never returns them.
+		narrow, err := repo.Attributes(ctx, contact.ID, false)
+		if err != nil {
+			t.Fatalf("Attributes: %v", err)
+		}
+		for _, a := range narrow {
+			if a.Key == "dni" {
+				t.Fatal("the DNI came back on the read that excludes the sensitive keys")
+			}
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
 	}
 }

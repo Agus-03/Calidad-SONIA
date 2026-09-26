@@ -84,6 +84,7 @@ func (s *stubRepo) Update(_ context.Context, accountID, agentID uuid.UUID, c Con
 	a := &s.rows[i]
 	a.Name, a.Description, a.LLMProvider, a.LLMModel = c.Name, c.Description, c.LLMProvider, c.LLMModel
 	a.Temperature, a.MaxTokens, a.Active = c.Temperature, c.MaxTokens, c.Active
+	a.ExtractionEnabled = c.ExtractionEnabled
 	s.writes = append(s.writes, "update")
 	return *a, nil
 }

@@ -20,6 +20,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
 
@@ -683,7 +684,6 @@ func TestEachModeRefusalHasItsOwnCode(t *testing.T) {
 		{"the id is not a uuid", func(*desk) string { return "no-es-un-id" }, `{"mode":"off"}`, http.StatusBadRequest, "invalid_conversation_id"},
 		{"the body has no mode", onePooled, `{}`, http.StatusBadRequest, "invalid_body"},
 		{"a word that is not a mode", onePooled, `{"mode":"robot"}`, http.StatusBadRequest, "invalid_mode"},
-		{"suggestion before Fase 9", onePooled, `{"mode":"suggestion"}`, http.StatusBadRequest, "mode_not_available"},
 		{"the conversation does not exist", func(*desk) string { return id.New().String() }, `{"mode":"off"}`, http.StatusNotFound, "conversation_not_found"},
 		{"no agent to turn on", func(d *desk) string {
 			target := d.open(nil)
@@ -724,5 +724,57 @@ func TestTheModeHandlerRefusesWithoutAnActor(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
+func getSuggestion(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/suggestion", nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// ADR-0046, section 2.5: the draft waiting is read with its id, which is what the send names; no draft is a 204 and not an error.
+func TestTheSuggestionHandlerAnswersTheDraftOrNothing(t *testing.T) {
+	d := newDesk(&stubStore{})
+	target := d.open(&testOperator)
+	draft := id.New()
+	d.store.suggestions = map[uuid.UUID]Suggestion{target.ConversationID: {GenerationID: draft, Text: "Sí, tenemos dos."}}
+	engine := mountDesk(enums.OperatorRoleOperator, d)
+
+	rec := getSuggestion(engine, target.ConversationID.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), draft.String()) {
+		t.Fatalf("GET suggestion: got %d - %s, want 200 with the draft", rec.Code, rec.Body)
+	}
+
+	empty := d.open(&testOperator)
+	if rec := getSuggestion(engine, empty.ConversationID.String()); rec.Code != http.StatusNoContent {
+		t.Fatalf("GET suggestion with no draft: got %d, want 204", rec.Code)
+	}
+	if rec := getSuggestion(engine, "no-es-un-id"); errorCode(t, rec) != "invalid_conversation_id" {
+		t.Fatalf("GET suggestion with a bad id: got %d - %s", rec.Code, rec.Body)
+	}
+}
+
+// The send names the draft it copied by id: a bad one is refused before anything is written, and one that is not pending is a 409.
+func TestASendThatNamesASuggestionHasItsOwnRefusals(t *testing.T) {
+	d := newDesk(&stubStore{})
+	target := d.open(&testOperator)
+	engine := mountDesk(enums.OperatorRoleOperator, d)
+
+	rec := post(engine, target.ConversationID.String(), `{"text":"hola","generation_id":"no-es-un-id"}`)
+	if got := errorCode(t, rec); got != "invalid_generation_id" {
+		t.Fatalf("a malformed generation_id: got %q, want invalid_generation_id", got)
+	}
+
+	d.reviews.err = turn.ErrGenerationNotFound
+	rec = post(engine, target.ConversationID.String(), `{"text":"hola","generation_id":"`+id.New().String()+`"}`)
+	if got := errorCode(t, rec); got != "suggestion_not_pending" {
+		t.Fatalf("a draft that is not pending: got %q, want suggestion_not_pending", got)
+	}
+	if d.sender.calls != 0 {
+		t.Fatal("the answer left although its review was refused")
 	}
 }

@@ -24,7 +24,8 @@ func TestTheTurnWritesInTheOrderSectionTwoDeclares(t *testing.T) {
 	h.turn()
 
 	// No open_batch and no link_to_batch any more: the batch arrives closed and its messages were linked as they came in (T3).
-	want := []string{"outbound_message", "generation_linked", "processed_at", "message_sent"}
+	// The context of F04 is made current in the same transaction, before the turn is marked done (ADR-0048).
+	want := []string{"outbound_message", "generation_linked", "conversation_context", "processed_at", "message_sent"}
 	if !slices.Equal(*h.steps, want) {
 		t.Fatalf("steps = %v, want %v", *h.steps, want)
 	}
@@ -72,8 +73,6 @@ func TestAGateThatClosedWhileTheBatchWaitedEndsTheTurnAsProcessed(t *testing.T) 
 		name  string
 		close func(*Target)
 	}{
-		{"the admin moved the conversation to suggestion, which is Fase 9",
-			func(tg *Target) { tg.Mode = enums.AgentModeSuggestion }},
 		{"the admin turned the conversation off", func(tg *Target) { tg.Mode = enums.AgentModeOff }},
 		{"the admin paused or removed the agent", func(tg *Target) { tg.AIAgentAvailable = false }},
 		{"the admin took the agent away from the conversation", func(tg *Target) { tg.AIAgentID = nil }},
@@ -362,7 +361,6 @@ func TestAnAnswerWithNoEvidenceIsStillDelivered(t *testing.T) {
 	}
 }
 
-
 // Section 4: a cut is a decision of the pipeline and not a failure of the turn, so it gets the reading a pause gets (ADR-0041,
 // regla 8) — processed_at written, no error_message — plus the one thing a pause does not need: somebody has to answer what the
 // bot refused to, so the conversation drops to waiting.
@@ -371,11 +369,15 @@ func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
 	cases := []struct {
 		name     string
 		response brainclient.TurnResponse
+		want     []string
 	}{
 		{"cut before generating, so there is no evidence to point at (section 4.1)",
-			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}},
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked},
+			[]string{"conversation_waiting", "processed_at"}},
+		// The customer's message was read and the context rewritten before the answer was refused, so it still becomes current (ADR-0048).
 		{"cut after generating, where the evidence exists and its message_id stays NULL for ever (section 4.2)",
-			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation}},
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation},
+			[]string{"conversation_waiting", "conversation_context", "processed_at"}},
 	}
 
 	for _, tc := range cases {
@@ -387,8 +389,8 @@ func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
 
 			// The two writes and nothing else, in one transaction: either alone leaves a turn that reads as finished and
 			// unattended, or as attended and never finished.
-			if got := *h.steps; len(got) != 2 || got[0] != "conversation_waiting" || got[1] != "processed_at" {
-				t.Fatalf("the writes of a blocked turn were %v, want conversation_waiting and processed_at alone", got)
+			if got := *h.steps; !slices.Equal(got, tc.want) {
+				t.Fatalf("the writes of a blocked turn were %v, want %v", got, tc.want)
 			}
 			if len(h.store.failed) != 0 {
 				t.Fatalf("error_message was written for a cut the pipeline decided: %v", h.store.failed)
@@ -453,8 +455,9 @@ func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing
 
 	h.turn()
 
-	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c).
-	want := []string{"transfer_event", "conversation_waiting", "processed_at"}
+	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c). And the bot of
+	// this conversation goes off with the event, so the AIAgent does not answer the next message (ADR-0045, section 2.7).
+	want := []string{"transfer_event", "conversation_mode", "conversation_waiting", "processed_at"}
 	if got := *h.steps; !slices.Equal(got, want) {
 		t.Fatalf("the writes of a cut that delegates were %v, want %v", got, want)
 	}
@@ -467,6 +470,9 @@ func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing
 	}
 	if event.ConversationID != h.store.target.ConversationID || event.TurnNumber != h.store.batch.TurnNumber {
 		t.Fatalf("the event named %+v, want the conversation and the turn of this batch", event)
+	}
+	if got := h.aggregate.modes[h.store.target.ConversationID]; got != enums.AgentModeOff {
+		t.Fatalf("mode after the transfer = %q, want off: the AIAgent would answer a conversation handed to a person", got)
 	}
 }
 
@@ -505,7 +511,6 @@ func TestAnAnswerThatCameEmptyIsAFailureAndNotACut(t *testing.T) {
 	}
 }
 
-
 // A cut whose two writes did not commit is not a decision that landed: nobody finished this turn, and that is what the row says.
 func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {
 	h := conductor()
@@ -519,5 +524,147 @@ func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {
 	}
 	if len(h.store.processed) != 0 {
 		t.Fatal("processed_at was recorded for a transaction that did not commit")
+	}
+}
+
+// ADR-0046, section 2.2: in suggestion mode the brain is asked, the draft stays pending_review, and nothing is written as a message
+// or sent. processed_at is the only write, so a restart does not ask for the same suggestion twice.
+func TestASuggestionIsNeitherWrittenAsAMessageNorSent(t *testing.T) {
+	h := conductor()
+	h.store.target.Mode = enums.AgentModeSuggestion
+
+	h.turn()
+
+	if h.brain.calls != 1 || h.brain.requests[0].Mode != enums.AgentModeSuggestion {
+		t.Fatalf("the brain was called %d times, want once and told the mode is suggestion", h.brain.calls)
+	}
+	if h.sender.calls != 0 || len(h.aggregate.outbound) != 0 {
+		t.Fatalf("a suggestion reached the customer: %d sends, %v written", h.sender.calls, h.aggregate.outbound)
+	}
+	// The draft was generated with a context, and the next suggestion is owed it (ADR-0048).
+	if got := *h.steps; !slices.Equal(got, []string{"conversation_context", "processed_at"}) {
+		t.Fatalf("the writes of a suggested turn were %v, want the context and processed_at", got)
+	}
+	if len(h.store.adopted) != 1 || h.store.adopted[0] != *h.brain.response.GenerationID {
+		t.Fatalf("the context adopted was %v, want the one of the draft", h.store.adopted)
+	}
+}
+
+// ADR-0046, sections 2.3 and 2.7: a cut in suggestion mode tells the customer nothing and transfers nothing, because a person
+// already holds the conversation and nothing leaves without one.
+func TestACutInSuggestionModeSendsNoTextAndTransfersNothing(t *testing.T) {
+	notice := "No podemos procesar ese mensaje."
+	h := conductor()
+	h.store.target.Mode = enums.AgentModeSuggestion
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:    brainclient.OutcomeBlocked,
+		NoticeText: &notice,
+		Transfer:   &brainclient.TransferProposal{Proposed: true, SignalEvaluationID: uuid.New()},
+	}
+
+	h.turn()
+
+	if h.sender.calls != 0 || len(h.aggregate.notices) != 0 {
+		t.Fatal("the fixed text of a cut reached the customer without an Operator")
+	}
+	if len(h.store.transfers) != 0 || len(h.aggregate.modes) != 0 {
+		t.Fatalf("a transfer was written in suggestion mode (H-30): %v, modes %v", h.store.transfers, h.aggregate.modes)
+	}
+	if got := *h.steps; !slices.Equal(got, []string{"conversation_waiting", "processed_at"}) {
+		t.Fatalf("the writes of a cut in suggestion mode were %v", got)
+	}
+}
+
+// ADR-0048: the context and the turn commit together, so a context that cannot be made current leaves a turn nobody finished and
+// sends nothing — the same reading a link that failed gets (section 2).
+func TestAContextThatCannotBeAdoptedLeavesTheTurnUnfinished(t *testing.T) {
+	h := conductor()
+	h.store.contextErr = errors.New("conversation_contexts is locked")
+
+	h.turn()
+
+	if h.sender.calls != 0 {
+		t.Fatal("the answer left although the transaction that holds it did not commit")
+	}
+	if h.store.failed[h.store.batch.ID] == "" || len(h.store.processed) != 0 {
+		t.Fatalf("the batch reads as finished: processed %v, failed %v", h.store.processed, h.store.failed)
+	}
+}
+
+// ADR-0047, section 2.1: what the brain extracted is handed to contacts/, for the contact of this conversation, inside the
+// transaction that closes the turn and before it is marked done, whatever the turn ended in.
+func TestWhatTheBrainExtractedIsKeptWithTheTurn(t *testing.T) {
+	source := uuid.New()
+	extracted := []brainclient.ExtractedDatum{{Key: "dni", Value: "30123456", Confidence: 1, SourceMessageID: source}}
+	generation := uuid.New()
+	text := "hola"
+
+	for _, tc := range []struct {
+		name     string
+		mode     enums.AgentMode
+		response brainclient.TurnResponse
+		want     []string
+	}{
+		{"an answered turn", enums.AgentModeAutonomous,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text, Extracted: extracted},
+			[]string{"outbound_message", "generation_linked", "conversation_context", "contact_attributes", "processed_at", "message_sent"}},
+		// A request for a person often comes with the DNI, and the checkpoint found it before the cut (section 2.7).
+		{"a turn the triage cut", enums.AgentModeAutonomous,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, Extracted: extracted},
+			[]string{"conversation_waiting", "contact_attributes", "processed_at"}},
+		{"a suggestion", enums.AgentModeSuggestion,
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text, Extracted: extracted},
+			[]string{"conversation_context", "contact_attributes", "processed_at"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := conductor()
+			h.store.target.Mode = tc.mode
+			h.brain.response = tc.response
+
+			h.turn()
+
+			if !slices.Equal(*h.steps, tc.want) {
+				t.Fatalf("steps = %v, want %v", *h.steps, tc.want)
+			}
+			if len(h.attributes.contacts) != 1 || h.attributes.contacts[0] != h.store.target.ContactID {
+				t.Fatalf("recorded for %v, want the contact of the conversation %v", h.attributes.contacts, h.store.target.ContactID)
+			}
+			got := h.attributes.recorded
+			if len(got) != 1 || got[0].Key != "dni" || got[0].Value != "30123456" || got[0].SourceMessageID != source {
+				t.Fatalf("recorded = %+v, want the DNI the brain found, with its message", got)
+			}
+		})
+	}
+}
+
+// Nothing found is nothing to hand over: the owner of the table is not asked to write an empty list.
+func TestATurnThatExtractedNothingDoesNotAskContacts(t *testing.T) {
+	h := conductor()
+
+	h.turn()
+
+	if slices.Contains(*h.steps, "contact_attributes") {
+		t.Fatalf("contacts/ was asked to keep nothing: %v", *h.steps)
+	}
+}
+
+// The data and the turn commit together (section 2.1): data that cannot be kept leaves a turn nobody finished and sends nothing.
+func TestExtractedDataThatCannotBeKeptLeavesTheTurnUnfinished(t *testing.T) {
+	h := conductor()
+	generation := uuid.New()
+	text := "hola"
+	h.brain.response = brainclient.TurnResponse{
+		Outcome: brainclient.OutcomeGenerated, GenerationID: &generation, CompletionText: &text,
+		Extracted: []brainclient.ExtractedDatum{{Key: "email", Value: "a@b.co", Confidence: 0.9, SourceMessageID: uuid.New()}},
+	}
+	h.attributes.err = errors.New("contact_attributes is locked")
+
+	h.turn()
+
+	if h.sender.calls != 0 {
+		t.Fatal("the answer left although the transaction that holds it did not commit")
+	}
+	if h.store.failed[h.store.batch.ID] == "" || len(h.store.processed) != 0 {
+		t.Fatalf("the batch reads as finished: processed %v, failed %v", h.store.processed, h.store.failed)
 	}
 }

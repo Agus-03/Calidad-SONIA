@@ -1,10 +1,12 @@
 # The turn's reads, next to what uses them: the brain gets four ids and finds everything else here (07-secuencia 1).
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -42,6 +44,8 @@ class Agent:
     llm_model: str
     temperature: float | None
     max_tokens: int | None
+    # The toggle of F31: off, nothing is extracted and the classifier is never called (ADR-0047, section 2.4).
+    extraction_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,8 @@ class Message:
     sender_type: SenderType
     content_text: str
     sent_at: datetime
+    # What contact_attributes.source_message_id points at, so an extracted datum names where it was said (ADR-0047, section 2.1).
+    id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -71,14 +77,14 @@ WHERE  b.id = %(message_batch_id)s AND b.conversation_id = %(conversation_id)s
 """
 
 _AGENT = """
-SELECT a.id, a.name, a.llm_provider, a.llm_model, a.temperature, a.max_tokens
+SELECT a.id, a.name, a.llm_provider, a.llm_model, a.temperature, a.max_tokens, a.extraction_enabled
 FROM   ai_agents a
 WHERE  a.id = %(ai_agent_id)s AND a.deleted_at IS NULL
 """
 
 # Ordered by the channel's clock and not by insertion, because C06 makes sent_at the shared reading of when it happened.
 _INCOMING = """
-SELECT m.direction, m.sender_type, m.content_text, m.sent_at
+SELECT m.id, m.direction, m.sender_type, m.content_text, m.sent_at
 FROM   messages m
 WHERE  m.message_batch_id = %(message_batch_id)s
 ORDER  BY m.sent_at, m.created_at
@@ -86,7 +92,7 @@ ORDER  BY m.sent_at, m.created_at
 
 # Everything before this batch, newest first so the limit keeps the recent turns, and reversed by the caller.
 _HISTORY = """
-SELECT m.direction, m.sender_type, m.content_text, m.sent_at
+SELECT m.id, m.direction, m.sender_type, m.content_text, m.sent_at
 FROM   messages m
 WHERE  m.conversation_id = %(conversation_id)s
   AND  (m.message_batch_id IS DISTINCT FROM %(message_batch_id)s)
@@ -148,6 +154,7 @@ def _agent(row: dict) -> Agent:
         # numeric arrives as Decimal, and the LLM adapters take a float; the money rule of C08 is about cost, not temperature.
         temperature=float(row["temperature"]) if row["temperature"] is not None else None,
         max_tokens=row["max_tokens"],
+        extraction_enabled=row.get("extraction_enabled") is True,
     )
 
 
@@ -157,6 +164,7 @@ def _message(row: dict) -> Message:
         sender_type=SenderType(row["sender_type"]),
         content_text=row["content_text"],
         sent_at=row["sent_at"],
+        id=row.get("id"),
     )
 
 
@@ -168,26 +176,170 @@ class TransferPolicy:
     threshold: Decimal
 
 
-_POLICY = """
-SELECT enabled, threshold
+# Oldest first, so the newest row of a signal wins below: nothing in 0001 makes (ai_agent_id, signal_type) unique.
+_POLICIES = """
+SELECT signal_type, enabled, threshold
   FROM transfer_policies
  WHERE ai_agent_id = %(ai_agent_id)s
-   AND signal_type = %(signal_type)s
    AND deleted_at IS NULL
+ ORDER BY created_at, id
 """
 
 
-# None when this agent has no policy for the signal, which is not the same as one that is disabled: nobody configured it. Either
-# way nothing is proposed, and the conversation still drops to waiting because every cut turn does that (07-secuencia 4.1) — what
-# is lost is the transfer_events row, which is the formal escalation F36 counts and ADR-0024 measures.
-async def read_transfer_policy(
-    conn: AsyncConnection, ai_agent_id: UUID, signal_type: TransferSignalType
-) -> TransferPolicy | None:
-    cursor = await conn.execute(_POLICY, {"ai_agent_id": ai_agent_id, "signal_type": signal_type})
+# A signal missing from the answer has no policy, which is not the same as one that is disabled: nobody configured it. Either way
+# it proposes nothing — what is lost is the transfer_events row, which is the escalation F36 counts (ADR-0045, section 2.4).
+async def read_transfer_policies(
+    conn: AsyncConnection, ai_agent_id: UUID
+) -> dict[TransferSignalType, TransferPolicy]:
+    cursor = await conn.execute(_POLICIES, {"ai_agent_id": ai_agent_id})
+    return {
+        TransferSignalType(row["signal_type"]): TransferPolicy(enabled=row["enabled"], threshold=row["threshold"])
+        for row in await cursor.fetchall()
+    }
+
+
+# The run of the batch just before this one, which only continues under the same prompt and when that batch did not end in a
+# transfer: a conversation an Operator turned back on starts again from zero (ADR-0045, section 2.2).
+_NO_RESOLUTION_STREAK = """
+SELECT se.score
+  FROM signal_evaluations se
+  JOIN message_batches b ON b.id = se.message_batch_id
+ WHERE b.conversation_id = %(conversation_id)s
+   AND b.turn_number = %(turn_number)s - 1
+   AND se.signal_type = %(signal_type)s
+   AND se.classifier_version = %(classifier_version)s
+   AND NOT EXISTS (
+       SELECT 1 FROM transfer_events te
+        WHERE te.conversation_id = b.conversation_id AND te.turn_number = b.turn_number)
+"""
+
+
+async def read_no_resolution_streak(conn: AsyncConnection, turn: Turn, classifier_version: str) -> int:
+    cursor = await conn.execute(
+        _NO_RESOLUTION_STREAK,
+        {
+            "conversation_id": turn.conversation_id,
+            "turn_number": turn.turn_number,
+            "signal_type": TransferSignalType.NO_RESOLUTION,
+            "classifier_version": classifier_version,
+        },
+    )
+    row = await cursor.fetchone()
+    return int(row["score"]) if row is not None else 0
+
+
+# The dynamic context of F04 as the prompt reads it: the columns of conversation_contexts, plus the flag of ADR-0023 that only
+# the version keeps. Frozen because it is data on its way to a row.
+@dataclass(frozen=True)
+class Context:
+    summary: str | None
+    # The dominant label of this batch's detected_intents, which is what DER/entidades.md makes it: never the rewriter's.
+    primary_intent: str | None
+    objections: tuple[str, ...]
+    urgency_level: int | None
+    budget_signal: str | None
+    # Carried as it was: ADR-0047 sends the contact's data to contact_attributes and the commercial ones to the columns above.
+    extracted_data: Mapping[str, Any] = MappingProxyType({})
+    # None is a context nobody judged, which is the one read back from conversation_contexts: that table has no column for it.
+    intent_changed: bool | None = None
+
+
+# The context the turn starts from, and the version the core copied it from, which is what a generation points at when the
+# rewrite of this turn fails (03-capa-prompts, Regla 3; ADR-0048).
+@dataclass(frozen=True)
+class CurrentContext:
+    turn_number: int
+    context: Context
+    version_id: UUID | None
+
+
+# One rewrite as it ran: the evidence of F04, and an evidence table since ADR-0048 amended regla 3.
+@dataclass(frozen=True)
+class ContextVersion:
+    id: UUID
+    conversation_id: UUID
+    turn_number: int
+    context: Context
+    rewritten_by_model: str
+    latency_ms: int
+
+
+# conversation_contexts is written by the core, in the transaction that closes the turn, so what is read here is the context of
+# the last turn that finished and not of the last one that was attempted (ADR-0048).
+_CONTEXT = """
+SELECT c.turn_number, c.summary, c.primary_intent, c.objections_json, c.urgency_level, c.budget_signal, c.extracted_data_json
+FROM   conversation_contexts c
+WHERE  c.conversation_id = %(conversation_id)s
+"""
+
+# The newest of that turn, because a turn the core asked for twice on a 5xx (ADR-0020) leaves two versions of the same number.
+_CONTEXT_VERSION = """
+SELECT v.id
+FROM   conversation_context_versions v
+WHERE  v.conversation_id = %(conversation_id)s AND v.turn_number = %(turn_number)s
+ORDER  BY v.created_at DESC, v.id DESC
+LIMIT  1
+"""
+
+
+# None on the first turn of a conversation, which has no row yet (03-capa-prompts, Regla 3).
+async def read_context(conn: AsyncConnection, conversation_id: UUID) -> CurrentContext | None:
+    cursor = await conn.execute(_CONTEXT, {"conversation_id": conversation_id})
     row = await cursor.fetchone()
     if row is None:
         return None
-    return TransferPolicy(enabled=row["enabled"], threshold=row["threshold"])
+
+    cursor = await conn.execute(
+        _CONTEXT_VERSION, {"conversation_id": conversation_id, "turn_number": row["turn_number"]}
+    )
+    version = await cursor.fetchone()
+    return CurrentContext(
+        turn_number=row["turn_number"],
+        context=Context(
+            summary=row["summary"],
+            primary_intent=row["primary_intent"],
+            objections=tuple(o for o in row["objections_json"] or () if isinstance(o, str)),
+            urgency_level=row["urgency_level"],
+            budget_signal=row["budget_signal"],
+            extracted_data=MappingProxyType(dict(row["extracted_data_json"] or {})),
+        ),
+        version_id=version["id"] if version is not None else None,
+    )
+
+
+# The keys are the columns of conversation_contexts, because the core copies this object into that row with SQL and the two
+# have to agree on the names (ADR-0048).
+def content_of(context: Context) -> dict[str, Any]:
+    return {
+        "summary": context.summary,
+        "primary_intent": context.primary_intent,
+        "objections_json": list(context.objections),
+        "urgency_level": context.urgency_level,
+        "budget_signal": context.budget_signal,
+        "extracted_data_json": dict(context.extracted_data),
+        "intent_changed": context.intent_changed,
+    }
+
+
+_CONTEXT_VERSION_ROW = """
+INSERT INTO conversation_context_versions (id, conversation_id, turn_number, content, rewritten_by_model, latency_ms)
+VALUES (%(id)s, %(conversation_id)s, %(turn_number)s, %(content)s, %(rewritten_by_model)s, %(latency_ms)s)
+"""
+
+
+# Never deleted first, unlike the steps: a version is immutable (DER/entidades.md) and a generation may already point at it.
+async def write_context_version(conn: AsyncConnection, version: ContextVersion) -> None:
+    await conn.execute(
+        _CONTEXT_VERSION_ROW,
+        {
+            "id": version.id,
+            "conversation_id": version.conversation_id,
+            "turn_number": version.turn_number,
+            "content": Jsonb(content_of(version.context)),
+            "rewritten_by_model": version.rewritten_by_model,
+            "latency_ms": version.latency_ms,
+        },
+    )
 
 
 # The write: the only INSERT of a turn, and generations is an evidence table, the only kind the brain may write (regla 3).
@@ -216,6 +368,8 @@ class Generation:
     component_version_ids: tuple[UUID, ...]
     # When those versions were read, which is the instant OE1 measures against (ADR-0039, regla 10).
     assembled_at: datetime
+    # The context this answer was given: this turn's rewrite, or the last one when it failed, or none on a first turn (ADR-0048).
+    context_version_id: UUID | None = None
 
 
 # message_id is absent on purpose: the core links it inside the transaction of section 2 (ADR-0017 (i).2).
@@ -223,11 +377,12 @@ _GENERATION = """
 INSERT INTO generations (
     id, conversation_id, ai_agent_id, message_batch_id,
     llm_provider, llm_model, prompt_rendered, completion_text,
-    prompt_tokens, completion_tokens, latency_ms, cost, currency, status, assembled_at
+    prompt_tokens, completion_tokens, latency_ms, cost, currency, status, assembled_at, conversation_context_version_id
 ) VALUES (
     %(id)s, %(conversation_id)s, %(ai_agent_id)s, %(message_batch_id)s,
     %(llm_provider)s, %(llm_model)s, %(prompt_rendered)s, %(completion_text)s,
-    %(prompt_tokens)s, %(completion_tokens)s, %(latency_ms)s, %(cost)s, %(currency)s, %(status)s, %(assembled_at)s
+    %(prompt_tokens)s, %(completion_tokens)s, %(latency_ms)s, %(cost)s, %(currency)s, %(status)s, %(assembled_at)s,
+    %(context_version_id)s
 )
 """
 
@@ -259,6 +414,7 @@ async def write_generation(conn: AsyncConnection, generation: Generation) -> Non
             "currency": generation.currency,
             "status": generation.status,
             "assembled_at": generation.assembled_at,
+            "context_version_id": generation.context_version_id,
         },
     )
     # One statement per component and not executemany: they are six at most, and the order of the rows is the order of the prompt.
@@ -335,11 +491,10 @@ class SignalEvaluation:
     id: UUID
     message_batch_id: UUID
     signal_type: TransferSignalType
-    # Always, and 0 for a signal that does not score. Here it is the confidence the triage returned.
+    # 1 or 0 for a yes/no signal, and the run of turns for no_resolution (ADR-0045, section 2.4).
     score: Decimal
-    # The policy in force when this was evaluated, frozen so moving the threshold later does not rewrite what was measured. For
-    # out_of_domain nothing was compared against it: the triage returns a verdict and not a score above a line, so this column
-    # records the policy that was in force and not a comparison that happened.
+    # What score was compared against, frozen so moving the threshold later does not rewrite what was measured: 1 for a yes/no
+    # signal, the policy's for no_resolution, or the default of triage.yaml when there is no policy (ADR-0045, section 2.4).
     threshold_used: Decimal
     classifier_version: str
     # Not derivable from score and threshold: a signal can be over the line and not fire, because the policy is disabled or

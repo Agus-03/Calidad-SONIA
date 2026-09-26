@@ -101,12 +101,13 @@ func TestTheAIAgentIsAnsweredWithWhatCanBeEdited(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("the created agent is not json: %v", err)
 	}
-	for _, field := range []string{"id", "name", "description", "llm_provider", "llm_model", "temperature", "max_tokens", "active", "created_at", "updated_at"} {
+	for _, field := range []string{"id", "name", "description", "llm_provider", "llm_model", "temperature", "max_tokens", "active", "extraction_enabled", "created_at", "updated_at"} {
 		if _, ok := got[field]; !ok {
 			t.Fatalf("the response has no %q: %v", field, got)
 		}
 	}
-	for _, hidden := range []string{"default_mode", "extraction_enabled", "account_id"} {
+	// extraction_enabled is offered since F31 reads it (ADR-0047, section 2.4); default_mode still changes nothing.
+	for _, hidden := range []string{"default_mode", "account_id"} {
 		if _, ok := got[hidden]; ok {
 			t.Fatalf("the response carries %q, which the API does not offer: %v", hidden, got)
 		}
@@ -135,7 +136,8 @@ func TestTheBodyIsReadFieldByField(t *testing.T) {
 		{"a null name is not a value the row can hold", http.MethodPatch, `{"name":null}`, "invalid_body"},
 		{"active has to be true or false", http.MethodPatch, `{"active":null}`, "invalid_body"},
 		{"a temperature has to be a number", http.MethodPatch, `{"temperature":"alta"}`, "invalid_body"},
-		{"a field an agent does not have", http.MethodPatch, `{"extraction_enabled":true}`, "unknown_field"},
+		{"a field an agent does not have", http.MethodPatch, `{"default_mode":"off"}`, "unknown_field"},
+		{"the toggle of F31 has to be true or false", http.MethodPatch, `{"extraction_enabled":null}`, "invalid_body"},
 		{"a blank name", http.MethodPatch, `{"name":"  "}`, "invalid_name"},
 		{"a negative temperature", http.MethodPatch, `{"temperature":-1}`, "invalid_temperature"},
 		{"zero tokens", http.MethodPatch, `{"max_tokens":0}`, "invalid_max_tokens"},

@@ -599,7 +599,7 @@ No son cardinalidades y **no se pueden dibujar como línea**. C10 exige que vaya
 - Un contacto tiene **como máximo una conversación no resuelta** a la vez (ADR-0002).
 - Un agente IA tiene **a lo sumo un `prompt_component` de cada tipo**, activo o no, y dos no comparten `position` (F01: seis componentes, uno de cada tipo · ADR-0039).
 - **`transfer_policies` manda sobre `rules`.** La decisión de transferir la toma el clasificador según sus umbrales; el componente `rules` no puede habilitarla ni inhibirla. Sin esta nota, las dos entidades parecen configurar lo mismo por dos vías.
-- **El clasificador evalúa las cuatro señales de F12 en cada bloque, dispare o no** (ADR-0014). Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: lo que no se evalúa no deja fila, y el detector de frustración deja de ser medible.
+- **El clasificador evalúa las cuatro señales de F12 en cada bloque, dispare o no** (ADR-0014). Cortar al primer disparo es lo eficiente y **vuelve a abrir el hueco de OE4**: lo que no se evalúa no deja fila, y el detector de frustración deja de ser medible. **Hasta la Fase 16 son tres señales**: `frustration` se saltea y queda anotada en `pipeline_steps` (ADR-0044).
 - **Se crea una `prompt_component_version` cuando cambia `content` o `active`**, no sólo `content` (ADR-0015). Sin versionar el apagado, OE1 compara un conjunto contra sí mismo y sólo puede dar 100 %.
 - `sender_operator_id` y `sender_ai_agent_id` son **excluyentes** y deben coincidir con `sender_type` (`CHECK`).
 - La suma de `documents.size_bytes` de una base **no supera 100 MB** (F06).

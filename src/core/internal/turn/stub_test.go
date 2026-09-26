@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
+	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
@@ -24,6 +25,7 @@ type stubStore struct {
 	closeErr     error
 	processedErr error
 	linkErr      error
+	contextErr   error
 
 	// What the next tick finds due, handed over once.
 	due []Batch
@@ -37,6 +39,7 @@ type stubStore struct {
 	failed    map[uuid.UUID]string
 	linked    map[uuid.UUID]uuid.UUID
 	transfers []transfer
+	adopted   []uuid.UUID
 	steps     *[]string
 }
 
@@ -130,6 +133,17 @@ func (s *stubStore) RecordTransfer(_ context.Context, conversationID, signalEval
 	return nil
 }
 
+func (s *stubStore) AdoptContext(_ context.Context, generationID uuid.UUID) error {
+	if s.contextErr != nil {
+		return s.contextErr
+	}
+	s.record("conversation_context")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.adopted = append(s.adopted, generationID)
+	return nil
+}
+
 func (s *stubStore) record(step string) {
 	if s.steps != nil {
 		s.mu.Lock()
@@ -149,7 +163,19 @@ type stubAggregate struct {
 	notices  []string
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
+	modes    map[uuid.UUID]enums.AgentMode
 	steps    *[]string
+}
+
+func (a *stubAggregate) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
+	a.record("conversation_mode")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.modes == nil {
+		a.modes = map[uuid.UUID]enums.AgentMode{}
+	}
+	a.modes[conversationID] = mode
+	return nil
 }
 
 func (a *stubAggregate) LinkToBatch(_ context.Context, messageID, batchID uuid.UUID) error {
@@ -308,10 +334,31 @@ func generated(text string) brainclient.TurnResponse {
 	}
 }
 
+// stubAttributes is contacts/ as the turn sees it: what it was handed and for whom, in the order of the writes.
+type stubAttributes struct {
+	steps    *[]string
+	err      error
+	contacts []uuid.UUID
+	recorded []contacts.Extracted
+}
+
+func (a *stubAttributes) RecordExtracted(_ context.Context, contactID uuid.UUID, data []contacts.Extracted) error {
+	if a.err != nil {
+		return a.err
+	}
+	if a.steps != nil {
+		*a.steps = append(*a.steps, "contact_attributes")
+	}
+	a.contacts = append(a.contacts, contactID)
+	a.recorded = append(a.recorded, data...)
+	return nil
+}
+
 type harness struct {
 	orchestrator *Orchestrator
 	store        *stubStore
 	aggregate    *stubAggregate
+	attributes   *stubAttributes
 	brain        *stubBrain
 	channel      *stubChannel
 	sender       *stubSender
@@ -328,6 +375,7 @@ func conductor() *harness {
 		target: Target{
 			ConversationID:   uuid.New(),
 			InboxID:          uuid.New(),
+			ContactID:        uuid.New(),
 			ContactPhone:     "5493510000000",
 			Mode:             enums.AgentModeAutonomous,
 			AIAgentID:        &agent,
@@ -336,14 +384,15 @@ func conductor() *harness {
 		steps: steps,
 	}
 	aggregate := &stubAggregate{steps: steps}
+	attributes := &stubAttributes{steps: steps}
 	brain := &stubBrain{response: generated("buenas, si tenemos")}
 	channel := &stubChannel{inbox: whatsapp.Inbox{ID: store.target.InboxID, AccessToken: "token"}}
 	sender := &stubSender{wamid: "wamid.HBg"}
 
-	h := &harness{store: store, aggregate: aggregate, brain: brain, channel: channel, sender: sender, steps: steps}
+	h := &harness{store: store, aggregate: aggregate, attributes: attributes, brain: brain, channel: channel, sender: sender, steps: steps}
 	h.orchestrator = New(Options{
-		Tx: func(_ context.Context, fn func(Store, Aggregate) error) error {
-			return fn(store, aggregate)
+		Tx: func(_ context.Context, fn func(Store, Aggregate, Attributes) error) error {
+			return fn(store, aggregate, attributes)
 		},
 		Store:        store,
 		Aggregate:    aggregate,

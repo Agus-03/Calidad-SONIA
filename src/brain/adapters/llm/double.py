@@ -21,7 +21,33 @@ INTENT_ANSWER = '[{"label": "consulta_disponibilidad", "confidence": 0.9}, {"lab
 TRIAGE_MARKER = "[TRIAGE]"
 
 # In domain and not a greeting, which is the verdict that does not cut the turn: the doubled stack exists to walk all of it.
-TRIAGE_ANSWER = '{"verdict": "in_domain", "confidence": 0.9, "greeting": false}'
+TRIAGE_ANSWER = '{"verdict": "in_domain", "confidence": 0.9, "greeting": false, "explicit_request": false, "resolved": null}'
+
+# The one message the double reads as a request for a person, so the smoke can walk a transfer with no variable that exists only
+# for tests (ADR-0045, section 2.5).
+TRIAGE_PERSON_TRIGGER = "quiero hablar con una persona"
+TRIAGE_PERSON_ANSWER = (
+    '{"verdict": "in_domain", "confidence": 0.9, "greeting": false, "explicit_request": true, "resolved": null}'
+)
+
+# The heading the rewriter of F04 opens its system prompt with, held here for the same reason as the two above: without it the
+# doubled stack would answer the rewrite with prose, every rewrite would fall back, and the smoke could not see a version written.
+REWRITER_MARKER = "[REESCRITOR DE CONTEXTO]"
+
+# Announces itself in the summary, which is the text that reaches the prompt of the answer and conversation_contexts.
+REWRITER_ANSWER = (
+    '{"summary": "[doblado] el cliente consulta por un inmueble.", "objections": [], "urgency_level": 2, '
+    '"budget_signal": null, "intent_changed": false}'
+)
+
+# The heading the extractor of F31 opens its system prompt with, for the same reason as the three above.
+EXTRACTION_MARKER = "[EXTRACTOR DE DATOS]"
+
+# Nothing, unless the customer introduces themselves with the one sentence below: the smoke needs a name to reach the contact, and
+# an answer that always carried one would write it on every conversation the doubled stack runs.
+EXTRACTION_ANSWER = '{"first_name": null, "last_name": null, "email": null, "confidence": 0.9}'
+EXTRACTION_NAME_TRIGGER = "me llamo lucía pérez"
+EXTRACTION_NAME_ANSWER = '{"first_name": "Lucía", "last_name": "Pérez", "email": null, "confidence": 0.9}'
 
 
 class DoubleClient:
@@ -42,11 +68,29 @@ class DoubleClient:
             raise LLMUnavailable(f"{PROVIDER}: the turn reached the model with nothing to answer")
 
         if system and TRIAGE_MARKER in system:
+            answer = TRIAGE_PERSON_ANSWER if TRIAGE_PERSON_TRIGGER in last.lower() else TRIAGE_ANSWER
             return Completion(
-                text=TRIAGE_ANSWER,
+                text=answer,
                 model=model,
                 prompt_tokens=sum(len(m.text.split()) for m in messages),
-                completion_tokens=len(TRIAGE_ANSWER.split()),
+                completion_tokens=len(answer.split()),
+            )
+
+        if system and EXTRACTION_MARKER in system:
+            answer = EXTRACTION_NAME_ANSWER if EXTRACTION_NAME_TRIGGER in last.casefold() else EXTRACTION_ANSWER
+            return Completion(
+                text=answer,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(answer.split()),
+            )
+
+        if system and REWRITER_MARKER in system:
+            return Completion(
+                text=REWRITER_ANSWER,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(REWRITER_ANSWER.split()),
             )
 
         if system and INTENT_MARKER in system:

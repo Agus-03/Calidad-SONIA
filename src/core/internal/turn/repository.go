@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
@@ -24,7 +25,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // Reads three tables this package does not own: the ownership rule of regla 1 restricts writes and not reads.
 // The agent is read here and not trusted from the webhook: a pause or a removal after the message arrived still has to win (ADR-0038).
 const targetSelect = `
-SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.mode, c.ai_agent_id,
+SELECT    c.id, c.inbox_id, ct.id, ct.phone_whatsapp, c.mode, c.ai_agent_id,
           COALESCE(a.active AND a.deleted_at IS NULL, false)
 FROM      conversations c
 JOIN      contacts ct ON ct.id = c.contact_id
@@ -34,7 +35,7 @@ WHERE     c.id = $1 AND c.deleted_at IS NULL`
 func (r *Repository) Target(ctx context.Context, conversationID uuid.UUID) (Target, error) {
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, conversationID).
-		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.Mode, &t.AIAgentID, &t.AIAgentAvailable)
+		Scan(&t.ConversationID, &t.InboxID, &t.ContactID, &t.ContactPhone, &t.Mode, &t.AIAgentID, &t.AIAgentAvailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrConversationNotFound
 	}
@@ -208,4 +209,61 @@ func (r *Repository) LinkGeneration(ctx context.Context, generationID, messageID
 		return ErrGenerationNotFound
 	}
 	return nil
+}
+
+// conversation_contexts is the current context of F04, and this package writes it since ADR-0048: a copy of the version the
+// generation was given, taken in the transaction that closes the turn. It only moves forward, because a generation whose rewrite
+// failed points at an older turn's version and must not rewind the row (03-capa-prompts, Regla 3). The keys are the columns.
+const contextAdopt = `
+INSERT INTO conversation_contexts (
+       id, conversation_id, turn_number, summary, primary_intent, objections_json, urgency_level, budget_signal, extracted_data_json
+)
+SELECT $1, v.conversation_id, v.turn_number,
+       v.content ->> 'summary',
+       v.content ->> 'primary_intent',
+       coalesce(v.content -> 'objections_json', '[]'::jsonb),
+       (v.content ->> 'urgency_level')::smallint,
+       v.content ->> 'budget_signal',
+       coalesce(v.content -> 'extracted_data_json', '{}'::jsonb)
+FROM   generations g
+JOIN   conversation_context_versions v ON v.id = g.conversation_context_version_id
+WHERE  g.id = $2
+ON CONFLICT (conversation_id) DO UPDATE
+SET    turn_number = EXCLUDED.turn_number, summary = EXCLUDED.summary, primary_intent = EXCLUDED.primary_intent,
+       objections_json = EXCLUDED.objections_json, urgency_level = EXCLUDED.urgency_level,
+       budget_signal = EXCLUDED.budget_signal, extracted_data_json = EXCLUDED.extracted_data_json, updated_at = now()
+WHERE  conversation_contexts.turn_number < EXCLUDED.turn_number`
+
+// AdoptContext copies nothing when the generation names no version, which is a first turn whose rewrite failed.
+func (r *Repository) AdoptContext(ctx context.Context, generationID uuid.UUID) error {
+	if _, err := r.exec.Exec(ctx, contextAdopt, id.New(), generationID); err != nil {
+		return fmt.Errorf("turn: adopt context: %w", err)
+	}
+	return nil
+}
+
+// A draft the Operator sent, reviewed by the same statement that links it: accepted when the text left as it was proposed, edited
+// when not (ADR-0046, section 2.5). The predicate makes an id of another conversation, or one already used, a refusal and not a
+// second review. The three values travel as parameters, so a rename in enums.yaml cannot write a status nothing reads (C07).
+const generationReview = `
+UPDATE generations
+SET    message_id = $3, reviewed_by_operator_id = $4, reviewed_at = now(),
+       status = CASE WHEN btrim(completion_text) = $5 THEN $6 ELSE $7 END
+WHERE  id = $1 AND conversation_id = $2 AND status = $8 AND message_id IS NULL
+RETURNING status`
+
+// ReviewGeneration answers ErrGenerationNotFound when the draft is not a pending one of this conversation.
+func (r *Repository) ReviewGeneration(
+	ctx context.Context, generationID, conversationID, messageID, operatorID uuid.UUID, text string,
+) (enums.GenerationStatus, error) {
+	var status enums.GenerationStatus
+	err := r.exec.QueryRow(ctx, generationReview, generationID, conversationID, messageID, operatorID, text,
+		enums.GenerationStatusAccepted, enums.GenerationStatusEdited, enums.GenerationStatusPendingReview).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrGenerationNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("turn: review generation: %w", err)
+	}
+	return status, nil
 }

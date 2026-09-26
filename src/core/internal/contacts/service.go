@@ -86,6 +86,7 @@ func CheckKnown(fields []string) error {
 type store interface {
 	List(ctx context.Context, scope Scope, filter Filter, limit, offset int) (Page, error)
 	ByID(ctx context.Context, scope Scope, contactID uuid.UUID) (Contact, error)
+	Attributes(ctx context.Context, contactID uuid.UUID, withSensitive bool) ([]Attribute, error)
 	Create(ctx context.Context, c Contact) error
 	Update(ctx context.Context, accountID, contactID uuid.UUID, ch Changes) error
 	UpdateSensitive(ctx context.Context, accountID, contactID uuid.UUID, s Sensitive) error

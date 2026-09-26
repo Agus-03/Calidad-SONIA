@@ -95,6 +95,8 @@ type ThreadMessage struct {
 	Message
 	SenderOperator *Operator
 	CreatedAt      time.Time
+	// The generation the text came from, when the AIAgent wrote it or an Operator sent its draft: what F05 is asked about (ADR-0049).
+	GenerationID *uuid.UUID
 }
 
 // ThreadPage is newest first, so the first page is what the operator reads before answering and the cursor loads what came before.
@@ -138,4 +140,31 @@ type Page struct {
 
 	// Nil when the page reached the end, so "there is no more" is told apart from "the next page happens to be empty" (ADR-0036, regla 6).
 	Next *Cursor
+}
+
+// Suggestion is the draft of the AIAgent waiting for the Operator in suggestion mode: it is copied into the box and sent as the
+// Operator's, or ignored (ADR-0046, section 2.5).
+type Suggestion struct {
+	GenerationID uuid.UUID
+	Text         string
+	CreatedAt    time.Time
+}
+
+// Reasoning is F05: the components a generation was assembled from, in the order they went in, which is what "influyeron" reads
+// as since the DER made generation_components its evidence (ADR-0049).
+type Reasoning struct {
+	GenerationID uuid.UUID
+	Status       enums.GenerationStatus
+	LLMModel     string
+	CreatedAt    time.Time
+	Components   []UsedComponent
+}
+
+// UsedComponent is one version as it was assembled, frozen: a component edited or removed afterwards still shows what was used.
+type UsedComponent struct {
+	Type          enums.PromptComponentType
+	Position      int
+	VersionNumber int
+	// Nil for everyone but the admin, who is the one with access to the configuration it comes from (ADR-0049).
+	Content *string
 }

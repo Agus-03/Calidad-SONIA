@@ -15,6 +15,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 )
 
 // rollback ends every case: the assertions run against real DDL and leave the database as they found it.
@@ -324,8 +325,8 @@ func sendingDesk(exec db.Executor, sender *stubSender) *Service {
 	return NewService(Options{
 		Repo:      repo,
 		Aggregate: aggregate,
-		Tx: func(_ context.Context, fn func(Store, Aggregate) error) error {
-			return fn(repo, aggregate)
+		Tx: func(_ context.Context, fn func(Store, Aggregate, Reviews) error) error {
+			return fn(repo, aggregate, turn.NewRepository(exec))
 		},
 		Channel: &stubChannel{},
 		Sender:  sender,
@@ -341,7 +342,7 @@ func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
 		service := sendingDesk(exec, &stubSender{wamid: "wamid.integration." + id.New().String()})
 		mine := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
 
-		message, err := service.Send(ctx, mine, w.pooledConv, "buenas, te ayudo")
+		message, err := service.Send(ctx, mine, w.pooledConv, "buenas, te ayudo", nil)
 		if err != nil {
 			t.Fatalf("Send: %v", err)
 		}
@@ -387,11 +388,11 @@ func TestTheFirstOperatorToAnswerThePoolKeepsIt(t *testing.T) {
 
 		// Taken now: the other operator no longer reaches it, and a supervisor is told who holds it.
 		theirs := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleOperator}
-		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también"); !errors.Is(err, ErrNotFound) {
+		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también", nil); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("the other operator answering: got %v, want ErrNotFound", err)
 		}
 		theirs.Role = enums.OperatorRoleSupervisor
-		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también"); !errors.Is(err, ErrTaken) {
+		if _, err := service.Send(ctx, theirs, w.pooledConv, "yo también", nil); !errors.Is(err, ErrTaken) {
 			t.Fatalf("a supervisor answering: got %v, want ErrTaken", err)
 		}
 	})
@@ -406,7 +407,7 @@ func TestAFailedManualSendStaysOnTheRowWithAnOwner(t *testing.T) {
 			Status: 400, Body: `{"error":{"message":"(#131030) Recipient not in allowed list","code":131030}}`,
 		}})
 
-		message, err := service.Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola")
+		message, err := service.Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola", nil)
 		if err != nil {
 			t.Fatalf("Send: got %v, want the failed row", err)
 		}
@@ -443,7 +444,7 @@ func TestAClosedWindowWritesNothing(t *testing.T) {
 		}
 		sender := &stubSender{wamid: "wamid.never"}
 
-		_, err := sendingDesk(exec, sender).Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola")
+		_, err := sendingDesk(exec, sender).Send(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}, w.pooledConv, "hola", nil)
 		if !errors.Is(err, ErrWindowClosed) {
 			t.Fatalf("Send: got %v, want ErrWindowClosed", err)
 		}
@@ -612,4 +613,128 @@ func idsOfThread(items []ThreadMessage) []uuid.UUID {
 		out = append(out, m.ID)
 	}
 	return out
+}
+
+// ADR-0046, section 2.5, against the real DDL: the newest draft still pending is the one the Operator copies; one already sent and
+// an older one nobody used are not, and a conversation with none answers ErrNoSuggestion.
+func TestPendingSuggestionIsTheNewestDraftStillWaiting(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		write := func(status enums.GenerationStatus, text string, age time.Duration) uuid.UUID {
+			generationID := id.New()
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO generations (id, conversation_id, ai_agent_id, llm_provider, llm_model, prompt_rendered, completion_text,
+				                         prompt_tokens, completion_tokens, latency_ms, cost, currency, status, assembled_at, created_at)
+				SELECT $1, $2, a.id, 'double', 'command-a-03-2025', 'system', $3, 1, 1, 1, 0, 'USD', $4, now(), now() - $5 * interval '1 second'
+				FROM   ai_agents a LIMIT 1`, generationID, w.mineConv, text, status, age.Seconds()); err != nil {
+				t.Fatalf("insert generation: %v", err)
+			}
+			return generationID
+		}
+		write(enums.GenerationStatusPendingReview, "vieja", 60*time.Second)
+		newest := write(enums.GenerationStatusPendingReview, "nueva", 30*time.Second)
+		write(enums.GenerationStatusAutoSent, "respuesta", 0)
+
+		got, err := repo.PendingSuggestion(ctx, w.mineConv)
+		if err != nil || got.GenerationID != newest || got.Text != "nueva" {
+			t.Fatalf("PendingSuggestion: got %+v, %v, want the newest pending draft", got, err)
+		}
+		if _, err := repo.PendingSuggestion(ctx, w.theirsConv); !errors.Is(err, ErrNoSuggestion) {
+			t.Fatalf("PendingSuggestion of a conversation with none: got %v, want ErrNoSuggestion", err)
+		}
+	})
+}
+
+// ADR-0049 against the real DDL: the components come in the order they were assembled, with the version that was used and not the
+// current one, a component removed afterwards still shows, and an id of another conversation is not found. The thread names the
+// generation behind the answer it produced.
+func TestTheReasoningIsTheVersionsTheGenerationWasAssembledFrom(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		agentID := id.New()
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO ai_agents (id, account_id, name, default_mode, llm_provider, llm_model)
+			SELECT $1, a.id, 'Razona', 'autonomous', 'double', 'command-a-03-2025' FROM accounts a LIMIT 1`, agentID); err != nil {
+			t.Fatalf("insert agent: %v", err)
+		}
+		version := func(kind enums.PromptComponentType, position, number int, content string) uuid.UUID {
+			componentID, versionID := id.New(), id.New()
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO prompt_components (id, ai_agent_id, type, content, position) VALUES ($1, $2, $3, $4, $5)`,
+				componentID, agentID, kind, content+" (vigente)", position); err != nil {
+				t.Fatalf("insert component: %v", err)
+			}
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO prompt_component_versions (id, prompt_component_id, version_number, content, active)
+				VALUES ($1, $2, $3, $4, true)`, versionID, componentID, number, content); err != nil {
+				t.Fatalf("insert version: %v", err)
+			}
+			if kind == enums.PromptComponentTypeRules {
+				// Removed after the answer: what was assembled is still what was assembled (C09).
+				if _, err := exec.Exec(ctx, `UPDATE prompt_components SET deleted_at = now() WHERE id = $1`, componentID); err != nil {
+					t.Fatalf("remove component: %v", err)
+				}
+			}
+			return versionID
+		}
+		objective := version(enums.PromptComponentTypeObjective, 1, 3, "Alquilar inmuebles.")
+		rules := version(enums.PromptComponentTypeRules, 2, 1, "No tomar pagos.")
+
+		generationID, answerID := id.New(), id.New()
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO messages (id, conversation_id, direction, sender_type, sender_ai_agent_id, content_text, content_type, status, sent_at)
+			VALUES ($1, $2, 'outbound', 'ai_agent', $3, 'hola', 'text', 'sent', now())`, answerID, w.mineConv, agentID); err != nil {
+			t.Fatalf("insert answer: %v", err)
+		}
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO generations (id, conversation_id, ai_agent_id, message_id, llm_provider, llm_model, prompt_rendered, completion_text,
+			                         prompt_tokens, completion_tokens, latency_ms, cost, currency, status, assembled_at)
+			VALUES ($1, $2, $3, $4, 'double', 'command-a-03-2025', 'system', 'hola', 1, 1, 1, 0, 'USD', $5, now())`,
+			generationID, w.mineConv, agentID, answerID, enums.GenerationStatusAutoSent); err != nil {
+			t.Fatalf("insert generation: %v", err)
+		}
+		// Written out of order on purpose: position is what orders them, not the order of the rows.
+		for _, gc := range []struct {
+			version  uuid.UUID
+			position int
+		}{{rules, 2}, {objective, 1}} {
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO generation_components (id, generation_id, prompt_component_version_id, position) VALUES ($1, $2, $3, $4)`,
+				id.New(), generationID, gc.version, gc.position); err != nil {
+				t.Fatalf("insert generation component: %v", err)
+			}
+		}
+
+		got, err := repo.Reasoning(ctx, w.mineConv, generationID)
+		if err != nil {
+			t.Fatalf("Reasoning: %v", err)
+		}
+		if len(got.Components) != 2 ||
+			got.Components[0].Type != enums.PromptComponentTypeObjective || got.Components[0].VersionNumber != 3 ||
+			*got.Components[0].Content != "Alquilar inmuebles." ||
+			got.Components[1].Type != enums.PromptComponentTypeRules || *got.Components[1].Content != "No tomar pagos." {
+			t.Fatalf("components = %+v, want objective v3 then the removed rules v1, with the text that was used", got.Components)
+		}
+		if _, err := repo.Reasoning(ctx, w.theirsConv, generationID); !errors.Is(err, ErrGenerationNotFound) {
+			t.Fatalf("the generation through another conversation: got %v, want ErrGenerationNotFound", err)
+		}
+
+		thread, err := repo.Thread(ctx, w.mineConv, nil, 50)
+		if err != nil {
+			t.Fatalf("Thread: %v", err)
+		}
+		for _, m := range thread {
+			if m.ID == answerID {
+				if m.GenerationID == nil || *m.GenerationID != generationID {
+					t.Fatalf("the answer names generation %v, want %s", m.GenerationID, generationID)
+				}
+				return
+			}
+		}
+		t.Fatal("the answer is not in the thread")
+	})
 }

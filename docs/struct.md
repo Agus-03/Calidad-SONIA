@@ -70,7 +70,7 @@ sonia/
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
 │   │   │   ├── extraction.py           devuelve; el núcleo persiste
-│   │   │   ├── frustration.py
+│   │   │   ├── frustration.py          no se crea hasta que exista el modelo (ADR-0044)
 │   │   │   ├── intent.py
 │   │   │   └── transfer.py
 │   │   │
@@ -100,7 +100,9 @@ sonia/
 │   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
 │   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
-│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
+│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml
+│   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
+│   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py
 │   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código
@@ -133,8 +135,8 @@ sonia/
 │   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
-│   │   │   │   └── controller · routes · service · repository · model
-│   │   │   │                           persiste también los atributos de F31
+│   │   │   │   └── controller · routes · service · repository · model · attributes
+│   │   │   │                           attributes: guarda lo que extrae F31 y lo muestra en la ficha (ADR-0047)
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
 │   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038)
@@ -153,6 +155,8 @@ sonia/
 │   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
 │   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
+│   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
+│   │   │   │   ├── reasoning_controller.go  GET /conversations/:id/generations/:generation_id/components
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
 │   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
 │   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · escribe conversation_assignments
@@ -242,7 +246,7 @@ sonia/
 
 Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las escribe. Es la regla 1 de `CLAUDE.md` puesta en una lista: **escribir en la tabla de otro se hace por su repositorio, dentro de la transacción de quien conduce**, nunca con SQL propio.
 
-### 2.1. Núcleo (Go) — 24 tablas
+### 2.1. Núcleo (Go) — 25 tablas
 
 | Paquete | Tablas | Nota |
 |---|---|---|
@@ -257,16 +261,16 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 | `quick_replies/` | `quick_replies` | La lee el cerebro (F07), no la escribe |
 | `reminders/` | `reminders` | |
 | `sales/` | `sales` | |
-| `turn/` | `message_batches` · `transfer_events` | Más `generations.message_id`, en la misma transacción (regla 5) |
+| `turn/` | `message_batches` · `transfer_events` · `conversation_contexts` | Más `generations.message_id`, en la misma transacción (regla 5). `conversation_contexts` es la copia de la versión que usó la generación (ADR-0048) |
 | `whatsapp/` | `inboxes` · `webhook_events` | |
 
-### 2.2. Cerebro (Python) — 7 tablas, todas de evidencia
+### 2.2. Cerebro (Python) — 8 tablas, todas de evidencia
 
-La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conversations`, `messages` ni `contact_attributes`.** Lo que no es evidencia lo devuelve, y el núcleo lo persiste y lo envía.
+La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conversations`, `messages`, `contact_attributes` ni `conversation_contexts`.** Lo que no es evidencia lo devuelve, y el núcleo lo persiste y lo envía.
 
 | Tablas | Nota |
 |---|---|
-| `pipeline_steps` · `generations` · `retrieval_logs` · `signal_evaluations` · `detected_intents` · `document_chunks` | Las seis que nombra la regla 3 |
+| `pipeline_steps` · `generations` · `retrieval_logs` · `signal_evaluations` · `detected_intents` · `document_chunks` · `conversation_context_versions` | Las siete que nombra la regla 3 (la última, desde ADR-0048) |
 | `generation_components` | Por adyacencia a `generations`; la regla 3 no la nombra |
 
 ### 2.3. Fuera de los dos despliegues — 2 tablas
@@ -276,7 +280,7 @@ La regla 3 lo dice al revés y es lo que importa: **el cerebro no escribe `conve
 | `conversation_annotations` | `test/datasets/` | *Ground truth* de OE3 y OE4 (ADR-0014) |
 | `tone_evaluations` | `test/evals/` | El juicio de tono de F36; `reporting/` la lee |
 
-### 2.4. Sin dueño declarado — 4 tablas
+### 2.4. Sin dueño declarado — 2 tablas
 
 No es un olvido de este documento: **son decisiones que todavía no se tomaron**, y ponerles un paquete acá sería inventarlas.
 
@@ -284,5 +288,3 @@ No es un olvido de este documento: **son decisiones que todavía no se tomaron**
 |---|---|
 | `accounts` | Fila única por invariante. Hoy la crea quien instala —`make seed-admin`— y ningún paquete la reclama |
 | `transfer_policies` | El umbral es configuración mutable y F12 es del cerebro, pero la regla 3 le prohíbe escribir lo que no es evidencia |
-| `conversation_contexts` | El cerebro produce el resumen y el núcleo lo persiste; falta decir cuál paquete del núcleo |
-| `conversation_context_versions` | La misma decisión que la anterior, y se resuelve con ella |

@@ -31,6 +31,9 @@ type stubStore struct {
 	threads   map[uuid.UUID][]ThreadMessage
 	threadErr error
 
+	suggestions map[uuid.UUID]Suggestion
+	reasonings  map[uuid.UUID]stubReasoning
+
 	// The two answers of the dispatcher's reads (ADR-0037): nil is "nobody", which is a real answer and not a failure.
 	previous, next           *uuid.UUID
 	previousErr, nextErr     error
@@ -128,6 +131,50 @@ func (s *stubStore) Target(_ context.Context, _, conversationID uuid.UUID) (Targ
 		return Target{}, ErrNotFound
 	}
 	return t, nil
+}
+
+// stubReasoning is a generation and the conversation it belongs to, which the real read checks in its WHERE.
+type stubReasoning struct {
+	Reasoning
+	conversationID uuid.UUID
+}
+
+// Keyed by generation, and refused when it is of another conversation, which is what the WHERE of the real read does.
+func (s *stubStore) Reasoning(_ context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
+	r, ok := s.reasonings[generationID]
+	if !ok || r.conversationID != conversationID {
+		return Reasoning{}, ErrGenerationNotFound
+	}
+	return r.Reasoning, nil
+}
+
+func (s *stubStore) PendingSuggestion(_ context.Context, conversationID uuid.UUID) (Suggestion, error) {
+	sg, ok := s.suggestions[conversationID]
+	if !ok {
+		return Suggestion{}, ErrNoSuggestion
+	}
+	return sg, nil
+}
+
+// stubReviews is turn/ as the inbox sees it: one review per draft sent, recorded so a case can assert what was reviewed.
+type stubReviews struct {
+	err      error
+	reviewed []reviewed
+}
+
+type reviewed struct {
+	generationID, conversationID, messageID, operatorID uuid.UUID
+	text                                                string
+}
+
+func (r *stubReviews) ReviewGeneration(
+	_ context.Context, generationID, conversationID, messageID, operatorID uuid.UUID, text string,
+) (enums.GenerationStatus, error) {
+	if r.err != nil {
+		return "", r.err
+	}
+	r.reviewed = append(r.reviewed, reviewed{generationID, conversationID, messageID, operatorID, text})
+	return enums.GenerationStatusAccepted, nil
 }
 
 func (s *stubStore) RecordAssignment(_ context.Context, a Assignment) error {
@@ -243,6 +290,7 @@ func (s *stubSender) Send(ctx context.Context, _ whatsapp.Inbox, to, text string
 type desk struct {
 	store     *stubStore
 	aggregate *stubAggregate
+	reviews   *stubReviews
 	channel   *stubChannel
 	sender    *stubSender
 	service   *Service
@@ -252,12 +300,12 @@ func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{store: store, aggregate: &stubAggregate{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
-		Tx: func(_ context.Context, fn func(Store, Aggregate) error) error {
-			return fn(d.store, d.aggregate)
+		Tx: func(_ context.Context, fn func(Store, Aggregate, Reviews) error) error {
+			return fn(d.store, d.aggregate, d.reviews)
 		},
 		Channel: d.channel,
 		Sender:  d.sender,

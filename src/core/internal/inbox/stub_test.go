@@ -32,6 +32,7 @@ type stubStore struct {
 	threadErr error
 
 	suggestions map[uuid.UUID]Suggestion
+	reasonings  map[uuid.UUID]stubReasoning
 
 	// The two answers of the dispatcher's reads (ADR-0037): nil is "nobody", which is a real answer and not a failure.
 	previous, next           *uuid.UUID
@@ -130,6 +131,21 @@ func (s *stubStore) Target(_ context.Context, _, conversationID uuid.UUID) (Targ
 		return Target{}, ErrNotFound
 	}
 	return t, nil
+}
+
+// stubReasoning is a generation and the conversation it belongs to, which the real read checks in its WHERE.
+type stubReasoning struct {
+	Reasoning
+	conversationID uuid.UUID
+}
+
+// Keyed by generation, and refused when it is of another conversation, which is what the WHERE of the real read does.
+func (s *stubStore) Reasoning(_ context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
+	r, ok := s.reasonings[generationID]
+	if !ok || r.conversationID != conversationID {
+		return Reasoning{}, ErrGenerationNotFound
+	}
+	return r.Reasoning, nil
 }
 
 func (s *stubStore) PendingSuggestion(_ context.Context, conversationID uuid.UUID) (Suggestion, error) {

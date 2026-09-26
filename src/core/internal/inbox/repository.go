@@ -136,7 +136,8 @@ func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.
 // who wrote what.
 const threadSelect = `
 SELECT m.id, m.direction, m.sender_type, m.content_text, m.content_type, m.status, m.error_code, m.sent_at, m.created_at,
-       op.id, op.name, op.lastname
+       op.id, op.name, op.lastname,
+       (SELECT g.id FROM generations g WHERE g.message_id = m.id ORDER BY g.created_at LIMIT 1)
 FROM   messages m
 LEFT   JOIN operators op ON op.id = m.sender_operator_id
 WHERE  m.conversation_id = $1 AND m.hidden_at IS NULL`
@@ -288,7 +289,7 @@ func scanThreadMessage(row pgx.Row) (ThreadMessage, error) {
 	var operatorName, operatorLastname *string
 
 	if err := row.Scan(&m.ID, &m.Direction, &m.SenderType, &m.ContentText, &m.ContentType, &m.Status, &m.ErrorCode, &m.SentAt,
-		&m.CreatedAt, &operatorID, &operatorName, &operatorLastname); err != nil {
+		&m.CreatedAt, &operatorID, &operatorName, &operatorLastname, &m.GenerationID); err != nil {
 		return ThreadMessage{}, fmt.Errorf("inbox: scan message: %w", err)
 	}
 	if operatorID != nil && operatorName != nil && operatorLastname != nil {
@@ -318,4 +319,54 @@ func (r *Repository) PendingSuggestion(ctx context.Context, conversationID uuid.
 		return Suggestion{}, fmt.Errorf("inbox: read suggestion: %w", err)
 	}
 	return s, nil
+}
+
+// The generation by its id and its conversation together, so an id of another conversation is not found rather than read.
+const reasoningGeneration = `
+SELECT g.id, g.status, g.llm_model, g.created_at
+FROM   generations g
+WHERE  g.id = $1 AND g.conversation_id = $2`
+
+// No filter on deleted_at: the version is what was assembled, and removing the component later does not unsay it (C09, ADR-0039).
+const reasoningComponents = `
+SELECT   pc.type, gc.position, v.version_number, v.content
+FROM     generation_components gc
+JOIN     prompt_component_versions v ON v.id = gc.prompt_component_version_id
+JOIN     prompt_components pc ON pc.id = v.prompt_component_id
+WHERE    gc.generation_id = $1
+ORDER BY gc.position`
+
+// Reasoning answers ErrGenerationNotFound when the generation is not one of this conversation. It reads the text of every version,
+// and the service is the one that decides who keeps it.
+func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
+	var out Reasoning
+	err := r.exec.QueryRow(ctx, reasoningGeneration, generationID, conversationID).
+		Scan(&out.GenerationID, &out.Status, &out.LLMModel, &out.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Reasoning{}, ErrGenerationNotFound
+	}
+	if err != nil {
+		return Reasoning{}, fmt.Errorf("inbox: read generation: %w", err)
+	}
+
+	rows, err := r.exec.Query(ctx, reasoningComponents, generationID)
+	if err != nil {
+		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
+	}
+	defer rows.Close()
+
+	out.Components = []UsedComponent{}
+	for rows.Next() {
+		var c UsedComponent
+		var content string
+		if err := rows.Scan(&c.Type, &c.Position, &c.VersionNumber, &content); err != nil {
+			return Reasoning{}, fmt.Errorf("inbox: scan generation component: %w", err)
+		}
+		c.Content = &content
+		out.Components = append(out.Components, c)
+	}
+	if err := rows.Err(); err != nil {
+		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
+	}
+	return out, nil
 }

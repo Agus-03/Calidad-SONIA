@@ -22,6 +22,10 @@ var (
 	// to an operator that another's conversation exists, which is what contacts/ already answers too (ADR-0035, regla 3).
 	ErrNotFound = errors.New("inbox: conversation not found")
 
+	// ErrGenerationNotFound is a generation that does not exist or is not of the conversation in the path: F05 reads one answer of
+	// one thread, never an id guessed from another (ADR-0049).
+	ErrGenerationNotFound = errors.New("inbox: generation not found")
+
 	// ErrTaken is somebody else holding the conversation: the pool race lost, or a supervisor answering a chat that is not theirs
 	// (ADR-0035, reglas 6 y 8).
 	ErrTaken = errors.New("inbox: the conversation is assigned to another operator")
@@ -72,6 +76,7 @@ type store interface {
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
+	Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error)
 }
 
 // Store is what this package writes inside the transaction it conducts. Exported because internal/app/deps.go binds it to that

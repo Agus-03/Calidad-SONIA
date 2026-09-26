@@ -218,6 +218,50 @@ func TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt(t *testing.T) {
 		}
 	})
 
+	// F05 through the real process: the admin reads which versions the last answer was assembled from, with their text, and the
+	// thread names that generation so the frontend knows what to ask about (ADR-0049).
+	t.Run("el admin ve con que componentes se armo la respuesta", func(t *testing.T) {
+		if len(generations) == 0 {
+			t.Skip("no turn ran: the cases above say why")
+		}
+		generation := generations[len(generations)-1]
+		var conversation uuid.UUID
+		if err := pool.QueryRow(ctx, `SELECT conversation_id FROM generations WHERE id = $1`, generation).Scan(&conversation); err != nil {
+			t.Fatalf("reading the conversation of the generation: %v", err)
+		}
+		path := "/api/v1/conversations/" + conversation.String()
+
+		status, body := call(t, core, http.MethodGet, path+"/generations/"+generation.String()+"/components", token, "")
+		if status != http.StatusOK {
+			t.Fatalf("GET components: got %d - %s", status, body)
+		}
+		var got struct {
+			Components []struct {
+				Type          string  `json:"type"`
+				VersionNumber int     `json:"version_number"`
+				Content       *string `json:"content"`
+			} `json:"components"`
+		}
+		if err := json.Unmarshal([]byte(body), &got); err != nil {
+			t.Fatalf("decoding the components: %v - %s", err, body)
+		}
+		blocks := []assembledBlock{}
+		for _, c := range got.Components {
+			blocks = append(blocks, assembledBlock{c.Type, c.VersionNumber})
+		}
+		if want := assembledOf(ctx, t, pool, generation); fmt.Sprint(blocks) != fmt.Sprint(want) {
+			t.Fatalf("the components F05 shows = %v, want what generation_components holds, %v", blocks, want)
+		}
+		if len(got.Components) == 0 || got.Components[0].Content == nil || *got.Components[0].Content != objective {
+			t.Fatalf("the admin does not read the text that was assembled: %s", body)
+		}
+
+		if status, body := call(t, core, http.MethodGet, path+"/messages", token, ""); status != http.StatusOK ||
+			!strings.Contains(body, `"generation_id":"`+generation.String()+`"`) {
+			t.Fatalf("the thread does not name the generation of the answer: %d - %s", status, body)
+		}
+	})
+
 	t.Run("OE1 da 100 por ciento sobre los turnos del cierre", func(t *testing.T) {
 		if len(generations) != 3 {
 			t.Skipf("only %d of the three turns ran: the cases above say why", len(generations))

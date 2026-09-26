@@ -171,6 +171,8 @@ func (c *Controller) list(gc *gin.Context) {
 type threadMessageResponse struct {
 	messageResponse
 	SenderOperator *operatorResponse `json:"sender_operator"`
+	// What the frontend asks F05 about; null for what nobody generated (ADR-0049).
+	GenerationID *string `json:"generation_id"`
 }
 
 type threadPageResponse struct {
@@ -211,6 +213,10 @@ func (c *Controller) thread(gc *gin.Context) {
 		drawn := threadMessageResponse{messageResponse: presentMessage(m.Message)}
 		if m.SenderOperator != nil {
 			drawn.SenderOperator = &operatorResponse{ID: m.SenderOperator.ID.String(), Name: m.SenderOperator.Name, Lastname: m.SenderOperator.Lastname}
+		}
+		if m.GenerationID != nil {
+			generation := m.GenerationID.String()
+			drawn.GenerationID = &generation
 		}
 		items = append(items, drawn)
 	}
@@ -341,6 +347,8 @@ func translate(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
+	case errors.Is(err, ErrGenerationNotFound):
+		return soniahttp.NotFound("generation_not_found", "no such generation in this conversation").WithCause(err)
 	case errors.Is(err, ErrTaken):
 		return soniahttp.Conflict("conversation_taken", "another operator is attending this conversation").WithCause(err)
 	case errors.Is(err, ErrResolved):

@@ -81,6 +81,7 @@ sonia/
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
 │   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente IA · escribe la generación con lo que ensambló (ADR-0039, regla 10)
+│   │   │   ├── notices.py              el texto fijo de cada corte (O2) · no es un paso
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
@@ -96,8 +97,8 @@ sonia/
 │   │   │   └── rewriter.py
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
-│   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   grounding.yaml
-│   │   │   ├── guardrails.yaml  ·   triage.yaml
+│   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
+│   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
 │   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
 │   │   │

@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,7 @@ from adapters.llm.base import Completion, LLMUnavailable
 from infra.config import Settings
 from main import create_app
 from infra.enums import MessageDirection, PipelineStep
-from pipeline import runner
+from pipeline import notices, runner
 from pipeline.repository import TurnNotFound, read_turn
 from pipeline.step import Step, StepRequest, StepResult
 
@@ -102,6 +103,9 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
         "pipeline_steps": [],
         "generations": [],
         "generation_components": [],
+        # The fifth, and only on a cut the triage decided (O1c). transfer_policies is left out on purpose: absent means the
+        # administrator never configured this signal, which is the case a turn has to survive.
+        "signal_evaluations": [],
     }
     base.update(overrides)
     return base
@@ -151,7 +155,7 @@ def test_turns_answers_the_contract_of_section_1(settings: Settings) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer"}
+    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer", "notice_text"}
     # failed and never blocked: this deployment has no key for the provider the row names, which is not a rejection.
     assert payload["outcome"] == "failed"
     assert payload["transfer"] is None
@@ -301,6 +305,9 @@ def test_turns_fails_when_the_model_has_no_tariff() -> None:
     assert response.status_code == 200, "a configuration error is not a reason to tell the core to retry"
     assert response.json()["outcome"] == "failed"
     assert "generations" not in connection.seen, "a turn that never ran left evidence saying it did"
+    # What did run is kept, which is section 5: one DELETE and one row per step of the leg that decided before the generation was
+    # refused. Without them this batch would read as one nothing ever ran on.
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
 
 
 # doubled is the whole of F11 against the doubled adapter: the classifier answers two intentions, they are written as evidence,
@@ -434,6 +441,8 @@ def test_an_answer_that_carried_a_personal_datum_is_generated_and_not_sent() -> 
     # With the id and without the text: the core has to be able to point at the evidence and must not be able to send it.
     assert payload["generation_id"] is not None
     assert payload["completion_text"] is None, "a refused answer travelled back in a shape the core could send"
+    # And the customer is not left talking to nobody: the fixed text of this cut point travels instead of the answer (O2).
+    assert payload["notice_text"] == notices.rules().text_for(PipelineStep.GUARDRAIL, MessageDirection.OUTBOUND)
     written = [params for table, params in connection.sent if table == "generations"]
     assert len(written) == 1
     # Written once and already with its verdict, which is why GenerationStatus needed a sixth value at all (section 4.2).
@@ -498,11 +507,98 @@ def test_a_step_that_cuts_the_turn_answers_blocked_and_leaves_its_trace(monkeypa
     assert payload["outcome"] == "blocked"
     assert payload["generation_id"] is None, "a turn that never generated pointed at evidence that does not exist"
     assert payload["completion_text"] is None
+    # The one part of section 4.1 that O2 amends: there is no generation and there is an answer, and it is the text of the file.
+    assert payload["notice_text"] == notices.rules().text_for(PipelineStep.BLOCKLIST, MessageDirection.INBOUND)
     # One DELETE and one INSERT: without these rows, nothing says why this customer was not answered.
     assert connection.seen.count("pipeline_steps") == 2
     assert "generations" not in connection.seen
     # The cut comes before the classifier, so a blocked message does not pay for a model that nobody was going to answer with.
     assert "detected_intents" not in connection.seen
+
+
+# Decision O1c, end to end: a question outside the domain is answered by nobody. The turn is cut like any other, the trace says so,
+# and what travels back has no text at all — the core writes no message, drops the conversation to waiting and a person picks it up.
+def test_a_question_outside_the_domain_is_answered_by_a_person_and_never_by_a_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def outside(request: StepRequest) -> StepResult:
+        return StepResult(outcome="out_of_domain", version="1", text=request.text, halts=True, score=Decimal("0.91"))
+
+    monkeypatch.setattr(
+        runner,
+        "INBOUND",
+        (Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=outside),),
+    )
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "blocked"
+    assert payload["notice_text"] is None, "the customer was told something about a question O1c answers with a person"
+    assert payload["completion_text"] is None
+    assert payload["generation_id"] is None
+    # The cut is evidence like any other: the row that says out_of_domain is what OE6 counts on (ADR-0024).
+    steps = [params for table, params in connection.sent if table == "pipeline_steps" and "outcome" in params]
+    assert [p["outcome"] for p in steps] == ["out_of_domain"]
+    # And the signal of F12 is written even though this agent has no policy for it, because a detector whose precision is an
+    # objective persists its output whether it fired or not (OE4). proposed is false and the id still names the evidence.
+    signals = [params for table, params in connection.sent if table == "signal_evaluations" and "score" in params]
+    assert len(signals) == 1
+    assert signals[0]["signal_type"] == "out_of_domain"
+    assert signals[0]["score"] == Decimal("0.91"), "the confidence of the verdict was not what the row kept"
+    assert signals[0]["fired"] is False, "a transfer fired for an agent whose administrator never configured this signal"
+    assert payload["transfer"] == {"proposed": False, "signal_evaluation_id": str(signals[0]["id"])}
+
+
+# The other half of O1c, with the policy the administrator configured: the same cut now proposes the transfer, and the core is the
+# one that writes transfer_events — the brain proposes and never acts (07-secuencia 0).
+def test_a_question_outside_the_domain_proposes_the_transfer_the_policy_allows(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def outside(request: StepRequest) -> StepResult:
+        return StepResult(outcome="out_of_domain", version="3", text=request.text, halts=True, score=Decimal("0.88"))
+
+    monkeypatch.setattr(
+        runner,
+        "INBOUND",
+        (Step(step=PipelineStep.TRIAGE, direction=MessageDirection.INBOUND, run=outside),),
+    )
+    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    signals = [params for table, params in connection.sent if table == "signal_evaluations" and "score" in params]
+    assert len(signals) == 1
+    assert signals[0]["fired"] is True
+    assert payload["transfer"] == {"proposed": True, "signal_evaluation_id": str(signals[0]["id"])}
+    # The threshold that was in force, frozen with the row: moving it later must not rewrite what was measured. Nothing was
+    # compared against it here — the triage returns a verdict and not a score above a line.
+    assert signals[0]["threshold_used"] == Decimal("0.6")
+    # The file that decided, which is what classifier_version has to name (regla 9).
+    assert signals[0]["classifier_version"] == "3"
+    # Still no text: a policy that allows the transfer does not turn O1c into an answer.
+    assert payload["notice_text"] is None
+
+
+# Only the triage delegates. A message with a forbidden term is not a question somebody else can answer better, and O2 already
+# answers it with a text: writing a signal for it would count an escalation that nobody decided.
+def test_a_cut_that_is_not_the_triage_proposes_no_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def blocking(request: StepRequest) -> StepResult:
+        return StepResult(outcome="blocked", version="1", text=request.text, halts=True)
+
+    monkeypatch.setattr(
+        runner,
+        "INBOUND",
+        (Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocking),),
+    )
+    connection = FakeConnection(tables(transfer_policies=[{"enabled": True, "threshold": Decimal("0.6")}]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert response.json()["transfer"] is None
+    assert "signal_evaluations" not in connection.seen, "a blocked term was counted as a question for a person"
+    assert "transfer_policies" not in connection.seen, "a cut that never delegates read the policy anyway"
 
 
 # Section 5 again, one step earlier than the generation: a provider that fell over mid-pipeline is a failed turn whose partial

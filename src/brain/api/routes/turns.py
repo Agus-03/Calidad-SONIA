@@ -3,25 +3,32 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import replace
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Request, status
+from psycopg import AsyncConnection
 
 from adapters.llm.base import LLMClient, LLMError
 from adapters.llm.registry import resolve
-from api.schemas.turn import TurnRequest, TurnResponse
+from api.schemas.turn import TransferProposal, TurnRequest, TurnResponse
 from classifiers.intent import Intent, classify
-from infra.enums import GenerationStatus, PromptComponentType
-from pipeline import runner
+from infra import ids
+from infra.enums import GenerationStatus, PipelineStep, PromptComponentType, TransferSignalType
+from pipeline import notices, runner
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository import (
+    SignalEvaluation,
     TracedStep,
     Turn,
     TurnNotFound,
+    read_transfer_policy,
     read_turn,
     write_generation,
     write_intents,
+    write_signal_evaluation,
     write_steps,
 )
+from pipeline.step import Step
 from prompts.assembler import assemble
 from prompts.repository import read_components
 
@@ -69,9 +76,19 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         return TurnResponse(outcome="failed")
 
     if trace.halted:
-        # No generation and no message: the core writes processed_at and drops the conversation to waiting (section 4.1).
-        await _write_trace(request, turn, trace.steps)
-        return TurnResponse(outcome="blocked")
+        # No generation: the core writes processed_at and drops the conversation to waiting (section 4.1). What it does send is
+        # the fixed text of the cut point, which is decision O2 and the one part of section 4.1 that it amends.
+        #
+        # One connection for the trace and the signal, because they are the evidence of the same cut: a transfer whose evaluation
+        # was lost would be an escalation nobody can explain.
+        async with request.app.state.database.connection() as conn:
+            await write_steps(conn, turn.message_batch_id, trace.steps)
+            transfer = await _delegate(conn, turn, trace)
+        return TurnResponse(
+            outcome="blocked",
+            notice_text=_notice(trace.halted_at),
+            transfer=transfer,
+        )
 
     # What reaches the model from here on is what the leg returned and not what arrived: the redaction of ADR-0006 happens in
     # a step, and generations.prompt_rendered has to carry the redacted text and never the original.
@@ -117,6 +134,9 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     except (LLMError, UnpricedModel) as err:
         # failed and a 200: neither an unusable provider nor an unpriced model improves on a retry, so the core must not try again.
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
+        # And the steps that did decide are kept, which section 5 asks of every turn that fell over halfway: this was the one place
+        # that dropped them, so a batch whose generation never happened read as a batch on which nothing had ever run.
+        await _write_trace(request, turn, trace.steps)
         return TurnResponse(outcome="failed")
 
     # The steps that decide about the answer: the same blocklist and the same guardrail, about a text that did not exist when the
@@ -160,8 +180,13 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             extra={"context": {**context, "generation_id": str(generation.id)}},
         )
         # With the generation_id and without the text: the evidence has to be pointable at, and an answer that was refused must
-        # not be sendable by the caller (section 4.2).
-        return TurnResponse(outcome="blocked", generation_id=generation.id)
+        # not be sendable by the caller (section 4.2). What travels instead is the fixed text of this cut point (O2), which is a
+        # different string in a different field for exactly that reason.
+        return TurnResponse(
+            outcome="blocked",
+            generation_id=generation.id,
+            notice_text=_notice(answer.halted_at),
+        )
 
     logger.info(
         "turn generated",
@@ -183,6 +208,61 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         generation_id=generation.id,
         completion_text=generation.completion_text,
     )
+
+
+# Decision O1c: a question outside the domain is not answered, it is handed to a person. The evaluation is written whether it
+# proposes anything or not, which is what signal_evaluations exists for — a detector whose precision is an objective has to persist
+# its output even when nothing happened (OE4), and here it is also the denominator ADR-0024 measures "sin escalada" against.
+#
+# Only the triage delegates. A blocklist that refused a term is not a question somebody else can answer better; it is a message
+# this business does not take, and O2 already answers it with a text.
+async def _delegate(conn: AsyncConnection, turn: Turn, trace: runner.Trace) -> TransferProposal | None:
+    if trace.halted_at is None or trace.halted_at.step != PipelineStep.TRIAGE:
+        return None
+
+    # The row of the step that cut, which the runner appends last before returning: its score is the confidence of the verdict and
+    # its version is the file that decided, which is what classifier_version has to name (regla 9).
+    verdict = trace.steps[-1]
+    policy = await read_transfer_policy(conn, turn.agent.id, TransferSignalType.OUT_OF_DOMAIN)
+
+    evaluation = SignalEvaluation(
+        id=ids.new(),
+        message_batch_id=turn.message_batch_id,
+        signal_type=TransferSignalType.OUT_OF_DOMAIN,
+        # 0 when the model returned no confidence: the column is not nullable, and a verdict with no number is still a verdict.
+        score=verdict.score if verdict.score is not None else Decimal(0),
+        # 0 when there is no policy, which says what happened: nothing was compared against anything.
+        threshold_used=policy.threshold if policy is not None else Decimal(0),
+        classifier_version=verdict.version,
+        # An administrator who turned this signal off, or never configured it, gets no transfer. The conversation still waits for
+        # a person, because that is what the core does with every cut turn — what is lost is the row that counts as an escalation.
+        fired=policy is not None and policy.enabled,
+    )
+    await write_signal_evaluation(conn, evaluation)
+
+    logger.info(
+        "the turn was handed to a person",
+        extra={
+            "context": {
+                "conversation_id": str(turn.conversation_id),
+                "message_batch_id": str(turn.message_batch_id),
+                "signal_evaluation_id": str(evaluation.id),
+                "fired": evaluation.fired,
+            }
+        },
+    )
+    # Always the proposal and never None once the signal was evaluated: proposed = false still names the evidence, and the core
+    # acts on the flag and not on the presence of the object.
+    return TransferProposal(proposed=evaluation.fired, signal_evaluation_id=evaluation.id)
+
+
+# What the customer reads when the pipeline refused the turn (O2), or nothing at all when the step that cut was the triage (O1c).
+# Takes the step and not the trace because a leg that did not halt has no cut point, and asking for its text would be a bug here
+# rather than a missing entry in the file.
+def _notice(halted_at: Step | None) -> str | None:
+    if halted_at is None:
+        return None
+    return notices.rules().text_for(halted_at.step, halted_at.direction)
 
 
 # On its own connection, because the legs may have spent seconds against a provider and the pool is shared. It is the only

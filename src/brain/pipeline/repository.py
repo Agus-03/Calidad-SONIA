@@ -12,7 +12,13 @@ from psycopg.types.json import Jsonb
 
 from classifiers.intent import Intent
 from infra import ids
-from infra.enums import GenerationStatus, MessageDirection, PipelineStep, SenderType
+from infra.enums import (
+    GenerationStatus,
+    MessageDirection,
+    PipelineStep,
+    SenderType,
+    TransferSignalType,
+)
 
 logger = logging.getLogger("sonia.pipeline.repository")
 
@@ -154,6 +160,36 @@ def _message(row: dict) -> Message:
     )
 
 
+# What the administrator decided about one of the four signals of F12. Read and never written here: transfer_policies is
+# configuration of the core (docs/struct.md), and regla 3 lets the brain write evidence and nothing else.
+@dataclass(frozen=True)
+class TransferPolicy:
+    enabled: bool
+    threshold: Decimal
+
+
+_POLICY = """
+SELECT enabled, threshold
+  FROM transfer_policies
+ WHERE ai_agent_id = %(ai_agent_id)s
+   AND signal_type = %(signal_type)s
+   AND deleted_at IS NULL
+"""
+
+
+# None when this agent has no policy for the signal, which is not the same as one that is disabled: nobody configured it. Either
+# way nothing is proposed, and the conversation still drops to waiting because every cut turn does that (07-secuencia 4.1) — what
+# is lost is the transfer_events row, which is the formal escalation F36 counts and ADR-0024 measures.
+async def read_transfer_policy(
+    conn: AsyncConnection, ai_agent_id: UUID, signal_type: TransferSignalType
+) -> TransferPolicy | None:
+    cursor = await conn.execute(_POLICY, {"ai_agent_id": ai_agent_id, "signal_type": signal_type})
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return TransferPolicy(enabled=row["enabled"], threshold=row["threshold"])
+
+
 # The write: the only INSERT of a turn, and generations is an evidence table, the only kind the brain may write (regla 3).
 
 
@@ -290,6 +326,65 @@ class TracedStep:
     # Only the steps that produce one: triage and grounding.
     score: Decimal | None = None
     detail: dict | None = None
+
+
+# One evaluated signal of F12, whether it fired or not. That is the whole point of the table: a classifier whose precision is an
+# objective has to persist its output even when nothing happened, or the only sample left is the one the threshold already filtered.
+@dataclass(frozen=True)
+class SignalEvaluation:
+    id: UUID
+    message_batch_id: UUID
+    signal_type: TransferSignalType
+    # Always, and 0 for a signal that does not score. Here it is the confidence the triage returned.
+    score: Decimal
+    # The policy in force when this was evaluated, frozen so moving the threshold later does not rewrite what was measured. For
+    # out_of_domain nothing was compared against it: the triage returns a verdict and not a score above a line, so this column
+    # records the policy that was in force and not a comparison that happened.
+    threshold_used: Decimal
+    classifier_version: str
+    # Not derivable from score and threshold: a signal can be over the line and not fire, because the policy is disabled or
+    # because there is no policy at all.
+    fired: bool
+
+
+_SIGNALS_OF_BATCH = """
+DELETE FROM signal_evaluations
+ WHERE message_batch_id = %(message_batch_id)s
+   AND signal_type = %(signal_type)s
+"""
+
+_SIGNAL = """
+INSERT INTO signal_evaluations (
+    id, message_batch_id, signal_type, score, threshold_used, classifier_version, fired
+) VALUES (
+    %(id)s, %(message_batch_id)s, %(signal_type)s, %(score)s, %(threshold_used)s, %(classifier_version)s, %(fired)s
+)
+"""
+
+
+# Deleted first like the steps and the intents, and for the same reason: the core asks again when the brain answers a 5xx
+# (ADR-0020), and one turn has to leave one evaluation of a signal and not two. By signal_type and not by batch, because the other
+# three of F12 are evaluated by their own classifiers and are not this one's to remove.
+#
+# A row transfer_events already points at cannot be deleted, and that is the FK doing its job: a retry means the core never got the
+# answer, so the transfer was never written, and if it somehow was, this turn fails loudly instead of duplicating its evidence.
+async def write_signal_evaluation(conn: AsyncConnection, evaluation: SignalEvaluation) -> None:
+    await conn.execute(
+        _SIGNALS_OF_BATCH,
+        {"message_batch_id": evaluation.message_batch_id, "signal_type": evaluation.signal_type},
+    )
+    await conn.execute(
+        _SIGNAL,
+        {
+            "id": evaluation.id,
+            "message_batch_id": evaluation.message_batch_id,
+            "signal_type": evaluation.signal_type,
+            "score": evaluation.score,
+            "threshold_used": evaluation.threshold_used,
+            "classifier_version": evaluation.classifier_version,
+            "fired": evaluation.fired,
+        },
+    )
 
 
 _STEPS_OF_BATCH = "DELETE FROM pipeline_steps WHERE message_batch_id = %(message_batch_id)s"

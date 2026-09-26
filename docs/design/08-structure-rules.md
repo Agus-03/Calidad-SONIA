@@ -52,6 +52,7 @@ sonia/
     │   │   ├── runner.py                  ejecuta los pasos y escribe pipeline_steps
     │   │   ├── step.py                    contrato común de un paso
     │   │   ├── blocklist.py               guardrail.py · triage.py
+    │   │   ├── notices.py                 el texto fijo de cada corte (O2) — no es un paso
     │   │   └── retrieval.py               grounding.py · generation.py
     │   ├── prompts/                       assembler.py (F03) · rewriter.py (F04)
     │   ├── classifiers/                   frustración, intención, transferencia, extracción · F11, F12, F31
@@ -62,7 +63,7 @@ sonia/
     │   │   ├── vectorstore/               qdrant.py
     │   │   └── storage/                   lectura de los bytes que subió el núcleo
     │   ├── rules/                         datos versionados, no código — ver regla 9
-    │   │   ├── blocklist.yaml             profanity.yaml · guardrails.yaml · triage.yaml · grounding.yaml
+    │   │   ├── blocklist.yaml             profanity.yaml · notices.yaml · guardrails.yaml · triage.yaml · grounding.yaml
     │   │   └── rewriter.yaml              frustration.yaml · intent.yaml · transfer.yaml · extraction.yaml
     │   ├── infra/                         config.py (Settings) · db · logging · enums.py (generado)
     │   └── tests/

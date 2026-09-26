@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
-| **Fecha** | 2026-08-06 |
+| **Estado** | Aceptada · **§2 enmendado por [ADR-0042](0042-pipeline-de-decision-del-turno.md)** (decisión D6): los marcadores que recibe el LLM son **tres** y no cuatro, porque el patrón de once dígitos emite el genérico `[CUIT/CUIL]` —la primera de las dos salidas que la nota de este ADR dejó abiertas—. La otra mitad de esa nota, desambiguar al persistir, sigue abierta |
+| **Fecha** | 2026-08-06 · §2 enmendado 2026-09-25 (Fase 8) |
 | **Etapa** | Diseño — Paso 3 |
 | **Resuelve** | Contradicción entre la sección 5.2 y el modelo de datos |
 | **Requisitos afectados** | F04, F31 · secciones 5.2 y 7.3 |

@@ -386,6 +386,23 @@ func TestTheFirstSendIsTheFirstResponse(t *testing.T) {
 			t.Fatalf("a later send moved first_response_at from %v to %v", first, *firstResponse)
 		}
 
+		// Decision O2 through the column F34 reads: the fixed text of a cut turn goes out like any other message and answers
+		// nothing the customer asked, so a conversation whose only outbound row is that text has no response time at all.
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET first_response_at = NULL WHERE id = $1`, conversation.ID); err != nil {
+			t.Fatalf("clear the first response: %v", err)
+		}
+		notice, err := service.RecordSystemOutbound(ctx, conversation.ID, "prefiero que esto lo vea una persona", sentAt)
+		if err != nil {
+			t.Fatalf("RecordSystemOutbound: %v", err)
+		}
+		if err := service.MarkSent(ctx, notice.ID, "wamid.notice", sentAt); err != nil {
+			t.Fatalf("MarkSent on the fixed text: %v", err)
+		}
+		read()
+		if firstResponse != nil {
+			t.Fatalf("the fixed text of a cut turn was taken as the first response: %v", *firstResponse)
+		}
+
 		if err := service.MarkSent(ctx, id.New(), "wamid.nobody", sentAt); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("MarkSent on a message that does not exist: got %v, want ErrNotFound", err)
 		}
@@ -492,6 +509,64 @@ func TestTheBotIsTurnedOffWithoutLosingItsAIAgent(t *testing.T) {
 
 		if err := service.SetMode(ctx, id.New(), enums.AgentModeOff); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("turning off a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+
+// Where a turn that produced no answer leaves the conversation (07-secuencia secciones 4 y 5). Against real DDL because the value
+// has to pass the CHECK of ConversationStatus: a status the schema refuses would only show up on the first blocked turn.
+func TestATurnThatAnsweredNobodyLeavesTheConversationWaiting(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		status := func(conversationID uuid.UUID) enums.ConversationStatus {
+			t.Helper()
+			var got enums.ConversationStatus
+			if err := exec.QueryRow(ctx, `SELECT status FROM conversations WHERE id = $1`, conversationID).Scan(&got); err != nil {
+				t.Fatalf("read the status: %v", err)
+			}
+			return got
+		}
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		if err := service.MarkWaiting(ctx, conversation.ID); err != nil {
+			t.Fatalf("MarkWaiting: %v", err)
+		}
+		if got := status(conversation.ID); got != enums.ConversationStatusWaiting {
+			t.Fatalf("status %q, want waiting: nobody is going to answer what the bot did not", got)
+		}
+
+		// A conversation somebody already resolved moves back too, which is the decision the repository declares: the message that
+		// was not answered is unanswered whatever anybody had decided about the conversation a minute earlier.
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET status = $2 WHERE id = $1`,
+			conversation.ID, enums.ConversationStatusResolved); err != nil {
+			t.Fatalf("resolve the conversation: %v", err)
+		}
+		if err := service.MarkWaiting(ctx, conversation.ID); err != nil {
+			t.Fatalf("MarkWaiting over a resolved conversation: %v", err)
+		}
+		if got := status(conversation.ID); got != enums.ConversationStatusWaiting {
+			t.Fatalf("status %q, want waiting", got)
+		}
+
+		if err := service.MarkWaiting(ctx, id.New()); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("marking a conversation that does not exist: got %v, want ErrNotFound", err)
 		}
 		return rollback
 	})

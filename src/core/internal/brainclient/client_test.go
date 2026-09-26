@@ -73,7 +73,8 @@ func TestTurnSendsTheContractOfSectionOne(t *testing.T) {
 // A null in the contract is an absence and not a zero: an empty uuid would name a generation nobody wrote.
 func TestTurnKeepsWhatTheBrainLeftAbsent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"outcome":"failed","generation_id":null,"completion_text":null,"transfer":null}`))
+		_, _ = w.Write([]byte(`{"outcome":"failed","generation_id":null,"completion_text":null,` +
+			`"transfer":null,"notice_text":null}`))
 	}))
 	defer server.Close()
 
@@ -85,11 +86,40 @@ func TestTurnKeepsWhatTheBrainLeftAbsent(t *testing.T) {
 	if res.Outcome != OutcomeFailed {
 		t.Fatalf("outcome = %q, want %q", res.Outcome, OutcomeFailed)
 	}
-	if res.GenerationID != nil || res.CompletionText != nil || res.Transfer != nil {
+	if res.GenerationID != nil || res.CompletionText != nil || res.Transfer != nil || res.NoticeText != nil {
 		t.Fatalf("response = %+v, want every optional field absent", res)
 	}
 	if res.Text() != "" {
 		t.Fatalf("Text() = %q, want empty", res.Text())
+	}
+	// An absent notice is the silence of decision O1c, and the caller reads it as a text it must not invent.
+	if res.Notice() != "" {
+		t.Fatalf("Notice() = %q, want empty", res.Notice())
+	}
+}
+
+// The fixed text of a cut (decision O2), which arrives in its own field precisely so the caller cannot confuse it with the answer
+// the pipeline refused: a blocked turn carries the evidence of that answer and never the answer itself (07-secuencia 4.2).
+func TestTurnReadsTheFixedTextOfACutApartFromTheAnswer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"outcome":"blocked","generation_id":null,"completion_text":null,` +
+			`"transfer":null,"notice_text":"le paso tu mensaje a una persona"}`))
+	}))
+	defer server.Close()
+
+	res, err := New(Options{BaseURL: server.URL}).Turn(context.Background(), request())
+	if err != nil {
+		t.Fatalf("Turn() error = %v, want nil", err)
+	}
+
+	if res.Outcome != OutcomeBlocked {
+		t.Fatalf("outcome = %q, want %q", res.Outcome, OutcomeBlocked)
+	}
+	if res.Notice() != "le paso tu mensaje a una persona" {
+		t.Fatalf("Notice() = %q, want the fixed text the brain chose", res.Notice())
+	}
+	if res.Text() != "" {
+		t.Fatalf("Text() = %q, want empty: a refused answer is not sendable", res.Text())
 	}
 }
 

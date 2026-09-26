@@ -31,3 +31,7 @@ class TurnResponse(BaseModel):
     generation_id: UUID | None = None
     completion_text: str | None = None
     transfer: TransferProposal | None = None
+    # The fixed answer of decision O2, which only a blocked turn carries: the text the core sends so a refused turn does not leave
+    # the customer talking to nobody. A field of its own and not completion_text, because that one is a generation and section 4.2
+    # says a refused generation must not be sendable. Null is silence, which is what decision O1c asks for outside the domain.
+    notice_text: str | None = None

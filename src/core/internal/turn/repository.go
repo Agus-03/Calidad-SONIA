@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
 // Repository takes the Executor and not the pool, so the transaction this package opens reaches the other repositories (regla 5).
@@ -162,6 +163,23 @@ func (r *Repository) MarkProcessed(ctx context.Context, batchID uuid.UUID, at ti
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrBatchNotFound
+	}
+	return nil
+}
+
+// RecordTransfer writes the escalation of F12 that the brain proposed, in the transaction that also moves the conversation: the
+// event points at the evidence and never duplicates it (H-18), so the signal, its score and the threshold that was in force stay in
+// signal_evaluations and F36 reaches the type of signal by join.
+//
+// to_operator_id stays NULL because nobody in particular is taking it: MarkWaiting runs in this same transaction and whoever is on
+// the inbox picks the conversation up. An assignment would be claiming a person who has not seen it.
+func (r *Repository) RecordTransfer(ctx context.Context, conversationID, signalEvaluationID uuid.UUID, turnNumber int) error {
+	_, err := r.exec.Exec(ctx, `
+		INSERT INTO transfer_events (id, conversation_id, signal_evaluation_id, turn_number)
+		VALUES ($1, $2, $3, $4)`,
+		id.New(), conversationID, signalEvaluationID, turnNumber)
+	if err != nil {
+		return fmt.Errorf("turn: record transfer: %w", err)
 	}
 	return nil
 }

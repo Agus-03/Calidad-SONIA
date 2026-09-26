@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/DER/entidades.md` |
 | **Estado** | Borrador para el Paso 5 (modelo de datos lógico) |
-| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) |
+| **Fecha** | 2026-08-06 · revisado 2026-08-08 (auditoría del catálogo) · revisado 2026-08-10 (Paso 6 — validación de las métricas: H-18) · revisado 2026-09-12 (Fase 4 — secretos de `inboxes` nullables) · revisado 2026-09-25 (Fase 8 — la nota de `pipeline_steps.version` se lee en plural para la corrida de salida de `blocklist`: [ADR-0042](../02-decisiones/0042-pipeline-de-decision-del-turno.md)) |
 | **Base documental** | [Anteproyecto](../../SONIA_Anteproyecto.pdf) (Anexos A, B y C; secciones 7.2, 7.3, 8.4, 8.5) · [00-convenciones.md](../00-convenciones.md) · [01-trazabilidad.md](../01-trazabilidad.md) · [02-decisiones/](../02-decisiones/) |
 | **Complemento** | [relaciones.md](relaciones.md) — este documento no describe relaciones |
 
@@ -281,7 +281,7 @@ Una fila **por cada paso del pipeline ejecutado en un turno**. El pipeline es: *
 | `position` | smallint | Orden de ejecución dentro del turno |
 | `outcome` | varchar | Qué decidió. **Dominio declarado por `step`** — ver abajo |
 | `score` | numeric | Nullable — confianza, sólo en los pasos que la producen (`triage`, `grounding`) |
-| `version` | varchar | Versión de la lista, la regla o el modelo que decidió. **Sin esto, ajustar un guardrail invalida las mediciones previas** — mismo argumento que `signal_evaluations.classifier_version` |
+| `version` | varchar | Versión de la lista, la regla o el modelo que decidió — **o de las dos, cuando el paso decide con dos archivos**: la corrida de salida de `blocklist` escribe `1+profanity1` ([ADR-0042](../02-decisiones/0042-pipeline-de-decision-del-turno.md)), y la de entrada del `guardrail` hará lo mismo con `injection.yaml` ([ADR-0043](../02-decisiones/0043-prompt-injection-en-el-guardrail-de-entrada.md)). **Sin esto, ajustar un guardrail invalida las mediciones previas** — mismo argumento que `signal_evaluations.classifier_version` |
 | `latency_ms` | integer | Nullable. Latencia del paso |
 | `detail_json` | jsonb | Nullable. Parámetros y detalle: qué regla coincidió, y **el `top_k` y el umbral de similitud del paso `retrieval`** (H-23) |
 | `created_at` | timestamptz | **Inmutable: sin `updated_at` ni `deleted_at`** (C09) |

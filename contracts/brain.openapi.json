@@ -220,6 +220,17 @@
             ],
             "title": "Generation Id"
           },
+          "notice_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice Text"
+          },
           "outcome": {
             "enum": [
               "generated",

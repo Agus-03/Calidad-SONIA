@@ -1,0 +1,24 @@
+# The fixed answer of decision O2 (ADR-0042): one text per cut point, keyed by the step that cut and the leg it cut on.
+# Versioned data and not code, because what a business says when it cannot answer is the business's wording (regla 9).
+#
+# THIS IS WHAT THE CUSTOMER READS, the one file in rules/ written in Spanish and in the voice of the business.
+#
+# THE TRIAGE HAS NO TEXT AND MAY NOT HAVE ONE (decision O1c), and pipeline/notices.py refuses this file if somebody writes one.
+# The other steps with no entry do not cut yet: the inbound guardrail will with ADR-0043, and Fase 12 decides for the rest.
+#
+# A TEXT MAY NOT promise a time, say who answers, say what was refused, or carry a personal datum: these are fixed, so the
+# redaction of ADR-0006 never looks at them.
+version: 1
+
+# The customer's own message was refused before anything was generated (07-secuencia B.1).
+inbound:
+  blocklist: |-
+    No puedo ayudarte con eso por acá. Le paso tu mensaje a una persona del equipo para que lo vea.
+
+# Generated and then refused, so there is a generation with status blocked and no message (07-secuencia B.2). The two texts
+# promise the same amount on purpose: what the customer reads cannot depend on which of our checks fired.
+outbound:
+  blocklist: |-
+    Prefiero que esto lo vea una persona del equipo. Ya le pasé tu consulta y te va a responder por acá.
+  guardrail: |-
+    Para responderte esto con cuidado, le paso tu consulta a una persona del equipo y te responde por acá.

@@ -100,25 +100,30 @@ func (r *Repository) LinkToBatch(ctx context.Context, messageID, batchID uuid.UU
 // is written: the first response is the first answer the customer received, while taking the pool is the first one sent
 // (ADR-0035, regla 7; F34.b supuesto S3).
 //
+// The one sender that does not count is system: the fixed text of a cut turn answers nothing, so taking it as the first response
+// would report seconds of response time on a conversation nobody attended (ADR-0042, O2). Excluded here and in F34.b alike.
+//
 // It takes the database clock and not the caller's, because F34 subtracts created_at from it and both have to be one clock (C06).
 //
 // Counting sent is what tells a missing message apart; first runs although the SELECT never names it, as every data-modifying WITH does.
 const messageMarkSent = `
 WITH sent AS (
        UPDATE messages SET wamid = $2, sent_at = $3, status = $4 WHERE id = $1
-       RETURNING conversation_id
+       RETURNING conversation_id, sender_type
 ), first AS (
        UPDATE conversations c
        SET    first_response_at = now(), updated_at = now()
        FROM   sent
        WHERE  c.id = sent.conversation_id AND c.first_response_at IS NULL
+         AND  sent.sender_type <> $5
 )
 SELECT count(*) FROM sent`
 
 // MarkSent writes what only Meta knows, which is why the row was written without it (07-secuencia, hallazgo 3).
 func (r *Repository) MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error {
 	var updated int
-	if err := r.exec.QueryRow(ctx, messageMarkSent, messageID, wamid, sentAt, enums.MessageStatusSent).Scan(&updated); err != nil {
+	if err := r.exec.QueryRow(ctx, messageMarkSent, messageID, wamid, sentAt,
+		enums.MessageStatusSent, enums.SenderTypeSystem).Scan(&updated); err != nil {
 		return fmt.Errorf("conversations: mark message sent: %w", err)
 	}
 	if updated == 0 {
@@ -172,6 +177,30 @@ func (r *Repository) TouchOutbound(ctx context.Context, conversationID uuid.UUID
 		conversationID)
 	if err != nil {
 		return fmt.Errorf("conversations: touch outbound: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// The state a turn nobody answered leaves behind: the customer wrote, the bot did not reply, and somebody has to
+// (07-secuencia secciones 4 y 5). The value travels as $2 and is never a literal in the statement, so a rename in enums.yaml
+// cannot write a status nothing else recognises (C07). The clock is the database's, the one every writer of this row shares.
+//
+// A conversation somebody already resolved moves back to waiting too, and that is deliberate: the message that was not answered
+// is unanswered whatever anybody had decided about the conversation a minute earlier.
+const conversationMarkWaiting = `
+UPDATE conversations
+SET    status = $2, updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL`
+
+// MarkWaiting is the status half of a turn that ends without an answer, and the caller holds it in the same transaction as
+// message_batches.processed_at: one of the two written alone is a turn that reads as finished and unattended, or the reverse.
+func (r *Repository) MarkWaiting(ctx context.Context, conversationID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationMarkWaiting, conversationID, enums.ConversationStatusWaiting)
+	if err != nil {
+		return fmt.Errorf("conversations: mark waiting: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

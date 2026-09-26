@@ -1,0 +1,16 @@
+# The blocked terms of ADR-0016, versioned as data because the list belongs to the business and not to the code (regla 9).
+#
+# EMPTY ON PURPOSE, which is decision D4 of ADR-0042 and not a file half written: the mechanism ships complete and the policy
+# ships absent, so in production this step runs, writes its row and always says pass. Filling it needs no Python.
+version: 1
+
+# One list per direction, because what the customer may not write is not what the AIAgent may not answer (ADR-0016).
+# Matching is by whole word with case and accents folded: "casa" does not fire on "casamiento", and "seña" matches "SENA".
+
+# What the customer wrote, before anything is generated.
+inbound:
+  terms: []
+
+# What the AIAgent is about to answer, the second run of this same step.
+outbound:
+  terms: []

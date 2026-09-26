@@ -37,6 +37,7 @@ type store interface {
 	AppendMessage(ctx context.Context, m Message) error
 	TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error
 	TouchOutbound(ctx context.Context, conversationID uuid.UUID) error
+	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
@@ -142,6 +143,21 @@ func (s *Service) RecordOutbound(ctx context.Context, conversationID, aiAgentID 
 	return s.appendOutbound(ctx, s.DraftOutbound(conversationID, aiAgentID, text, at))
 }
 
+// RecordSystemOutbound is the same write-before-send for the fixed text of a turn the pipeline cut (decision O2). No model wrote
+// it and no person typed it, so the row names neither sender, which is the third arm of the sender check of messages (H-09): it is
+// the system talking, and reading it later as an answer of the AIAgent would put words in a model's mouth that it never produced.
+func (s *Service) RecordSystemOutbound(ctx context.Context, conversationID uuid.UUID, text string, at time.Time) (Message, error) {
+	return s.appendOutbound(ctx, Message{
+		ID:             id.New(),
+		ConversationID: conversationID,
+		Direction:      enums.MessageDirectionOutbound,
+		SenderType:     enums.SenderTypeSystem,
+		ContentText:    text,
+		ContentType:    enums.MessageContentTypeText,
+		SentAt:         at,
+	})
+}
+
 // RecordOperatorOutbound is the same write-before-send for an answer a person typed: the sender check of messages wants the
 // operator's id and no agent's, so the row names who wrote it and nothing else (H-09, ADR-0020).
 func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, operatorID uuid.UUID, text string, at time.Time) (Message, error) {
@@ -187,6 +203,12 @@ func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode en
 // and whoever conducts the pause holds the transaction (ADR-0038).
 func (s *Service) TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error) {
 	return s.repo.TurnOffAIAgent(ctx, aiAgentID)
+}
+
+// MarkWaiting is where a turn that produced no answer leaves the conversation, and turn/ asks for it through here because the
+// status is this aggregate's column (regla 1). Whoever conducts the turn holds the transaction (07-secuencia secciones 4 y 5).
+func (s *Service) MarkWaiting(ctx context.Context, conversationID uuid.UUID) error {
+	return s.repo.MarkWaiting(ctx, conversationID)
 }
 
 // LinkToBatch, MarkSent and MarkFailed pass through: they are the aggregate's API and turn/ must not reach the table itself.

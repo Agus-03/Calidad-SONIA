@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
@@ -164,7 +166,6 @@ func TestAFailedTurnLeavesItselfMarkedAndUnprocessed(t *testing.T) {
 	}{
 		{"the brain never answered", brainclient.TurnResponse{}, []error{&httpclient.StatusError{Status: 422}}},
 		{"the brain answered failed, which carries no text to send", brainclient.TurnResponse{Outcome: brainclient.OutcomeFailed}, nil},
-		{"the guardrail blocked it, which is a decision and still nothing to send", brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}, nil},
 		{"generated with an empty text is neither an answer nor a rejection", generated(""), nil},
 	}
 
@@ -358,5 +359,165 @@ func TestAnAnswerWithNoEvidenceIsStillDelivered(t *testing.T) {
 	}
 	if slices.Contains(*h.steps, "generation_linked") {
 		t.Fatalf("a generation nobody named was linked: %v", *h.steps)
+	}
+}
+
+
+// Section 4: a cut is a decision of the pipeline and not a failure of the turn, so it gets the reading a pause gets (ADR-0041,
+// regla 8) — processed_at written, no error_message — plus the one thing a pause does not need: somebody has to answer what the
+// bot refused to, so the conversation drops to waiting.
+func TestABlockedTurnIsProcessedAndLeavesTheConversationWaiting(t *testing.T) {
+	generation := uuid.New()
+	cases := []struct {
+		name     string
+		response brainclient.TurnResponse
+	}{
+		{"cut before generating, so there is no evidence to point at (section 4.1)",
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}},
+		{"cut after generating, where the evidence exists and its message_id stays NULL for ever (section 4.2)",
+			brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked, GenerationID: &generation}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := conductor()
+			h.brain.response = tc.response
+
+			h.turn()
+
+			// The two writes and nothing else, in one transaction: either alone leaves a turn that reads as finished and
+			// unattended, or as attended and never finished.
+			if got := *h.steps; len(got) != 2 || got[0] != "conversation_waiting" || got[1] != "processed_at" {
+				t.Fatalf("the writes of a blocked turn were %v, want conversation_waiting and processed_at alone", got)
+			}
+			if len(h.store.failed) != 0 {
+				t.Fatalf("error_message was written for a cut the pipeline decided: %v", h.store.failed)
+			}
+			if h.sender.calls != 0 {
+				t.Fatal("a blocked answer reached the customer")
+			}
+			if len(h.store.linked) != 0 {
+				t.Fatal("a blocked generation was linked to a message that was never written")
+			}
+			// Neither response carries a text, which is the silence of decision O1c: the customer is told nothing and a person
+			// picks the conversation up. What the brain does send, when it sends one, is the case below.
+			if len(h.aggregate.notices) != 0 {
+				t.Fatalf("a cut the brain answered with silence sent a text anyway: %v", h.aggregate.notices)
+			}
+		})
+	}
+}
+
+// Decision O2, which is what amends section 4.1: a cut used to leave the customer talking to nobody, and now it leaves one message
+// that the pipeline chose and no model wrote. The conversation still drops to waiting, because the fixed text answers no question.
+func TestACutTurnSendsTheFixedTextAndStillWaitsForAPerson(t *testing.T) {
+	notice := "le paso tu mensaje a una persona del equipo"
+	refused := "esto es lo que el guardrail frenó"
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:        brainclient.OutcomeBlocked,
+		NoticeText:     &notice,
+		CompletionText: &refused,
+	}
+
+	h.turn()
+
+	// The notice first and inside the same transaction as the two writes of the cut: written before it is sent, like every other
+	// outbound row, so a crash after the send cannot leave a delivered message with no row.
+	want := []string{"notice_message", "conversation_waiting", "processed_at", "message_sent"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut with a text were %v, want %v", got, want)
+	}
+	if len(h.sender.texts) != 1 || h.sender.texts[0] != notice {
+		t.Fatalf("what reached the customer was %v, want the fixed text of the cut point", h.sender.texts)
+	}
+	// The rule of section 4.2, and the reason the two texts travel in two fields: the answer the pipeline refused is unsendable,
+	// whatever else the same response carries.
+	if slices.Contains(h.sender.texts, refused) {
+		t.Fatal("the answer the pipeline refused reached the customer")
+	}
+	if len(h.aggregate.outbound) != 0 {
+		t.Fatalf("the fixed text was written as an answer of the AIAgent: %v", h.aggregate.outbound)
+	}
+}
+
+// Decision O1c on this side of the hop: the brain evaluated the signal and this is the action it proposed, written in the same
+// transaction that moves the conversation. The event points at the evidence and duplicates none of it (H-18).
+func TestACutThatProposesATransferWritesTheEventPointingAtTheEvidence(t *testing.T) {
+	signal := uuid.New()
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:  brainclient.OutcomeBlocked,
+		Transfer: &brainclient.TransferProposal{Proposed: true, SignalEvaluationID: signal},
+	}
+
+	h.turn()
+
+	// No message of any kind: a question outside the domain is answered by a person and by nothing else (O1c).
+	want := []string{"transfer_event", "conversation_waiting", "processed_at"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut that delegates were %v, want %v", got, want)
+	}
+	if len(h.store.transfers) != 1 {
+		t.Fatalf("transfers = %v, want the one the brain proposed", h.store.transfers)
+	}
+	event := h.store.transfers[0]
+	if event.SignalEvaluationID != signal {
+		t.Fatalf("signal_evaluation_id = %v, want the evidence the brain named (%v)", event.SignalEvaluationID, signal)
+	}
+	if event.ConversationID != h.store.target.ConversationID || event.TurnNumber != h.store.batch.TurnNumber {
+		t.Fatalf("the event named %+v, want the conversation and the turn of this batch", event)
+	}
+}
+
+// An evaluation that did not fire is evidence the brain wrote and an action nobody decided: the administrator disabled the signal,
+// or never configured it. The conversation still waits for a person, because that is what every cut does.
+func TestAnEvaluationThatDidNotFireWritesNoTransfer(t *testing.T) {
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{
+		Outcome:  brainclient.OutcomeBlocked,
+		Transfer: &brainclient.TransferProposal{Proposed: false, SignalEvaluationID: uuid.New()},
+	}
+
+	h.turn()
+
+	if len(h.store.transfers) != 0 {
+		t.Fatalf("a transfer was written for an evaluation that did not fire: %v", h.store.transfers)
+	}
+	want := []string{"conversation_waiting", "processed_at"}
+	if got := *h.steps; !slices.Equal(got, want) {
+		t.Fatalf("the writes of a cut that proposed nothing were %v, want %v", got, want)
+	}
+}
+
+// generated and empty is the two services disagreeing about the same turn, and that is a failure: a cut says so in its outcome.
+func TestAnAnswerThatCameEmptyIsAFailureAndNotACut(t *testing.T) {
+	h := conductor()
+	h.brain.response = generated("")
+
+	h.turn()
+
+	if len(h.aggregate.waiting) != 0 {
+		t.Fatal("an inconsistency between the two services was recorded as a decision of the pipeline")
+	}
+	if h.store.failed[h.store.batch.ID] == "" {
+		t.Fatal("the batch was left without error_message, which is what diagnoses the failure")
+	}
+}
+
+
+// A cut whose two writes did not commit is not a decision that landed: nobody finished this turn, and that is what the row says.
+func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {
+	h := conductor()
+	h.brain.response = brainclient.TurnResponse{Outcome: brainclient.OutcomeBlocked}
+	h.store.processedErr = errors.New("turn: the batch could not be marked")
+
+	h.turn()
+
+	if h.store.failed[h.store.batch.ID] == "" {
+		t.Fatal("the cut never committed and the batch was left saying nothing about it")
+	}
+	if len(h.store.processed) != 0 {
+		t.Fatal("processed_at was recorded for a transaction that did not commit")
 	}
 }

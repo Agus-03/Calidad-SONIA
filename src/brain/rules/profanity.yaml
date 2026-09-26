@@ -1,0 +1,39 @@
+# The words the AIAgent may not answer with (decision O6b of ADR-0042), in a file of their own because this is a guard of the
+# team and blocklist.yaml is the policy of the business. These words are ours: the anteproyecto declares none.
+#
+# THIS IS THE FILE TO LOAD WORDS INTO, one line per variant, because matching is by whole word with case and accents folded
+# (pipeline/blocklist.py): "puta" does not cover "putas", and "culo" does not fire inside "músculo".
+#
+# AN AMBIGUOUS WORD DOES NOT FILTER AN INSULT, IT GAGS THE AIAGENT: a match ends the turn after the generation was paid for and
+# leaves the customer with no answer, so "forro" and "retrasado" do not belong here (tests/test_blocklist.py refuses them).
+#
+# BUMP THE VERSION WHEN THE LIST CHANGES: pipeline_steps.version writes it, and without that every earlier row names a list that
+# no longer exists — the argument signal_evaluations.classifier_version exists for.
+version: 1
+
+# Only the outbound run reads this list: O6b is about the AIAgent not swearing, not about refusing a customer who does.
+terms:
+  - hijo de puta
+  - hija de puta
+  - hijos de puta
+  - hijas de puta
+  - puta
+  - putas
+  - puto
+  - putos
+  - pelotudo
+  - pelotuda
+  - pelotudos
+  - pelotudas
+  - imbécil
+  - imbéciles
+  - idiota
+  - idiotas
+  - tarado
+  - tarada
+  - mierda
+  - sorete
+  - conchudo
+  - conchuda
+  - mogólico
+  - mogólica

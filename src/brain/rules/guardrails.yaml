@@ -1,0 +1,35 @@
+# The guardrail of ADR-0016: the net under the redaction checkpoint of 03-capa-prompts regla 4, for the false negative ADR-0006
+# admits it has. Versioned as data (regla 9) so a pattern that redacts too much is fixed by editing this file, never Python.
+# The data and their markers are ADR-0006's; what is ours is how much text each pattern may claim.
+version: 1
+
+# Longest number first, because a CBU read by the shorter patterns would come out as three CUITs and the trace would report three
+# reasons for one datum. requires_context is written even when empty, the way a route writes its roles: never by omission.
+redactions:
+  # 22 digits, split after the first 8 the way a bank writes it: nothing else in a rental conversation is that long.
+  - type: cbu
+    marker: "[CBU]"
+    pattern: '(?<!\d)\d{8}[ .-]?\d{14}(?!\d)'
+    requires_context: []
+
+  # 11 digits, and one marker for CUIT and CUIL: in text there is no way to tell them apart, and naming one would assert what
+  # nobody knows (decision D6 of ADR-0042, which amends the four markers of ADR-0006 to three). The columns stay apart
+  # (ADR-0031). Its cost is written in that ADR: an Argentine mobile with its 9 prefix is also 11 digits.
+  - type: cuit_cuil
+    marker: "[CUIT/CUIL]"
+    pattern: '(?<!\d)\d{2}[ .-]?\d{8}[ .-]?\d(?!\d)'
+    requires_context: []
+
+  # A DNI written with its dots is unmistakable, so it holds on its own.
+  - type: dni
+    marker: "[DNI]"
+    pattern: '(?<!\d)\d{1,2}\.\d{3}\.\d{3}(?!\d)'
+    requires_context: []
+
+  # The same number with no dots only holds when the message says what it is: 7 or 8 bare digits is also what a property costs,
+  # and a rule that claimed all of them would redact the prices of a real estate business. The cost is the false negative
+  # ADR-0006 asks to measure rather than promise away: a DNI with no dots in a message that never says the word escapes.
+  - type: dni
+    marker: "[DNI]"
+    pattern: '(?<!\d)\d{7,8}(?!\d)'
+    requires_context: ['dni', 'documento', 'd\.n\.i']

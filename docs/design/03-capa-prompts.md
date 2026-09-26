@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/03-capa-prompts.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) |
+| **Fecha** | 2026-08-08 · Regla 2 enmendada 2026-08-10 (Paso 6 — ADR-0015) · Regla 1 enmendada 2026-09-06 (Fase 1, tarea 12) · Regla 1 enmendada 2026-09-20 (Fase 7 — ADR-0041 regla 12) · §4.2 corregido 2026-09-20 (ADR-0041 regla 6) · la lista de marcadores del paso 2 de la Regla 4 enmendada 2026-09-25 (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) decisión D6: `[CUIT]` y `[CUIL]` se emiten como un único `[CUIT/CUIL]`) |
 | **Etapa** | Diseño — Paso 4 (Etapa B) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01, F03, F04, F05, F10, F11, F31), sección 6.3, 7.2 (OE1, OE2) · [00-convenciones.md](00-convenciones.md) · [01-trazabilidad.md](01-trazabilidad.md) — H-01, H-02 · [02-decisiones/0006-anonimizacion-de-pii.md](02-decisiones/0006-anonimizacion-de-pii.md) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) y [DER/relaciones.md](DER/relaciones.md) — las tablas de esta capa ya están catalogadas ahí; este documento no las repite, define las **reglas** que las tablas por sí solas no dicen |
@@ -95,7 +95,7 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 **Decisión.** Un único checkpoint, inmediatamente después de que el `message_batch` cierra:
 
 1. Se extrae el dato personal del texto crudo del bloque (F31) y se cifra y persiste en `contact_attributes` (con `source_message_id`).
-2. Se sustituye el valor por su marcador de tipo (`[DNI]`, `[CUIT]`, `[CUIL]`, `[CBU]` — ADR-0006).
+2. Se sustituye el valor por su marcador de tipo (`[DNI]`, `[CUIT/CUIL]`, `[CBU]` — ADR-0006, enmendado por [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md) D6: los once dígitos de un CUIT y de un CUIL no se distinguen en texto libre, así que comparten marcador).
 3. **Todo lo que sigue** — detección de intención, reescritura del contexto, consulta de RAG, armado de `system`/`user`, generación — trabaja exclusivamente sobre el texto ya redactado.
 
 **Justificación.** `conversation_context_versions.rewritten_by_model` indica que la reescritura del contexto es en sí misma una llamada a un modelo — no lógica propia. Si ese modelo (o el de embeddings del RAG) fuera un proveedor externo, redactar sólo antes de la generación final dejaría una segunda vía de fuga que ADR-0006 no cubre. Un único checkpoint temprano es más simple de auditar y de defender: ninguna llamada a un modelo, propio o externo, ve el dato crudo después de este punto en el diagrama del Paso 8.

@@ -70,7 +70,7 @@ sonia/
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
 │   │   │   ├── extraction.py           devuelve; el núcleo persiste
-│   │   │   ├── frustration.py
+│   │   │   ├── frustration.py          no se crea hasta que exista el modelo (ADR-0044)
 │   │   │   ├── intent.py
 │   │   │   └── transfer.py
 │   │   │
@@ -101,6 +101,7 @@ sonia/
 │   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
 │   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
+│   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py
 │   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código

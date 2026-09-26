@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Documento** | `docs/design/07-secuencia-del-turno.md` |
-| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo |
+| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo · **§1 y el diagrama de §2 enmendados 2026-09-26** (Fase 9 — [ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)): hasta la Fase 16 el cerebro escribe **tres** `signal_evaluations` y no cuatro; `frustration` queda registrada como salteada en el `detail_json` del `triage` |
 | **Fecha** | 2026-08-22 |
 | **Base documental** | [Anteproyecto](../SONIA_Anteproyecto.pdf) — F02, F10, F12, F21, F29 · [ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md) (pipeline) · [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) (frontera de procesos) · [03-capa-prompts.md](03-capa-prompts.md) (las cinco reglas) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) — este documento no repite atributos, define **orden y dueño de cada escritura** |
@@ -74,7 +74,7 @@ El cerebro **lee el resto desde PostgreSQL**. No se duplica estado en el cuerpo:
 }
 ```
 
-**`transfer.proposed` es una propuesta, no un hecho.** El cerebro ya escribió las cuatro `signal_evaluations` del turno —disparen o no, según [ADR-0014](02-decisiones/0014-medicion-de-oe3-y-oe4.md)— y señala cuál cruzó el umbral. **La fila de `transfer_events` la escribe el núcleo**, en la misma transacción en que mueve `conversations.status` y `operator_id`.
+**`transfer.proposed` es una propuesta, no un hecho.** El cerebro ya escribió las cuatro `signal_evaluations` del turno —disparen o no, según [ADR-0014](02-decisiones/0014-medicion-de-oe3-y-oe4.md)— y señala cuál cruzó el umbral. **Hasta la Fase 16 son tres:** `frustration` no se evalúa y queda anotada como salteada en el `detail_json` del `triage` ([ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)). **La fila de `transfer_events` la escribe el núcleo**, en la misma transacción en que mueve `conversations.status` y `operator_id`.
 
 > **Por qué la transferencia no puede escribirla el cerebro.** El catálogo ya separa las dos cosas: `signal_evaluations` es la evidencia y `transfer_events` es la acción. Si la acción se escribiera en Python y el cambio de estado en Go, la transferencia quedaría partida entre dos servicios **sin una transacción que la abarque** — y el estado intermedio (evento escrito, conversación todavía en manos de la IA) es exactamente el que produce una conversación transferida que nadie atiende.
 
@@ -115,7 +115,7 @@ sequenceDiagram
     C->>DB: INSERT pipeline_steps · blocklist + guardrail (inbound)
     C->>DB: INSERT contact_attributes · PII redactada
     C->>DB: INSERT pipeline_steps (triage)
-    C->>DB: INSERT signal_evaluations · las 4 señales de F12
+    C->>DB: INSERT signal_evaluations · las 4 señales de F12 (3 hasta la Fase 16 · ADR-0044)
     C->>Q: búsqueda semántica
     C->>DB: INSERT retrieval_logs · pipeline_steps (retrieval, grounding)
     C->>DB: INSERT conversation_context_versions · turno t+1

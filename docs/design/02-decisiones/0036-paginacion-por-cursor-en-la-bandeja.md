@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño: el orden de la bandeja se declara decisión propia y los índices pasan a ser la regla 10 · regla 9 ampliada por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), reglas 11 y 14: un catálogo que no crece —los agentes IA y los números de la cuenta— no pagina |
+| **Estado** | Aceptada · revisada el 2026-09-13, antes del merge, tras la revisión de diseño: el orden de la bandeja se declara decisión propia y los índices pasan a ser la regla 10 · regla 9 ampliada por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), reglas 11 y 14: un catálogo que no crece —los agentes IA y los números de la cuenta— no pagina · **el pendiente de §4 lo cerró [ADR-0050](0050-filtros-de-la-bandeja.md)** (2026-09-26): ningún filtro de F23 cambia el orden, así que un listado filtrado pagina con este mismo cursor |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 5 (bandeja manual mínima) |
 | **Resuelve** | Cómo se pagina un listado que se reordena mientras se lo lee, y por qué el núcleo pasa a tener dos formas de paginar |
@@ -77,7 +77,7 @@ La pregunta llegó en la Fase 5 porque es la primera vez que un listado del núc
 
 | Qué | Por qué no se resuelve acá |
 |---|---|
-| **Cómo convive el cursor con los filtros de F23** | Un filtro que no cambia el orden no afecta al cursor. Uno que lo cambie —ordenar *"en espera"* por tiempo de espera— necesita su propio cursor. Es de la **Fase 10** |
+| ~~**Cómo convive el cursor con los filtros de F23**~~ → **cerrado por [ADR-0050](0050-filtros-de-la-bandeja.md), regla 11** | Un filtro que no cambia el orden no afecta al cursor. Uno que lo cambie —ordenar *"en espera"* por tiempo de espera— necesita su propio cursor. Es de la **Fase 10** |
 
 ## 5. Alternativas descartadas
 

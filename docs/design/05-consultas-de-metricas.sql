@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046)
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -777,11 +777,10 @@ ORDER  BY te.rubric_version;
 
 
 -- #############################################################################
--- OE6 — 90 % de las consultas del dominio sin escalada          [BLOQUEADA]
+-- OE6 — 90 % de las consultas del dominio sin escalada          [OK]
 -- #############################################################################
 --
--- DESBLOQUEA: H-24 (b) y (c) — diferidas al Paso 11.
---             (a) ya está resuelta por ADR-0016.
+-- H-24: (a) resuelta por ADR-0016; (b) y (c) por ADR-0024.
 --
 -- ORIGEN (7.2, OE6, textual):
 --   "logrando que el 90% de las consultas dentro del dominio del negocio sean
@@ -796,44 +795,42 @@ ORDER  BY te.rubric_version;
 --     validarlo contra ground truth en una muestra (falta el valor en
 --     `AnnotationType`).
 --
--- (b) FALTA — la unidad de "consulta". Abajo se asume el BLOQUE, que es lo que
---     03-capa-prompts.md llama turno. Con generación o con intención detectada
---     el número cambia, y F11 admite varias intenciones por bloque.
+-- (b) RESUELTO (ADR-0024) — la unidad de "consulta" es el BLOQUE, que es lo que
+--     03-capa-prompts.md llama turno, aunque F11 admita varias intenciones por
+--     bloque.
 --
--- (c) FALTA — qué cuenta como "escalada". ¿Cualquier transferencia, o sólo la de
---     tipo `out_of_domain`? Si un cliente pregunta algo del dominio y escala por
---     FRUSTRACIÓN, literalmente no fue "respondida sin escalada" — pero OE6 mide
---     cobertura del RAG, no paciencia del cliente. Y como la escalada mueve la
---     CONVERSACIÓN ENTERA, hay que decidir además qué pasa con las consultas
---     posteriores del mismo chat.
+-- (c) RESUELTO (ADR-0024) — sólo cuenta como "escalada" la transferencia de tipo
+--     `out_of_domain`: OE6 mide cobertura del RAG, no paciencia del cliente. Y
+--     como la escalada mueve la CONVERSACIÓN ENTERA, los bloques posteriores a
+--     ella quedan fuera del denominador.
 --
--- FORMA DE LA CONSULTA (con (b) y (c) asumidos y marcados)
+-- FORMA DE LA CONSULTA
 
-WITH consultas_del_dominio AS (        -- (b): unidad = bloque
+WITH escaladas_del_dominio AS (        -- (c): sólo out_of_domain (ADR-0024)
+    SELECT te.conversation_id,
+           min(te.created_at) AS escalada_at
+    FROM   transfer_events te
+    JOIN   signal_evaluations se ON se.id = te.signal_evaluation_id
+    WHERE  se.signal_type = 'out_of_domain'
+    GROUP  BY te.conversation_id
+),
+consultas_del_dominio AS (             -- (b): unidad = bloque
     SELECT ps.message_batch_id,
            mb.conversation_id,
            mb.closed_at
     FROM   pipeline_steps ps
     JOIN   message_batches mb ON mb.id = ps.message_batch_id
+    LEFT   JOIN escaladas_del_dominio e ON e.conversation_id = mb.conversation_id
     WHERE  ps.step = 'triage'
       AND  ps.outcome = 'in_domain'    -- (a): veredicto previo a recuperar
+      AND  (e.escalada_at IS NULL OR mb.closed_at < e.escalada_at)   -- (c): lo posterior no cuenta
       AND  ps.detail_json->>'mode' IS DISTINCT FROM 'suggestion'   -- ADR-0046: el alcance es el modo autónomo
       AND  mb.closed_at >= :desde AND mb.closed_at < :hasta
 ),
-escaladas AS (                          -- (c): SUPUESTO — cualquier transferencia
+escaladas AS (                          -- (c): la conversación terminó escalando por fuera de dominio
     SELECT c.message_batch_id
     FROM   consultas_del_dominio c
-    WHERE  EXISTS (
-        SELECT 1 FROM transfer_events te
-        WHERE te.conversation_id = c.conversation_id
-    )
-    -- Variante (c'): sólo escaladas por fuera de dominio. Descomentar y
-    -- comentar la de arriba si el Paso 11 decide así.
-    -- WHERE EXISTS (
-    --     SELECT 1 FROM transfer_events te
-    --     JOIN signal_evaluations se ON se.id = te.signal_evaluation_id
-    --     WHERE te.conversation_id = c.conversation_id
-    --       AND se.signal_type = 'out_of_domain')
+    JOIN   escaladas_del_dominio e ON e.conversation_id = c.conversation_id
 )
 SELECT count(*)                                                    AS consultas_del_dominio,
        count(*) - (SELECT count(*) FROM escaladas)                 AS sin_escalada,
@@ -950,7 +947,7 @@ ORDER  BY conversion_pct DESC NULLS LAST;
 --   OE3  [OK]         · con ADR-0014 (precision, unidad = conversación)
 --   OE4  [PARCIAL]    · frustración OK con ADR-0014; intención sin definir
 --   OE5  [NO-SQL]     · cobertura de tests
---   OE6  [BLOQUEADA]  · H-24 (b) y (c); (a) resuelta por ADR-0016
+--   OE6  [OK]         · con ADR-0016 (a) y ADR-0024 (b) y (c)
 --   OE7  [PARCIAL]    · resolución autónoma OK; tono bloqueado por H-22
 --   F34  [OK]
 --   F35  [BLOQUEADA]  · H-25 — regla de atribución

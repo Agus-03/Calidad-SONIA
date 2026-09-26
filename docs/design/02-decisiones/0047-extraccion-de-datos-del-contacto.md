@@ -6,7 +6,7 @@
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 9 (contexto dinámico y transferencia) |
 | **Resuelve** | La contradicción O10 de [ADR-0042](0042-pipeline-de-decision-del-turno.md) —quién escribe `contact_attributes`—, qué datos extrae F31, con qué se extrae cada uno, y qué pasa cuando un dato extraído choca con uno cargado a mano |
-| **Requisitos afectados** | F31 · F30 · sección 7.3 (Ley 25.326) · ADR-0006 |
+| **Requisitos afectados** | F31 · F30 · sección 5.2 (filtrado previo al envío al modelo externo) · sección 7.3 (Ley 25.326) · ADR-0006 |
 | **Naturaleza** | F31 dice *"El LLM extrae datos del usuario durante la conversación. Toggle por agente. Datos sensibles encriptados según Ley 25.326"*. **No enumera qué datos**: la lista de §2.2 es decisión del equipo. Y **§2.3 se aparta de la letra de F31** para tres de ellos, por una contradicción del anteproyecto que se declara ahí |
 | **Enmienda** | [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§0** — `contact_attributes` sale de la lista de lo que escribe el cerebro y pasa a la del núcleo; y **el diagrama de §2** — la flecha *"C->>DB: INSERT contact_attributes"* pasa al núcleo, en la transacción que cierra el turno · [03-capa-prompts.md](../03-capa-prompts.md), **Regla 4, paso 1** — el *checkpoint* extrae y sustituye, pero **no persiste**: lo extraído viaja en la respuesta del turno y lo cifra y guarda el núcleo al cerrar. El orden *"persistir y recién entonces sustituir"* deja de valer · [ADR-0042](0042-pipeline-de-decision-del-turno.md), **O10** — deja de ser una contradicción abierta |
 | **Relacionada con** | [ADR-0006](0006-anonimizacion-de-pii.md), [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md), [ADR-0031](0031-cifrado-en-reposo-de-datos-sensibles.md), [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md), [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), [ADR-0042](0042-pipeline-de-decision-del-turno.md), [08-structure-rules.md](../08-structure-rules.md) |
@@ -47,7 +47,7 @@ Los tres primeros son los que la sección 7.3 del anteproyecto nombra como sensi
 - **`dni`, `cuit_cuil` y `cbu` los saca el *checkpoint* con los mismos patrones con que los redacta**, antes de cualquier llamada a un modelo.
 - **`first_name`, `last_name` y `email` los saca un clasificador con LLM** (`classifiers/extraction.py`), sobre el texto ya redactado.
 
-**Es una desviación de la letra de F31**, que dice *"el LLM extrae"*, y se declara así: para los tres sensibles, F31 contradice ADR-0006 y la sección 7.3, y **gana la protección del dato**, que es la que tiene una ley detrás.
+**Es una desviación de la letra de F31**, que dice *"el LLM extrae"*, y se declara así: para los tres sensibles, F31 contradice ADR-0006 y la sección 5.2, que plantea como problema la falta de *"filtrado previo al envío al modelo externo"*, y **gana la protección del dato**, que es la que tiene una ley detrás.
 
 ### 2.4 El *toggle* por agente
 

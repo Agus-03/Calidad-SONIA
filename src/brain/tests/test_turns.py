@@ -305,9 +305,15 @@ def test_turns_fails_when_the_model_has_no_tariff() -> None:
     assert response.status_code == 200, "a configuration error is not a reason to tell the core to retry"
     assert response.json()["outcome"] == "failed"
     assert "generations" not in connection.seen, "a turn that never ran left evidence saying it did"
-    # What did run is kept, which is section 5: one DELETE and one row per step of the leg that decided before the generation was
-    # refused. Without them this batch would read as one nothing ever ran on.
-    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
+    # What did run is kept, which is section 5: one DELETE, one row per step of the leg that decided, and the row of the generation
+    # that did not happen. Without them this batch would read as one nothing ever ran on.
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND) + 1
+    steps = [params for table, params in connection.sent if table == "pipeline_steps" and "position" in params]
+    # The row that says where the turn died, and the only evidence it leaves: generations has none at all. The error is named by
+    # its class and never by the provider's own text.
+    assert steps[-1]["step"] == "generation"
+    assert steps[-1]["outcome"] == "failed"
+    assert steps[-1]["position"] == len(runner.INBOUND) + 1
 
 
 # doubled is the whole of F11 against the doubled adapter: the classifier answers two intentions, they are written as evidence,
@@ -386,8 +392,31 @@ def test_a_turn_the_pipeline_let_through_still_leaves_its_trace() -> None:
         response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     assert response.json()["outcome"] == "generated"
-    # One DELETE and one INSERT per step of the two legs, in the transaction that holds the rest of the evidence of the turn.
-    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND) + len(runner.OUTBOUND)
+    # One DELETE and one INSERT per step of the two legs, plus the generation between them, in the transaction that holds the rest
+    # of the evidence of the turn.
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND) + 1 + len(runner.OUTBOUND)
+
+
+# The sixth step of ADR-0016, which is the one row of the trace that mostly points at another table: the tokens, the cost and the
+# text are in generations, and what this row adds is that the generation happened, when, and in what order (H-23).
+def test_the_generation_leaves_its_own_row_pointing_at_the_answer_it_produced() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    steps = [params for table, params in connection.sent if table == "pipeline_steps" and "position" in params]
+    row = next(p for p in steps if p["step"] == "generation")
+    written = [params for table, params in connection.sent if table == "generations" and "prompt_rendered" in params]
+
+    assert row["outcome"] == "ok"
+    # outbound, the same reading the second run of the blocklist and the guardrail get: what it produced is the answer.
+    assert row["direction"] == "outbound"
+    assert row["score"] is None, "a step that produces no confidence wrote one"
+    # The pointer to the row that holds the rest, which is what makes the trace navigable instead of duplicated.
+    assert row["detail_json"].obj == {"generation_id": str(written[0]["id"])}
+    # Measured by generate() and not by the route, so the trace and generations do not disagree about the same provider call.
+    assert row["latency_ms"] == written[0]["latency_ms"]
 
 
 # ADR-0006 end to end, which is the assertion that makes the decision verifiable instead of declared: the redaction happens in a
@@ -460,8 +489,11 @@ def test_the_positions_of_the_trace_run_across_the_two_legs() -> None:
         http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
 
     steps = [params for table, params in connection.sent if table == "pipeline_steps" and "position" in params]
-    assert [p["position"] for p in steps] == [1, 2, 3, 4, 5], "the outbound leg started counting again"
-    assert [p["direction"] for p in steps] == ["inbound", "inbound", "inbound", "outbound", "outbound"]
+    assert [p["position"] for p in steps] == [1, 2, 3, 4, 5, 6], "the outbound leg started counting again"
+    assert [p["direction"] for p in steps] == ["inbound", "inbound", "inbound", "outbound", "outbound", "outbound"]
+    # The generation is the fourth thing that happened, between the leg that decided about the question and the one that decides
+    # about the answer: that position is what makes the whole turn readable in order (ADR-0016).
+    assert [p["step"] for p in steps] == ["blocklist", "guardrail", "triage", "generation", "blocklist", "guardrail"]
 
 
 # Section 2, and it is the rule somebody will want to "fix" the first day it costs a generation: the verdict is written once and
@@ -484,7 +516,9 @@ def test_a_step_that_could_not_decide_the_answer_loses_the_generation(monkeypatc
     assert "generations" not in connection.seen, "an answer nobody managed to check was written anyway"
     # The steps of the leg that did run are kept, and the intents of this turn go with the generation: what a failed turn leaves
     # behind is its trace and nothing else (section 5).
-    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND)
+    # The steps of the leg that ran plus the generation that did happen: what is lost is the generation row of the other table,
+    # which is written once and already with its verdict (section 2).
+    assert connection.seen.count("pipeline_steps") == 1 + len(runner.INBOUND) + 1
     assert "detected_intents" not in connection.seen
 
 

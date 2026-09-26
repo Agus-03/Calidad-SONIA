@@ -4,6 +4,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from decimal import Decimal
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
 from psycopg import AsyncConnection
@@ -13,7 +14,13 @@ from adapters.llm.registry import resolve
 from api.schemas.turn import TransferProposal, TurnRequest, TurnResponse
 from classifiers.intent import Intent, classify
 from infra import ids
-from infra.enums import GenerationStatus, PipelineStep, PromptComponentType, TransferSignalType
+from infra.enums import (
+    GenerationStatus,
+    MessageDirection,
+    PipelineStep,
+    PromptComponentType,
+    TransferSignalType,
+)
 from pipeline import notices, runner
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository import (
@@ -34,6 +41,11 @@ from prompts.repository import read_components
 
 router = APIRouter(tags=["turns"])
 logger = logging.getLogger("sonia.api.turns")
+
+# The outcome domain declared for the generation step in DER/entidades.md: it produced an answer or it did not. Written here and
+# not in a module of pipeline/, because this step has no module: what generates is generation.py and what decides is nothing.
+_OK = "ok"
+_FAILED = "failed"
 
 
 @router.post("/turns", response_model=TurnResponse)
@@ -129,15 +141,40 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "pipeline_steps": len(trace.steps),
     }
 
+    # Measured here and not inside generate(), for the one case where there is no generation to ask: a step that fell over still
+    # owes the trace a latency, and the row below is the only place this turn will ever say how long it waited.
+    started = perf_counter()
     try:
         generation = await generate(client=client, turn=turn, prompt=prompt, assembled_at=read.read_at)
     except (LLMError, UnpricedModel) as err:
         # failed and a 200: neither an unusable provider nor an unpriced model improves on a retry, so the core must not try again.
         logger.error("turn not generated", extra={"context": {**context, "error": str(err)}})
         # And the steps that did decide are kept, which section 5 asks of every turn that fell over halfway: this was the one place
-        # that dropped them, so a batch whose generation never happened read as a batch on which nothing had ever run.
-        await _write_trace(request, turn, trace.steps)
+        # that dropped them, so a batch whose generation never happened read as a batch on which nothing had ever run. The row of
+        # the generation goes with them, and it is the only evidence this turn leaves: generations has no row at all.
+        failed = _generated(
+            position=trace.next_position,
+            outcome=_FAILED,
+            version=prompt.rules_version,
+            latency_ms=round((perf_counter() - started) * 1000),
+            # The class of the error and never its message: a provider's text is its own, and this column is read by a person who
+            # needs to tell a timeout from an unpriced model, which is exactly what the name says.
+            detail={"error": type(err).__name__},
+        )
+        await _write_trace(request, turn, trace.steps + (failed,))
         return TurnResponse(outcome="failed")
+
+    # The sixth step of ADR-0016, and the only row of the trace whose latency is not measured by whoever writes it: generate()
+    # timed its own call, and using that number keeps the trace and generations from disagreeing about the same provider call.
+    generated = _generated(
+        position=trace.next_position,
+        outcome=_OK,
+        version=prompt.rules_version,
+        latency_ms=generation.latency_ms,
+        # The pointer and nothing else: the tokens, the cost and the text of this answer are in generations, and the DER already
+        # takes the cost of a row that mostly points at another table.
+        detail={"generation_id": str(generation.id)},
+    )
 
     # The steps that decide about the answer: the same blocklist and the same guardrail, about a text that did not exist when the
     # leg above ran. It continues the numbering, so the trace of the turn reads in order across the two legs (ADR-0016).
@@ -147,14 +184,16 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             turn=turn,
             client=client,
             text=generation.completion_text,
-            start_position=trace.next_position,
+            # One further along than the leg above ended, because the generation took that position: position is the order things
+            # happened in across the whole turn and not inside a leg (ADR-0016).
+            start_position=trace.next_position + 1,
             components=read.components,
         )
     except runner.StepFailed as err:
         # A declared cost and not an oversight (section 2): generations is written once and already with its verdict, so a brain
         # that falls over mid-guardrail loses that generation and leaves only the steps of the turn.
         logger.error("answer not decided", extra={"context": {**context, "error": str(err)}})
-        await _write_trace(request, turn, trace.steps + err.trace.steps)
+        await _write_trace(request, turn, trace.steps + (generated,) + err.trace.steps)
         return TurnResponse(outcome="failed")
 
     if answer.halted:
@@ -162,7 +201,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         # stopped and with what prompt it was produced. message_id stays NULL for ever, and the core never links it.
         generation = replace(generation, status=GenerationStatus.BLOCKED)
 
-    steps = trace.steps + answer.steps
+    steps = trace.steps + (generated,) + answer.steps
     context["pipeline_steps"] = len(steps)
 
     # A new connection and not the first one held open: the calls above take seconds and the pool is shared.
@@ -210,7 +249,27 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     )
 
 
-# Decision O1c: a question outside the domain is not answered, it is handed to a person. The evaluation is written whether it
+# The row of the sixth step of ADR-0016, built here and not by the runner: the runner walks one leg, and the generation is what
+# happens between the two. Without it the trace jumps from position 3 to 4 over the one thing in the turn that cost money, and a
+# turn that died generating says nothing about where it died.
+def _generated(*, position: int, outcome: str, version: int, latency_ms: int, detail: dict) -> TracedStep:
+    return TracedStep(
+        step=PipelineStep.GENERATION,
+        # outbound, because what this step produced is the answer: it is the same reading direction has on the second run of the
+        # blocklist and the guardrail, which decide about that answer right after this row.
+        direction=MessageDirection.OUTBOUND,
+        position=position,
+        outcome=outcome,
+        # The version of the rules the prompt was assembled with (decision D5, regla 9): what decided how this turn was asked is
+        # the assembly, and the model that answered is already a column of generations.
+        version=str(version),
+        latency_ms=latency_ms,
+        # No score: this step produces no confidence, and the two that do are triage and grounding.
+        detail=detail,
+    )
+
+
+# Decision O1c: a question outside the domain is not answered, it is handed to a person.
 # proposes anything or not, which is what signal_evaluations exists for — a detector whose precision is an objective has to persist
 # its output even when nothing happened (OE4), and here it is also the denominator ADR-0024 measures "sin escalada" against.
 #

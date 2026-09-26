@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/design/01-trazabilidad.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) · ampliada 2026-09-09 con los de la Fase 3 (§5.5) |
+| **Fecha** | 2026-08-06 · ampliada 2026-08-10 con los hallazgos del recorrido del Paso 6 (§5.3) · ampliada 2026-09-09 con los de la Fase 3 (§5.5) · las filas de F04 y F05 anotadas 2026-09-26 con dónde quedaron resueltas (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md) y [ADR-0049](02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md)); el símbolo sigue siendo el diagnóstico del Anexo C |
 | **Etapa** | Diseño — Paso 2 (Fundaciones) |
 | **Base documental** | [SONIA_Anteproyecto.pdf](../SONIA_Anteproyecto.pdf) — Anexo A (F01–F39), Anexo B (roles), Anexo C (modelo de datos), sección 7.2 (OE1–OE7) |
 | **Depende de** | [00-convenciones.md](00-convenciones.md) |
@@ -46,8 +46,8 @@ Una fila por cada requisito funcional (F01–F39) y por cada objetivo específic
 | **F01** | Configuración modular del agente | `ai_agents` | Los seis componentes (objetivo, personalidad, comportamiento, tono, voz de marca, reglas) + umbral de transferencia | ⚠️ La entidad existe, pero los siete valores están comprimidos en `components_json`. Ver **H-01** y **H-04** |
 | **F02** | Tres modos de operación | `ai_agents`, `conversations` | `default_mode` (por agente) + `mode` (por conversación) | ✅ El Anexo C separa correctamente el modo por defecto del modo efectivo |
 | **F03** | Previsualización del prompt | `ai_agents` | Lectura de cada componente por separado, en tiempo real | ⚠️ Con un JSON hay que parsear en cada render y no se puede mostrar el aporte de cada componente. Ver **H-01** |
-| **F04** | **Reescritura adaptativa** | — | Objeciones, intención detectada y datos del cliente, **actualizados por turno** | ❌ **No existe ninguna entidad** donde vivan. `messages.prompt_snapshot_json` guarda lo que se envió, no el estado del contexto. Ver **H-02** |
-| **F05** | Visualización del razonamiento | `messages` | `reasoning_json` apuntando a **qué componentes** influyeron | ⚠️ El campo existe, pero no puede referenciar componentes que no son filas. Ver **H-01** |
+| **F04** | **Reescritura adaptativa** | — | Objeciones, intención detectada y datos del cliente, **actualizados por turno** | ❌ **No existe ninguna entidad** donde vivan. `messages.prompt_snapshot_json` guarda lo que se envió, no el estado del contexto. Ver **H-02** · **Resuelto** en el modelo nuevo con `conversation_contexts` y `conversation_context_versions`, y construido en la Fase 9: el cerebro reescribe y versiona, y el núcleo guarda el contexto vigente ([ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)) |
+| **F05** | Visualización del razonamiento | `messages` | `reasoning_json` apuntando a **qué componentes** influyeron | ⚠️ El campo existe, pero no puede referenciar componentes que no son filas. Ver **H-01** · **Resuelto** en el modelo nuevo con `generation_components`, que guarda la versión exacta de cada componente ensamblado; `reasoning_json` queda sin uso. Construido en la Fase 9: todos los roles ven qué componentes se usaron y sólo el admin su texto ([ADR-0049](02-decisiones/0049-visualizacion-de-los-componentes-de-cada-respuesta.md)) |
 | **F06** | Pipeline RAG | `knowledge_bases` | Documentos (plural), hasta 100 MB por agente, y fragmentos recuperables | ⚠️ La entidad modela **un archivo** (`filename`, `size_bytes`); `embeddings_count` es un entero suelto que no permite referenciar fragmentos. Ver **H-06** |
 | **F07** | Acceso a respuestas rápidas (por la IA) | `quick_replies` | Lectura del catálogo | ✅ |
 | **F08** | Visualización de plantillas Meta | — | Plantilla, estado, motivo de rechazo, sugerencia del LLM | ❌ **No existe entidad de plantilla.** Ver **H-05** |

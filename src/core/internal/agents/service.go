@@ -122,6 +122,7 @@ func (s *Service) Create(ctx context.Context, accountID, operatorID uuid.UUID, c
 		if created, err = repo.Create(ctx, AIAgent{
 			ID: id.New(), AccountID: accountID, Name: c.Name, Description: c.Description,
 			LLMProvider: c.LLMProvider, LLMModel: c.LLMModel, Temperature: c.Temperature, MaxTokens: c.MaxTokens,
+			ExtractionEnabled: c.ExtractionEnabled,
 		}); err != nil {
 			return err
 		}

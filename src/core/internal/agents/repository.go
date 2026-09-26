@@ -21,7 +21,8 @@ func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec
 // WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).
 func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
-const agentColumns = `id, account_id, name, description, llm_provider, llm_model, temperature, max_tokens, active, created_at, updated_at`
+const agentColumns = `id, account_id, name, description, llm_provider, llm_model, temperature, max_tokens, active, extraction_enabled,
+                      created_at, updated_at`
 
 // Removed agents are excluded here and nowhere else, so every read of the package treats a removal as absence (C09).
 const agentSelect = `
@@ -32,7 +33,7 @@ WHERE  deleted_at IS NULL`
 func scanAIAgent(row pgx.Row) (AIAgent, error) {
 	var a AIAgent
 	err := row.Scan(&a.ID, &a.AccountID, &a.Name, &a.Description, &a.LLMProvider, &a.LLMModel,
-		&a.Temperature, &a.MaxTokens, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+		&a.Temperature, &a.MaxTokens, &a.Active, &a.ExtractionEnabled, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return AIAgent{}, ErrNotFound
 	}
@@ -77,28 +78,29 @@ func (r *Repository) ByIDForUpdate(ctx context.Context, accountID, agentID uuid.
 // default_mode has no default in 0001 and is not part of the API until Fase 9, so every agent is born with the mode the conversation
 // aggregate already assumes for it (ADR-0038).
 const agentInsert = `
-INSERT INTO ai_agents (id, account_id, name, description, default_mode, llm_provider, llm_model, temperature, max_tokens)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO ai_agents (id, account_id, name, description, default_mode, llm_provider, llm_model, temperature, max_tokens,
+                       extraction_enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING ` + agentColumns
 
 // Create returns the row as PostgreSQL wrote it, because the clock and the default of active are the database's (C06).
 func (r *Repository) Create(ctx context.Context, a AIAgent) (AIAgent, error) {
 	return scanAIAgent(r.exec.QueryRow(ctx, agentInsert,
 		a.ID, a.AccountID, a.Name, a.Description, enums.AgentModeAutonomous,
-		a.LLMProvider, a.LLMModel, a.Temperature, a.MaxTokens))
+		a.LLMProvider, a.LLMModel, a.Temperature, a.MaxTokens, a.ExtractionEnabled))
 }
 
 const agentUpdate = `
 UPDATE ai_agents
 SET    name = $3, description = $4, llm_provider = $5, llm_model = $6, temperature = $7, max_tokens = $8, active = $9,
-       updated_at = now()
+       extraction_enabled = $10, updated_at = now()
 WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING ` + agentColumns
 
 // Update writes the whole configuration: the service already merged what was sent into what the locked row said.
 func (r *Repository) Update(ctx context.Context, accountID, agentID uuid.UUID, c Config) (AIAgent, error) {
 	return scanAIAgent(r.exec.QueryRow(ctx, agentUpdate, accountID, agentID,
-		c.Name, c.Description, c.LLMProvider, c.LLMModel, c.Temperature, c.MaxTokens, c.Active))
+		c.Name, c.Description, c.LLMProvider, c.LLMModel, c.Temperature, c.MaxTokens, c.Active, c.ExtractionEnabled))
 }
 
 // The predicate repeats deleted_at IS NULL so removing twice reports a missing agent instead of moving the timestamp.

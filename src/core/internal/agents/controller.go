@@ -12,8 +12,8 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// The fields an agent answers to in JSON. default_mode and extraction_enabled are not among them until Fase 9, so sending them is
-// refused as unknown instead of saved without effect (ADR-0038).
+// The fields an agent answers to in JSON. default_mode is not among them, so sending it is refused as unknown instead of saved
+// without effect (ADR-0038); extraction_enabled is, since the brain reads it (ADR-0047, section 2.4).
 const (
 	fieldName        = "name"
 	fieldDescription = "description"
@@ -22,11 +22,12 @@ const (
 	fieldTemperature = "temperature"
 	fieldMaxTokens   = "max_tokens"
 	fieldActive      = "active"
+	fieldExtraction  = "extraction_enabled"
 )
 
 // active is not writable on create: a new agent is born active, and pausing it is an edit with an audit row of its own.
 var (
-	createFields = []string{fieldName, fieldDescription, fieldLLMProvider, fieldLLMModel, fieldTemperature, fieldMaxTokens}
+	createFields = []string{fieldName, fieldDescription, fieldLLMProvider, fieldLLMModel, fieldTemperature, fieldMaxTokens, fieldExtraction}
 	updateFields = append([]string{fieldActive}, createFields...)
 )
 
@@ -51,8 +52,10 @@ type agentResponse struct {
 	Temperature *float64 `json:"temperature"`
 	MaxTokens   *int     `json:"max_tokens"`
 	Active      bool     `json:"active"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
+	// F31 extracts nothing for an agent that has it off (ADR-0047, section 2.4).
+	ExtractionEnabled bool   `json:"extraction_enabled"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 type listResponse struct {
@@ -62,7 +65,7 @@ type listResponse struct {
 func present(a AIAgent) agentResponse {
 	return agentResponse{
 		ID: a.ID.String(), Name: a.Name, Description: a.Description, LLMProvider: a.LLMProvider, LLMModel: a.LLMModel,
-		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active,
+		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active, ExtractionEnabled: a.ExtractionEnabled,
 		CreatedAt: a.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: a.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -241,6 +244,7 @@ func applier(raw map[string]json.RawMessage) (func(*Config), error) {
 	var temperature *float64
 	var maxTokens *int
 	var active *bool
+	var extraction *bool
 
 	for _, err := range []error{
 		text(fieldName, func(c *Config, s string) { c.Name = s }),
@@ -250,6 +254,7 @@ func applier(raw map[string]json.RawMessage) (func(*Config), error) {
 		nullable(fieldTemperature, &temperature, func(c *Config) { c.Temperature = temperature }),
 		nullable(fieldMaxTokens, &maxTokens, func(c *Config) { c.MaxTokens = maxTokens }),
 		nullable(fieldActive, &active, func(c *Config) { c.Active = *active }),
+		nullable(fieldExtraction, &extraction, func(c *Config) { c.ExtractionEnabled = *extraction }),
 	} {
 		if err != nil {
 			return nil, err
@@ -257,6 +262,9 @@ func applier(raw map[string]json.RawMessage) (func(*Config), error) {
 	}
 	if _, sent := raw[fieldActive]; sent && active == nil {
 		return nil, soniahttp.BadRequest("invalid_body", "the field active has to be true or false")
+	}
+	if _, sent := raw[fieldExtraction]; sent && extraction == nil {
+		return nil, soniahttp.BadRequest("invalid_body", "the field extraction_enabled has to be true or false")
 	}
 
 	return func(c *Config) {

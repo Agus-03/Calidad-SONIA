@@ -330,3 +330,23 @@ func TestAFailedWriteLeavesNoAudit(t *testing.T) {
 		t.Fatalf("an audit row was written for a change that failed: %+v", repo.audits)
 	}
 }
+
+// ADR-0047, section 2.4, and ADR-0038 regla 7: switching what is kept about the contacts is configuration, so it is audited with
+// its before and after like a pause.
+func TestTheToggleOfF31IsSavedAndAudited(t *testing.T) {
+	existing := seeded("Agente")
+	repo := newStubRepo(existing)
+
+	on, err := serviceOver(repo, &stubInboxes{}, priced()).
+		Update(context.Background(), testAccount, testOperator, existing.ID, func(c *Config) { c.ExtractionEnabled = true })
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if !on.ExtractionEnabled {
+		t.Fatalf("updated = %+v, want extraction on", on)
+	}
+	_, ch := repo.lastChange()
+	if ch.Before == nil || ch.After == nil || ch.Before.ExtractionEnabled || !ch.After.ExtractionEnabled {
+		t.Fatalf("changes = %+v, want off before and on after", ch)
+	}
+}

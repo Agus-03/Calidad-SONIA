@@ -10,8 +10,8 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
-// AIAgent is the live row. default_mode and extraction_enabled are deliberately not here: neither changes anything until Fase 9,
-// and a field that saves without effect tells the administrator something that is not true (ADR-0038).
+// AIAgent is the live row. default_mode is deliberately not here: it changes nothing yet, and a field that saves without effect
+// tells the administrator something that is not true (ADR-0038). extraction_enabled is, since F31 reads it (ADR-0047, 2.4).
 type AIAgent struct {
 	ID          uuid.UUID
 	AccountID   uuid.UUID
@@ -23,9 +23,11 @@ type AIAgent struct {
 	Temperature *float64
 	MaxTokens   *int
 	// A pause that keeps the configuration: removing the agent is deleted_at, which no read of this package returns (ADR-0038).
-	Active    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Active bool
+	// The toggle of F31: off, the brain extracts nothing and never calls the extractor (ADR-0047, section 2.4).
+	ExtractionEnabled bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Config is what an administrator edits, and the shape the audit compares: the timestamps move on every write and would make every
@@ -38,18 +40,21 @@ type Config struct {
 	Temperature *float64 `json:"temperature"`
 	MaxTokens   *int     `json:"max_tokens"`
 	Active      bool     `json:"active"`
+	// Audited like the rest: switching what is kept about the contacts is a change of configuration (ADR-0038, regla 7).
+	ExtractionEnabled bool `json:"extraction_enabled"`
 }
 
 func (a AIAgent) Config() Config {
 	return Config{
 		Name: a.Name, Description: a.Description, LLMProvider: a.LLMProvider, LLMModel: a.LLMModel,
-		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active,
+		Temperature: a.Temperature, MaxTokens: a.MaxTokens, Active: a.Active, ExtractionEnabled: a.ExtractionEnabled,
 	}
 }
 
 // equal compares what the pointers hold, which is what a save with no change has to recognise so it writes nothing.
 func (c Config) equal(o Config) bool {
 	return c.Name == o.Name && c.LLMProvider == o.LLMProvider && c.LLMModel == o.LLMModel && c.Active == o.Active &&
+		c.ExtractionEnabled == o.ExtractionEnabled &&
 		samePtr(c.Description, o.Description) && samePtr(c.Temperature, o.Temperature) && samePtr(c.MaxTokens, o.MaxTokens)
 }
 

@@ -74,6 +74,7 @@ Dos reglas que conviene sostener:
 | [0046](0046-modo-sugerencia.md) | El modo sugerencia: el turno se arma igual, y la sugerencia es un borrador que el Operator puede copiar | Fase 9 · F02 · F27 · OE6 · OE7 · enmienda ADR-0041 regla 8, ADR-0024 §2–§5, ADR-0035 regla 11, ADR-0042 §2.4, `07-secuencia` §3 y el supuesto S4 de OE7 | Aceptada |
 | [0047](0047-extraccion-de-datos-del-contacto.md) | La extracción de datos del contacto: qué se extrae, quién lo guarda y qué pesa más | Fase 9 · F31 · 7.3 · O10 de ADR-0042 · enmienda `07-secuencia` §0 y §2, la Regla 4 de `03-capa-prompts` y ADR-0042 O10 | Aceptada · **el consentimiento (§2.6) sigue como propuesta** |
 | [0048](0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md) | El contexto dinámico: quién escribe cada tabla y cómo se reescribe en cada turno | Fase 9 · F04 · F11 · OE2 · OE4 · enmienda la regla 3 de `08-structure-rules`, `07-secuencia` §0, §2, §3 y §4 B.2 paso 5, y la Regla 3 de `03-capa-prompts` | Aceptada |
+| [0049](0049-visualizacion-de-los-componentes-de-cada-respuesta.md) | La visualización del razonamiento: qué componentes se muestran de cada respuesta, y a quién el texto | Fase 9 · F05 · Anexo B · enmienda `generations.reasoning_json` del DER | Aceptada |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

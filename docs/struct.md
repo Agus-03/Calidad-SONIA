@@ -155,6 +155,8 @@ sonia/
 │   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
 │   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
+│   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
+│   │   │   │   ├── reasoning_controller.go  GET /conversations/:id/generations/:generation_id/components
 │   │   │   │   ├── websocket.go        fan-out a los operadores conectados
 │   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
 │   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · escribe conversation_assignments

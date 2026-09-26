@@ -25,6 +25,15 @@ class TransferProposal(BaseModel):
     signal_evaluation_id: UUID
 
 
+# One datum of the contact the brain found, in the clear: the core encrypts it and decides whether it is kept (ADR-0047, 2.1).
+class ExtractedDatum(BaseModel):
+    key: Literal["dni", "cuit_cuil", "cbu", "first_name", "last_name", "email"]
+    value: str
+    # A number and not a string: it is a confidence between 0 and 1, not money, so C08 does not reach it.
+    confidence: float
+    source_message_id: UUID
+
+
 # blocked needs the guardrails of Fase 8 and transfer the classifiers of Fase 9; both are declared because the contract is section 1 whole.
 class TurnResponse(BaseModel):
     outcome: Literal["generated", "blocked", "failed"]
@@ -35,3 +44,5 @@ class TurnResponse(BaseModel):
     # the customer talking to nobody. A field of its own and not completion_text, because that one is a generation and section 4.2
     # says a refused generation must not be sendable. Null is silence, which is what decision O1c asks for outside the domain.
     notice_text: str | None = None
+    # Empty when the toggle of the agent is off, or nothing was found (ADR-0047, sections 2.4 and 2.7).
+    extracted: list[ExtractedDatum] = []

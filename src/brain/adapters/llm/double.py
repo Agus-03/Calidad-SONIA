@@ -40,6 +40,15 @@ REWRITER_ANSWER = (
     '"budget_signal": null, "intent_changed": false}'
 )
 
+# The heading the extractor of F31 opens its system prompt with, for the same reason as the three above.
+EXTRACTION_MARKER = "[EXTRACTOR DE DATOS]"
+
+# Nothing, unless the customer introduces themselves with the one sentence below: the smoke needs a name to reach the contact, and
+# an answer that always carried one would write it on every conversation the doubled stack runs.
+EXTRACTION_ANSWER = '{"first_name": null, "last_name": null, "email": null, "confidence": 0.9}'
+EXTRACTION_NAME_TRIGGER = "me llamo lucía pérez"
+EXTRACTION_NAME_ANSWER = '{"first_name": "Lucía", "last_name": "Pérez", "email": null, "confidence": 0.9}'
+
 
 class DoubleClient:
     provider = PROVIDER
@@ -60,6 +69,15 @@ class DoubleClient:
 
         if system and TRIAGE_MARKER in system:
             answer = TRIAGE_PERSON_ANSWER if TRIAGE_PERSON_TRIGGER in last.lower() else TRIAGE_ANSWER
+            return Completion(
+                text=answer,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(answer.split()),
+            )
+
+        if system and EXTRACTION_MARKER in system:
+            answer = EXTRACTION_NAME_ANSWER if EXTRACTION_NAME_TRIGGER in last.casefold() else EXTRACTION_ANSWER
             return Completion(
                 text=answer,
                 model=model,

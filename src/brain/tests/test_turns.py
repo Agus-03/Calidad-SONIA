@@ -73,6 +73,8 @@ class FakeDatabase:
 
 def message(text: str, direction: str = "inbound", sender: str = "contact") -> dict:
     return {
+        # Its own id, which is what an extracted datum names as the message it was said in (ADR-0047).
+        "id": uuid4(),
         "direction": direction,
         "sender_type": sender,
         "content_text": text,
@@ -156,7 +158,7 @@ def test_turns_answers_the_contract_of_section_1(settings: Settings) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer", "notice_text"}
+    assert set(payload) == {"outcome", "generation_id", "completion_text", "transfer", "notice_text", "extracted"}
     # failed and never blocked: this deployment has no key for the provider the row names, which is not a rejection.
     assert payload["outcome"] == "failed"
     assert payload["transfer"] is None
@@ -869,3 +871,89 @@ def test_a_turn_cut_at_the_triage_does_not_rewrite_the_context() -> None:
     assert response.json()["outcome"] == "blocked"
     assert "conversation_contexts" not in connection.seen
     assert "conversation_context_versions" not in connection.seen
+
+
+# ADR-0047: what the turn hands the core about the contact. The agent of these cases has the toggle on.
+def extracting(**overrides: list[dict]) -> dict[str, list[dict]]:
+    base = tables(**overrides)
+    base["ai_agents"] = [{**base["ai_agents"][0], "extraction_enabled": True}]
+    return base
+
+
+def test_a_generated_turn_hands_the_core_what_the_customer_said_about_themselves() -> None:
+    connection = FakeConnection(extracting(messages=[message("hola, me llamo Lucía Pérez y mi DNI es 30.123.456")]))
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "generated"
+    got = {e["key"]: e for e in payload["extracted"]}
+    # The DNI by the pattern of the checkpoint, in digits only; the name by the model, over the redacted text.
+    assert got["dni"]["value"] == "30123456" and got["dni"]["confidence"] == 1.0
+    assert got["first_name"]["value"] == "Lucía" and got["last_name"]["value"] == "Pérez"
+    assert "30.123.456" not in payload["completion_text"], "the DNI reached the model the extraction runs beside"
+
+
+def test_with_the_toggle_off_nothing_is_extracted_and_the_extractor_is_never_asked() -> None:
+    connection = FakeConnection(tables(messages=[message("me llamo Lucía Pérez, DNI 30123456")]))
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+    asked: list[str] = []
+
+    async def watching(self, **kwargs: object):
+        asked.append(str(kwargs.get("system") or ""))
+        return await original(self, **kwargs)
+
+    double_module.DoubleClient.complete = watching
+    try:
+        with client(connection, doubled()) as http:
+            payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert payload["extracted"] == []
+    assert not [s for s in asked if double_module.EXTRACTION_MARKER in s], "the extractor was called with the toggle off"
+
+
+# A request for a person often comes with the DNI: the checkpoint half runs on the turn the triage cut, the model half does not.
+def test_a_turn_cut_at_the_triage_still_hands_over_what_the_checkpoint_found() -> None:
+    connection = FakeConnection(
+        extracting(
+            messages=[message("quiero hablar con una persona, me llamo Lucía Pérez y mi DNI es 30123456")],
+            transfer_policies=[policy("explicit_request")],
+        )
+    )
+
+    with client(connection, doubled()) as http:
+        payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+
+    assert payload["outcome"] == "blocked"
+    assert [e["key"] for e in payload["extracted"]] == ["dni"]
+
+
+def test_an_extractor_that_falls_over_does_not_take_the_answer_with_it(caplog: pytest.LogCaptureFixture) -> None:
+    connection = FakeConnection(extracting(messages=[message("me llamo Lucía Pérez, DNI 30123456")]))
+
+    from adapters.llm import double as double_module
+
+    original = double_module.DoubleClient.complete
+
+    async def down(self, **kwargs: object):
+        if double_module.EXTRACTION_MARKER in str(kwargs.get("system") or ""):
+            raise LLMUnavailable("double: the extractor is down")
+        return await original(self, **kwargs)
+
+    double_module.DoubleClient.complete = down
+    try:
+        with caplog.at_level(logging.WARNING, logger="sonia.api.turns"):
+            with client(connection, doubled()) as http:
+                payload = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"}).json()
+    finally:
+        double_module.DoubleClient.complete = original
+
+    assert payload["outcome"] == "generated"
+    assert "contact data not extracted" in caplog.text
+    # The checkpoint half does not depend on the model, so the DNI still travels.
+    assert [e["key"] for e in payload["extracted"]] == ["dni"]

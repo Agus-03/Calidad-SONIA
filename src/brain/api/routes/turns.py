@@ -12,8 +12,8 @@ from psycopg import AsyncConnection
 
 from adapters.llm.base import LLMClient, LLMError
 from adapters.llm.registry import resolve
-from api.schemas.turn import TransferProposal, TurnRequest, TurnResponse
-from classifiers import transfer
+from api.schemas.turn import ExtractedDatum, TransferProposal, TurnRequest, TurnResponse
+from classifiers import extraction, transfer
 from classifiers.intent import Intent, classify
 from infra import ids
 from infra.enums import (
@@ -102,6 +102,10 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         await _write_trace(request, turn, trace.steps)
         return TurnResponse(outcome="blocked", notice_text=_notice(trace.halted_at))
 
+    # The checkpoint half of F31, on every turn that passed the inbound leg: a request for a person often comes with the DNI, and
+    # these three never reach a model (ADR-0047, sections 2.3 and 2.7).
+    found = extraction.sensitive(turn.incoming) if turn.agent.extraction_enabled else ()
+
     # The three signals of this call, written whether they fired or not, before anything else can fail (ADR-0014, ADR-0045).
     async with request.app.state.database.connection() as conn:
         assessment = await _assess(conn, turn, trace)
@@ -120,6 +124,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             outcome="blocked",
             notice_text=_notice(trace.halted_at),
             transfer=_proposal(assessment),
+            extracted=_extracted(found),
         )
 
     # What reaches the model from here on is what the leg returned and not what arrived: the redaction of ADR-0006 happens in
@@ -132,10 +137,13 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     # First half of F11, and the rewrite of F04 beside it: neither reads the other, and the customer waits for the slower one and
     # not for both (ADR-0048). Before the assembly, because the answer is given the two (ADR-0041, regla 12; Regla 1).
-    intents, rewritten = await asyncio.gather(
+    intents, rewritten, said = await asyncio.gather(
         _intents(client, turn, message),
         _rewrite(client, turn, message, current),
+        # The other half of F31, over the redacted text and only where it gets an answer: a cut turn does not pay a call more.
+        _extract(client, turn, message),
     )
+    extracted = _extracted(found + said)
     dynamic, version, version_id = _dynamic(turn, current, rewritten, intents)
 
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
@@ -168,6 +176,8 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "prompt_rules_version": prompt.rules_version,
         "detected_intents": len(intents),
         "context_rewritten": version is not None,
+        # How many and never which: the values are data of the contact, and a log line is not where they get copied to (ADR-0006).
+        "extracted": len(extracted),
         "pipeline_steps": len(trace.steps),
     }
 
@@ -262,6 +272,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             outcome="blocked",
             generation_id=generation.id,
             notice_text=_notice(answer.halted_at),
+            extracted=extracted,
         )
 
     logger.info(
@@ -283,6 +294,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         outcome="generated",
         generation_id=generation.id,
         completion_text=generation.completion_text,
+        extracted=extracted,
     )
 
 
@@ -388,6 +400,39 @@ async def _write_trace(request: Request, turn: Turn, steps: Sequence[TracedStep]
 # A batch is one turn, so its messages become one question: the customer wrote three lines, not three questions (F10).
 def _incoming(turn: Turn) -> str:
     return "\n".join(m.content_text for m in turn.incoming)
+
+
+# Never lets the extraction end the turn: a datum not found is a datum the next batch may still bring, and the customer is owed the
+# answer either way. Off by the toggle, it is never called (ADR-0047, section 2.4).
+async def _extract(client: LLMClient, turn: Turn, message: str) -> tuple[extraction.Extracted, ...]:
+    if not turn.agent.extraction_enabled:
+        return ()
+    try:
+        return await extraction.classify(
+            client=client, model=turn.agent.llm_model, message=message, incoming=turn.incoming
+        )
+    except LLMError as err:
+        logger.warning(
+            "contact data not extracted",
+            extra={
+                "context": {
+                    "conversation_id": str(turn.conversation_id),
+                    "message_batch_id": str(turn.message_batch_id),
+                    "error": str(err),
+                }
+            },
+        )
+        return ()
+
+
+# The contract's shape of what was found. float, because it is a confidence and not money (C08).
+def _extracted(found: Sequence[extraction.Extracted]) -> list[ExtractedDatum]:
+    return [
+        ExtractedDatum(
+            key=e.key, value=e.value, confidence=float(e.confidence), source_message_id=e.source_message_id
+        )
+        for e in found
+    ]
 
 
 # Never lets the rewrite end the turn, and never asks twice: Regla 3 answers with the context there was, and the core waits ten

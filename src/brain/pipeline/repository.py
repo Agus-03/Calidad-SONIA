@@ -44,6 +44,8 @@ class Agent:
     llm_model: str
     temperature: float | None
     max_tokens: int | None
+    # The toggle of F31: off, nothing is extracted and the classifier is never called (ADR-0047, section 2.4).
+    extraction_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,8 @@ class Message:
     sender_type: SenderType
     content_text: str
     sent_at: datetime
+    # What contact_attributes.source_message_id points at, so an extracted datum names where it was said (ADR-0047, section 2.1).
+    id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -73,14 +77,14 @@ WHERE  b.id = %(message_batch_id)s AND b.conversation_id = %(conversation_id)s
 """
 
 _AGENT = """
-SELECT a.id, a.name, a.llm_provider, a.llm_model, a.temperature, a.max_tokens
+SELECT a.id, a.name, a.llm_provider, a.llm_model, a.temperature, a.max_tokens, a.extraction_enabled
 FROM   ai_agents a
 WHERE  a.id = %(ai_agent_id)s AND a.deleted_at IS NULL
 """
 
 # Ordered by the channel's clock and not by insertion, because C06 makes sent_at the shared reading of when it happened.
 _INCOMING = """
-SELECT m.direction, m.sender_type, m.content_text, m.sent_at
+SELECT m.id, m.direction, m.sender_type, m.content_text, m.sent_at
 FROM   messages m
 WHERE  m.message_batch_id = %(message_batch_id)s
 ORDER  BY m.sent_at, m.created_at
@@ -88,7 +92,7 @@ ORDER  BY m.sent_at, m.created_at
 
 # Everything before this batch, newest first so the limit keeps the recent turns, and reversed by the caller.
 _HISTORY = """
-SELECT m.direction, m.sender_type, m.content_text, m.sent_at
+SELECT m.id, m.direction, m.sender_type, m.content_text, m.sent_at
 FROM   messages m
 WHERE  m.conversation_id = %(conversation_id)s
   AND  (m.message_batch_id IS DISTINCT FROM %(message_batch_id)s)
@@ -150,6 +154,7 @@ def _agent(row: dict) -> Agent:
         # numeric arrives as Decimal, and the LLM adapters take a float; the money rule of C08 is about cost, not temperature.
         temperature=float(row["temperature"]) if row["temperature"] is not None else None,
         max_tokens=row["max_tokens"],
+        extraction_enabled=row.get("extraction_enabled") is True,
     )
 
 
@@ -159,6 +164,7 @@ def _message(row: dict) -> Message:
         sender_type=SenderType(row["sender_type"]),
         content_text=row["content_text"],
         sent_at=row["sent_at"],
+        id=row.get("id"),
     )
 
 

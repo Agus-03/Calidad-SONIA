@@ -100,8 +100,9 @@ sonia/
 │   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
 │   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
-│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml · transfer.yaml
+│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
+│   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py
 │   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código

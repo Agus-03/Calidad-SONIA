@@ -71,12 +71,45 @@ func reach(s Scope) (where string, args []any) {
 	return fmt.Sprintf(" AND (c.operator_id = $%d OR c.operator_id IS NULL)", len(args)), args
 }
 
+// narrow appends the filters of F23 after the reach, so a filter can only take rows away from what the role already sees (ADR-0050).
+// Every value travels as a placeholder, the status too, so a renamed value in enums.yaml cannot silently match nothing (C07).
+func narrow(where string, args []any, f Filter) (string, []any) {
+	if f.Unread {
+		where += " AND c.unread_count > 0"
+	}
+	if f.Assigned {
+		where += " AND c.operator_id IS NOT NULL"
+	}
+	if f.Starred {
+		where += " AND c.starred"
+	}
+	if f.Status != nil {
+		args = append(args, *f.Status)
+		where += fmt.Sprintf(" AND c.status = $%d", len(args))
+	}
+	// A label taken out of the catalog no longer exists for the inbox, like any row deleted logically (C09).
+	if f.LabelID != nil {
+		args = append(args, *f.LabelID)
+		where += fmt.Sprintf(` AND EXISTS (
+       SELECT 1 FROM conversation_labels cl JOIN labels l ON l.id = cl.label_id
+       WHERE  cl.conversation_id = c.id AND cl.label_id = $%d AND l.deleted_at IS NULL)`, len(args))
+	}
+	// Reminders hang from the contact and not the conversation, so one raised in an earlier conversation still marks this one (ADR-0002 (c)).
+	if f.WithReminder {
+		where += ` AND EXISTS (
+       SELECT 1 FROM reminders r
+       WHERE  r.contact_id = c.contact_id AND r.deleted_at IS NULL)`
+	}
+	return where, args
+}
+
 // List answers up to limit rows after the cursor, newest activity first. Deciding whether another page exists is the service's.
 //
 // The row comparison is what makes the cursor exact: both columns descend together, so "(a, b) < (x, y)" is "strictly after the row
 // the last page ended on", and the id settles two conversations touched in the same microsecond (ADR-0036, regla 3).
-func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error) {
+func (r *Repository) List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) ([]Summary, error) {
 	where, args := reach(scope)
+	where, args = narrow(where, args, filter)
 	if after != nil {
 		args = append(args, after.At, after.ID)
 		where += fmt.Sprintf(" AND (c.last_activity_at, c.id) < ($%d, $%d)", len(args)-1, len(args))

@@ -133,6 +133,47 @@ func TestAStarIsSharedThroughTheRealProcess(t *testing.T) {
 	}
 }
 
+// TestTheInboxFiltersThroughTheRealProcess walks F23 over HTTP: the query reaches the SQL, a filter narrows what the operator sees,
+// two combine, and a flag the listing cannot honour is refused instead of read as off (ADR-0050).
+func TestTheInboxFiltersThroughTheRealProcess(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	d := buildDesk(ctx, t, pool)
+	first := login(t, core, d.first, walkerPassword)
+	conversation := d.conversation.String()
+	if status, body := call(t, core, http.MethodPatch, "/api/v1/conversations/"+conversation+"/starred", first, `{"starred":true}`); status != http.StatusOK {
+		t.Fatalf("starring the conversation: got %d, want 200 - %s", status, body)
+	}
+
+	for _, tc := range []struct {
+		query  string
+		listed bool
+	}{
+		{"starred=true", true},
+		{"starred=true&status=active", true},
+		{"starred=true&status=resolved", false},
+		{"assigned=true", false},
+	} {
+		status, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100&"+tc.query, first, "")
+		if status != http.StatusOK {
+			t.Fatalf("GET with %s: got %d, want 200 - %s", tc.query, status, body)
+		}
+		if got := listed(t, body, conversation); got != tc.listed {
+			t.Fatalf("with %s the conversation listed = %v, want %v - %s", tc.query, got, tc.listed, body)
+		}
+	}
+
+	status, body := call(t, core, http.MethodGet, "/api/v1/conversations?unread=1", first, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("a flag that is not true: got %d, want 400 - %s", status, body)
+	}
+	if code, _ := refusal(t, body); code != "invalid_filter" {
+		t.Fatalf("the refusal says %q, want invalid_filter", code)
+	}
+}
+
 // starOf reads the star and the last activity of one conversation of an inbox page, and fails when the conversation is not on it.
 func starOf(t *testing.T, body, conversationID string) (bool, string) {
 	t.Helper()

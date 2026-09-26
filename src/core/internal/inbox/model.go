@@ -92,6 +92,17 @@ type Cursor struct {
 	ID uuid.UUID
 }
 
+// Filter is the seven filters of F23, combined with AND and always inside the reach: a filter narrows what the role sees and never
+// widens it. None of them changes the order, so the cursor of ADR-0036 continues a filtered listing too (ADR-0050).
+type Filter struct {
+	Unread       bool
+	Assigned     bool
+	Starred      bool
+	WithReminder bool
+	Status       *enums.ConversationStatus
+	LabelID      *uuid.UUID
+}
+
 // ThreadMessage is a message as the thread of one conversation shows it: the message the listing draws, plus who wrote it when a
 // person did, and the instant it was recorded, which is what orders the thread (C06, ADR-0036 regla 2).
 type ThreadMessage struct {

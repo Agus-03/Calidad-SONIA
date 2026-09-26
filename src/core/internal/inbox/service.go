@@ -72,7 +72,7 @@ const writeGrace = 5 * time.Second
 
 // store is the pool-bound slice of the repository: the reads, which need no transaction of their own.
 type store interface {
-	List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error)
+	List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) ([]Summary, error)
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
@@ -132,13 +132,13 @@ func NewService(opts Options) *Service {
 
 // List asks for one row more than it answers, because that row is the only honest way to know another page exists: a full page could
 // just as well be the last one, and a cursor handed out for nothing sends the frontend to ask for an empty page (ADR-0036, regla 7).
-func (s *Service) List(ctx context.Context, scope Scope, after *Cursor, limit int) (Page, error) {
+func (s *Service) List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) (Page, error) {
 	// The controller never sends less than one, but a page of zero would index the row before the first one below.
 	if limit < 1 {
 		limit = 1
 	}
 
-	rows, err := s.opts.Repo.List(ctx, scope, after, limit+1)
+	rows, err := s.opts.Repo.List(ctx, scope, filter, after, limit+1)
 	if err != nil {
 		return Page{}, err
 	}

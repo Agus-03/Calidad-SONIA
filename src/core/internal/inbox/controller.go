@@ -149,8 +149,13 @@ func (c *Controller) list(gc *gin.Context) {
 		soniahttp.Fail(gc, c.log, err)
 		return
 	}
+	filter, err := filterFrom(gc)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
 
-	page, err := c.service.List(gc.Request.Context(), scope, after, limit)
+	page, err := c.service.List(gc.Request.Context(), scope, filter, after, limit)
 	if err != nil {
 		soniahttp.Fail(gc, c.log, err)
 		return
@@ -437,6 +442,40 @@ func limitFrom(gc *gin.Context) (int, error) {
 		n = maxLimit
 	}
 	return n, nil
+}
+
+// filterFrom reads the filters of F23 from the query. A flag is on only with "true", and any other value is refused and not read as
+// off: a frontend that sent "1" would draw the whole inbox as the filtered one (ADR-0050).
+func filterFrom(gc *gin.Context) (Filter, error) {
+	var f Filter
+	for _, flag := range []struct {
+		name string
+		into *bool
+	}{{"unread", &f.Unread}, {"assigned", &f.Assigned}, {"starred", &f.Starred}, {"reminder", &f.WithReminder}} {
+		switch raw, present := gc.GetQuery(flag.name); {
+		case !present:
+		case raw == "true":
+			*flag.into = true
+		default:
+			return Filter{}, soniahttp.BadRequest("invalid_filter", flag.name+" only takes true: leave it out to not filter by it")
+		}
+	}
+
+	if raw, present := gc.GetQuery("status"); present {
+		status := enums.ConversationStatus(raw)
+		if !status.IsValid() {
+			return Filter{}, soniahttp.BadRequest("invalid_status", "status is not one of active, waiting, resolved")
+		}
+		f.Status = &status
+	}
+	if raw, present := gc.GetQuery("label_id"); present {
+		labelID, err := uuid.Parse(raw)
+		if err != nil {
+			return Filter{}, soniahttp.BadRequest("invalid_label_id", "the label id is not a uuid").WithCause(err)
+		}
+		f.LabelID = &labelID
+	}
+	return f, nil
 }
 
 // cursorFrom reads the token the previous page handed out. An absent one is the first page; a malformed one is refused, because

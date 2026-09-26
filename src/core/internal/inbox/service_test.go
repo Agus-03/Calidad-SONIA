@@ -46,7 +46,7 @@ func TestTheNextCursorIsHandedOutOnlyWhenAnotherPageExists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &stubStore{rows: rowsAt(tc.stored)}
 
-			page, err := NewService(Options{Repo: store}).List(context.Background(), adminScope, nil, tc.limit)
+			page, err := NewService(Options{Repo: store}).List(context.Background(), adminScope, Filter{}, nil, tc.limit)
 			if err != nil {
 				t.Fatalf("List: got %v, want no error", err)
 			}
@@ -73,7 +73,7 @@ func TestTheNextCursorIsHandedOutOnlyWhenAnotherPageExists(t *testing.T) {
 func TestAPageOfZeroIsReadAsAPageOfOne(t *testing.T) {
 	store := &stubStore{rows: rowsAt(3)}
 
-	page, err := NewService(Options{Repo: store}).List(context.Background(), adminScope, nil, 0)
+	page, err := NewService(Options{Repo: store}).List(context.Background(), adminScope, Filter{}, nil, 0)
 	if err != nil {
 		t.Fatalf("List: got %v, want no error", err)
 	}
@@ -86,7 +86,7 @@ func TestAPageOfZeroIsReadAsAPageOfOne(t *testing.T) {
 func TestTheListingDoesNotSwallowAFailure(t *testing.T) {
 	boom := errors.New("connection refused")
 
-	_, err := NewService(Options{Repo: &stubStore{err: boom}}).List(context.Background(), adminScope, nil, 20)
+	_, err := NewService(Options{Repo: &stubStore{err: boom}}).List(context.Background(), adminScope, Filter{}, nil, 20)
 	if !errors.Is(err, boom) {
 		t.Fatalf("List: got %v, want the underlying failure", err)
 	}

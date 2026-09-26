@@ -198,7 +198,7 @@ func TestTheInboxOfEachRoleIsTheOneAnexoBDescribes(t *testing.T) {
 			{enums.OperatorRoleAdmin, 3, []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv}},
 		} {
 			t.Run(string(tc.role), func(t *testing.T) {
-				rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: tc.role}, nil, tc.limit)
+				rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: tc.role}, Filter{}, nil, tc.limit)
 				if err != nil {
 					t.Fatalf("List: %v", err)
 				}
@@ -220,7 +220,7 @@ func TestTheCursorContinuesStrictlyAfterTheRowItNamed(t *testing.T) {
 
 		var after *Cursor
 		for i, want := range []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv} {
-			page, err := service.List(ctx, scope, after, 1)
+			page, err := service.List(ctx, scope, Filter{}, after, 1)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -242,7 +242,7 @@ func TestAFailedSendStaysVisibleInTheInbox(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
 
-		rows, err := NewRepository(exec).List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, nil, 3)
+		rows, err := NewRepository(exec).List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -289,7 +289,7 @@ func TestAContactTakenDownLeavesTheInbox(t *testing.T) {
 			t.Fatalf("take the contact down: %v", err)
 		}
 
-		rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, nil, 3)
+		rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -529,7 +529,7 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 		// And the listing says so before anyone tries: the state of the bot F22 shows, read with the same three conditions.
 		available := func() bool {
 			t.Helper()
-			rows, err := NewRepository(exec).List(ctx, supervisor, nil, 1000)
+			rows, err := NewRepository(exec).List(ctx, supervisor, Filter{}, nil, 1000)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -565,7 +565,7 @@ func TestAStarIsSharedAndLeavesTheInboxInPlace(t *testing.T) {
 
 		starredOf := func() map[uuid.UUID]bool {
 			t.Helper()
-			rows, err := NewRepository(exec).List(ctx, supervisor, nil, len(head))
+			rows, err := NewRepository(exec).List(ctx, supervisor, Filter{}, nil, len(head))
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -608,6 +608,85 @@ func TestAStarIsSharedAndLeavesTheInboxInPlace(t *testing.T) {
 		}
 		if holder != nil {
 			t.Fatalf("a star took the pool for %v", *holder)
+		}
+	})
+}
+
+// TestEachFilterOfF23AgainstRealDDL gives each seeded conversation one mark a filter reads, and checks every filter answers its own
+// among them: the SQL of narrow() is only proven here, since the stub filters in Go (ADR-0050). The world is read out of the whole
+// filtered listing because the demo rows may match a filter too.
+func TestEachFilterOfF23AgainstRealDDL(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		mark := func(what, sql string, args ...any) {
+			t.Helper()
+			if _, err := exec.Exec(ctx, sql, args...); err != nil {
+				t.Fatalf("%s: %v", what, err)
+			}
+		}
+
+		// Theirs: unread and waiting. Mine: assigned already, starred, and resolved. The pool: a label and a reminder.
+		mark("unread", `UPDATE conversations SET unread_count = 2, status = 'waiting' WHERE id = $1`, w.theirsConv)
+		mark("starred", `UPDATE conversations SET starred = true, status = 'resolved' WHERE id = $1`, w.mineConv)
+		label, gone := id.New(), id.New()
+		for _, l := range []uuid.UUID{label, gone} {
+			mark("a label", `INSERT INTO labels (id, account_id, name, color, created_by_operator_id) VALUES ($1, $2, $3, '#000000', $4)`,
+				l, w.account, "Filtro "+l.String(), w.mine)
+			mark("label the pool", `INSERT INTO conversation_labels (id, conversation_id, label_id) VALUES ($1, $2, $3)`, id.New(), w.pooledConv, l)
+		}
+		// A label taken out of the catalog no longer filters (C09).
+		mark("delete a label", `UPDATE labels SET deleted_at = now() WHERE id = $1`, gone)
+		var contact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, w.pooledConv).Scan(&contact); err != nil {
+			t.Fatalf("read the contact: %v", err)
+		}
+		mark("a reminder", `INSERT INTO reminders (id, contact_id, operator_id, description, due_at) VALUES ($1, $2, $3, 'llamar', now())`,
+			id.New(), contact, w.mine)
+		// A deleted reminder of another contact marks nothing.
+		var theirsContact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, w.theirsConv).Scan(&theirsContact); err != nil {
+			t.Fatalf("read the contact: %v", err)
+		}
+		mark("a deleted reminder", `INSERT INTO reminders (id, contact_id, operator_id, description, due_at, deleted_at) VALUES ($1, $2, $3, 'no', now(), now())`,
+			id.New(), theirsContact, w.mine)
+
+		waiting, resolved := enums.ConversationStatusWaiting, enums.ConversationStatusResolved
+		admin := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}
+		operator := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		for _, tc := range []struct {
+			name   string
+			scope  Scope
+			filter Filter
+			want   []uuid.UUID
+		}{
+			{"no leídas", admin, Filter{Unread: true}, []uuid.UUID{w.theirsConv}},
+			{"asignadas", admin, Filter{Assigned: true}, []uuid.UUID{w.theirsConv, w.mineConv}},
+			{"asignadas, for an operator, are its own", operator, Filter{Assigned: true}, []uuid.UUID{w.mineConv}},
+			{"destacadas", admin, Filter{Starred: true}, []uuid.UUID{w.mineConv}},
+			{"en espera", admin, Filter{Status: &waiting}, []uuid.UUID{w.theirsConv}},
+			{"resueltas", admin, Filter{Status: &resolved}, []uuid.UUID{w.mineConv}},
+			{"por etiqueta", admin, Filter{LabelID: &label}, []uuid.UUID{w.pooledConv}},
+			{"por una etiqueta borrada", admin, Filter{LabelID: &gone}, []uuid.UUID{}},
+			{"con recordatorio", admin, Filter{WithReminder: true}, []uuid.UUID{w.pooledConv}},
+			{"combinadas", admin, Filter{Assigned: true, Unread: true, Status: &waiting}, []uuid.UUID{w.theirsConv}},
+			{"combinadas sin coincidencia", admin, Filter{Starred: true, WithReminder: true}, []uuid.UUID{}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				rows, err := NewRepository(exec).List(ctx, tc.scope, tc.filter, nil, 1000)
+				if err != nil {
+					t.Fatalf("List: %v", err)
+				}
+				seeded := map[uuid.UUID]bool{w.theirsConv: true, w.mineConv: true, w.pooledConv: true, w.deletedConv: true}
+				got := []uuid.UUID{}
+				for _, r := range rows {
+					if seeded[r.ID] {
+						got = append(got, r.ID)
+					}
+				}
+				if !sameIDs(got, tc.want) {
+					t.Fatalf("the filtered inbox holds %v of the seeded ones, want %v", got, tc.want)
+				}
+			})
 		}
 	})
 }

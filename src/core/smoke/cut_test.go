@@ -18,7 +18,7 @@ import (
 // A word of src/brain/rules/profanity.yaml, and the only lever the smoke has on the pipeline from outside: the doubled provider
 // echoes what the customer wrote, so a customer who swears gets the insult back and the outbound blocklist refuses that answer.
 // It is also the one cut the shipped rules can reach — blocklist.yaml ships empty (decision D4) and the doubled triage always
-// answers in_domain, so in a doubled stack neither the inbound blocklist nor the triage can fire.
+// answers in_domain; the triage cuts only for a request for a person (transfer_test.go).
 const refusedWord = "pelotudo"
 
 // What a cut turn promised to leave behind: the refused answer stored and never linked, the fixed text sent in its place, and the
@@ -110,10 +110,10 @@ func TestAnAnswerNobodyMaySendIsKeptUnsentAndTheTurnWaitsForAPerson(t *testing.T
 	if !strings.Contains(got.lastVersion, "profanity") {
 		t.Errorf("pipeline_steps.version of the outbound blocklist: got %q, want it to name both files", got.lastVersion)
 	}
-	// A blocklist refuses, it does not delegate: what O1c hands to a person is a question outside the domain, and that cut is the
-	// triage's. Nothing here was evaluated as a signal, so nothing may be counted as an escalation (F36, ADR-0024).
-	if got.evaluations != 0 || got.transfers != 0 {
-		t.Errorf("a refused word left %d evaluations and %d transfers, want none of either", got.evaluations, got.transfers)
+	// A blocklist refuses, it does not delegate. The triage ran before the answer existed, so its two signals are written and
+	// neither fired; no_resolution has no answer of the AIAgent to judge in a first turn (ADR-0045, sections 2.2 and 2.6).
+	if got.evaluations != 2 || got.transfers != 0 {
+		t.Errorf("a refused word left %d evaluations and %d transfers, want the two judged signals and no transfer", got.evaluations, got.transfers)
 	}
 }
 

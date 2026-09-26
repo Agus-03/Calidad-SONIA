@@ -85,3 +85,12 @@ JOIN   (VALUES
 WHERE  c.ai_agent_id = '01930000-0000-7000-8000-000000000002'
 -- changed_by_operator_id and change_note stay NULL because nobody edited anything: this is a seed and not an edition.
 ON CONFLICT (prompt_component_id, version_number) DO NOTHING;
+
+-- The three signals judged in Fase 9, on: 1 for the two yes/no ones is the only threshold they are compared against, and the 3 of
+-- no_resolution is a demo value and not a measurement (ADR-0045, section 2.4). frustration waits for its model (ADR-0044).
+INSERT INTO transfer_policies (id, ai_agent_id, signal_type, enabled, threshold)
+VALUES
+    ('01930000-0000-7000-8000-000000000017', '01930000-0000-7000-8000-000000000002', 'explicit_request', true, 1),
+    ('01930000-0000-7000-8000-000000000018', '01930000-0000-7000-8000-000000000002', 'out_of_domain',    true, 1),
+    ('01930000-0000-7000-8000-000000000019', '01930000-0000-7000-8000-000000000002', 'no_resolution',    true, 3)
+ON CONFLICT (id) DO NOTHING;

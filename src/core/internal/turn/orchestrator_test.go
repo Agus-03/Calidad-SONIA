@@ -360,7 +360,6 @@ func TestAnAnswerWithNoEvidenceIsStillDelivered(t *testing.T) {
 	}
 }
 
-
 // Section 4: a cut is a decision of the pipeline and not a failure of the turn, so it gets the reading a pause gets (ADR-0041,
 // regla 8) — processed_at written, no error_message — plus the one thing a pause does not need: somebody has to answer what the
 // bot refused to, so the conversation drops to waiting.
@@ -506,7 +505,6 @@ func TestAnAnswerThatCameEmptyIsAFailureAndNotACut(t *testing.T) {
 		t.Fatal("the batch was left without error_message, which is what diagnoses the failure")
 	}
 }
-
 
 // A cut whose two writes did not commit is not a decision that landed: nobody finished this turn, and that is what the row says.
 func TestABlockedTurnThatCouldNotBeWrittenIsMarkedAsFailed(t *testing.T) {

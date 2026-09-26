@@ -48,7 +48,7 @@ Hay además un hueco que la Fase 8 dejó sin decir: **`out_of_domain` sólo escr
 - **`no_resolution` guarda la racha contra el umbral de su política**, un entero.
 - **Sin política, el umbral sale de `rules/triage.yaml`**, que guarda uno por defecto por señal, como `frustration.yaml` en [ADR-0044](0044-senal-de-frustracion-diferida-a-la-fase-16.md) §2.2. Deja de escribirse 0.
 - **`fired` no cambia de significado**: es *"cruzó el umbral **y** la política está encendida"*. Una señal que cruzó con la política apagada o ausente se escribe con `fired = false`, y el cruce se reconstruye con `score >= threshold_used`.
-- **El ABM de `transfer_policies` rechaza un umbral distinto de 1 para las dos señales de sí/no**, para que lo guardado no diga algo que el turno no usa.
+- **El ABM de `transfer_policies` rechaza un umbral distinto de 1 para las dos señales de sí/no**, para que lo guardado no diga algo que el turno no usa. **Diferido:** ese ABM no existe, y no se construye hasta que el grupo decida qué paquete del núcleo escribe la tabla ([struct.md](../../struct.md) §2.4). El Anexo C del anteproyecto pone `umbral_transferencia` dentro de la configuración del agente, así que la decisión se toma junto con el ABM de AIAgents. Mientras tanto, las políticas se cargan por seed.
 - **`src/core/seeds/0001_demo.sql` lleva las filas de `transfer_policies`** del agente de demo, con 1 en las dos de sí/no. El valor de `no_resolution` en el seed es configuración de demo, no una medición.
 
 ### 2.5 Delega cualquier señal, y el corte es el del `triage`
@@ -101,6 +101,7 @@ Hay además un hueco que la Fase 8 dejó sin decir: **`out_of_domain` sólo escr
 - **Tres señales comparten `classifier_version`.** Editar el prompt del `triage` para mejorar `out_of_domain` mueve también `explicit_request` y `no_resolution`, y las evaluaciones de antes y de después dejan de ser comparables en las tres. Quien itere sobre una tiene que saber que invalida las otras dos.
 - **La llamada del `triage` crece.** Recibe además la respuesta anterior del AIAgent y devuelve tres veredictos, así que un error de formato del modelo tira las tres señales juntas.
 - **El administrador no puede ajustar el umbral de las señales de sí/no.** Lo que se puede mover es el prompt, que cambia la versión.
+- **Mientras el ABM esté diferido, la regla de §2.4 no la hace cumplir nadie.** Un umbral sólo se cambia por SQL, y un 2 cargado en `explicit_request` hace que esa señal no dispare nunca, sin error.
 - **`no_resolution` no se evalúa en modo `suggestion` ni después de que respondió un Operator**, porque no hay respuesta del AIAgent que juzgar. Es la misma forma de *"salteada"* que ADR-0044 ya asumió, con el mismo costo: sólo se ve leyendo `pipeline_steps`.
 - **La racha no sobrevive a un cambio de prompt.** El día que cambia `triage.yaml`, todas las rachas en curso vuelven a cero.
 - **Un turno cortado por `explicit_request` o `no_resolution` entra al denominador de OE6 como `in_domain` y sin escalada**, porque [ADR-0024](0024-unidad-y-alcance-de-oe6.md) cuenta como escalada sólo `out_of_domain`. **Ese bloque no fue respondido**, y OE6 dice *"respondidas sin escalada"*. Es la lectura benévola que ADR-0024 ya declaró para la frustración, extendida ahora a bloques que el AIAgent ni siquiera contestó. Hay que decirlo en el informe.

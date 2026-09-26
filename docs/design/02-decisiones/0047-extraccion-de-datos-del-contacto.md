@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **§2.6 (el consentimiento) es una propuesta, pendiente del grupo** |
+| **Estado** | Aceptada · **§2.6 (el consentimiento) aceptada por el grupo el 2026-09-26** · §2.7 agregada al construirla (Fase 9, T6) |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 9 (contexto dinámico y transferencia) |
 | **Resuelve** | La contradicción O10 de [ADR-0042](0042-pipeline-de-decision-del-turno.md) —quién escribe `contact_attributes`—, qué datos extrae F31, con qué se extrae cada uno, y qué pasa cuando un dato extraído choca con uno cargado a mano |
@@ -61,7 +61,18 @@ Los tres primeros son los que la sección 7.3 del anteproyecto nombra como sensi
 
 ### 2.6 El consentimiento
 
-**Propuesta, pendiente del grupo: no se guardan `dni`, `cuit_cuil` ni `cbu` de un contacto con `consent_given_at` en `NULL`.** La sección 7.3 del anteproyecto se compromete a *"consentimiento explícito y almacenamiento encriptado para datos sensibles (DNI, CUIL, CBU)"* —las dos cosas, no una— y hoy **nada en el sistema le pide consentimiento a la clienta**, así que la columna está en `NULL` en todos los contactos ([DER/entidades.md](../DER/entidades.md)). Con esta propuesta, **hasta que exista ese acto, la extracción de los tres datos sensibles no guarda nada**, aunque el *checkpoint* los siga redactando. La otra salida es guardarlos cifrados igual y declarar la desviación de 7.3.
+**Aceptada por el grupo (2026-09-26): no se guardan `dni`, `cuit_cuil` ni `cbu` de un contacto sin consentimiento vigente.** Vigente es `consent_given_at` no nulo y sin un `consent_revoked_at` posterior: una revocación también es un acto de la clienta, y guardar después de ella sería peor que no haber preguntado. La sección 7.3 del anteproyecto se compromete a *"consentimiento explícito y almacenamiento encriptado para datos sensibles (DNI, CUIL, CBU)"* —las dos cosas, no una— y hoy **nada en el sistema le pide consentimiento a la clienta**, así que la columna está en `NULL` en todos los contactos ([DER/entidades.md](../DER/entidades.md)). Con esta propuesta, **hasta que exista ese acto, la extracción de los tres datos sensibles no guarda nada**, aunque el *checkpoint* los siga redactando. La otra salida era guardarlos cifrados igual y declarar la desviación de 7.3, y se descartó.
+
+### 2.7 Cómo se construye
+
+Lo que la construcción tuvo que decidir y §2.1–§2.6 no decían:
+
+- **El *checkpoint* devuelve los valores con sólo sus dígitos** (`12.345.678` se guarda `12345678`). Así un mismo dato escrito de dos formas es el mismo valor, y la regla de §2.5 *"si el valor es el mismo, no se escribe nada"* se puede cumplir.
+- **Los tres sensibles se extraen en todo turno que pasó la pierna de entrada**, incluido el que corta el `triage`: el pedido de una persona suele venir con el DNI. **Los tres del LLM, sólo en los turnos que llegan a generar**, en paralelo con las intenciones y el reescritor ([ADR-0048](0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)). Un turno cortado no paga una llamada más.
+- **El mensaje de origen** de un dato sensible es el mensaje del bloque donde apareció. El de un dato del LLM es el mensaje del bloque que lo contiene, o el último del bloque si el modelo lo escribió distinto.
+- **El filtro del consentimiento lo aplica el núcleo**, al escribir, porque el consentimiento es un dato del contacto y puede cambiar entre dos turnos.
+- **La lectura es la ficha del contacto** (`GET /contacts/:id`), que suma los atributos vivos. **Los tres sensibles sólo los ven el supervisor y el admin**, con la misma regla que las cuatro columnas cifradas de [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md) (regla 4).
+- **El *toggle*** entra en la API del agente IA como `extraction_enabled`, y su cambio queda en `audit_logs` como el resto de la configuración ([ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 7).
 
 ## 3. Justificación
 
@@ -93,7 +104,9 @@ Los tres primeros son los que la sección 7.3 del anteproyecto nombra como sensi
 - **Una llamada más al LLM por turno** cuando el *toggle* está prendido. Es un criterio de costo del equipo, no una métrica del anteproyecto.
 - **Si el turno falla después del *checkpoint*, lo extraído en ese turno no se guarda.** Se recupera sólo si alguien vuelve a correr la extracción sobre `messages`, y nada lo hace.
 - **Lo extraído que choca con lo manual se descarta sin dejar rastro**, así que no se puede medir cuántas veces el LLM contradijo a una persona.
-- **Si §2.6 se acepta, los tres datos sensibles no se guardan nunca** hasta que exista el acto de consentimiento, y la mitad de F31 que más importa queda construida y sin efecto.
+- **Con §2.6 aceptada, los tres datos sensibles no se guardan nunca** hasta que exista el acto de consentimiento, y la mitad de F31 que más importa queda construida y sin efecto.
+- **Los tres sensibles viajan al núcleo aunque la clienta no haya consentido**, porque el filtro está del lado que conoce el consentimiento. Es el mismo camino interno que §4 ya declara, recorrido por datos que después se descartan.
+- **Un dato del LLM se puede atribuir al mensaje equivocado** cuando el modelo lo escribe distinto de como lo escribió la clienta: cae en el último mensaje del bloque.
 - **La lista de §2.2 es una lectura del equipo**, y el anteproyecto no dice qué datos le sirven al vendedor.
 
 ## 5. Alternativas descartadas

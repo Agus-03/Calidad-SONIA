@@ -2,12 +2,12 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 enmendado por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio* |
+| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 y regla 13 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio*, y marcar leída se suma a los que publican |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Cómo implementa el núcleo F21: con qué librería, cómo se autentica una conexión que el navegador abre sin header `Authorization`, qué eventos existen, quién los publica y qué pasa cuando algo falla |
 | **Requisitos afectados** | F21 · F22 · F23 · F25 · F27 · Anexo B |
-| **Enmienda** | [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) §4, *"Pausar deja al cliente sin respuesta automática"* — ahora la pausa y la baja sí le avisan en el momento al vendedor de cada conversación cuyo bot apagaron (§2.5) |
+| **Enmienda** | [ADR-0030](0030-autenticacion-de-operadores.md), regla 2 y §4 — en el socket, `role` y `active` se leen una vez al abrirlo y no en cada evento, así que la revocación no es inmediata para un socket abierto (§4) · [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) §4, *"Pausar deja al cliente sin respuesta automática"* — ahora la pausa y la baja sí le avisan en el momento al vendedor de cada conversación cuyo bot apagaron (§2.5) |
 | **Relacionada con** | [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md), [ADR-0027](0027-nucleo-de-instancia-unica.md), [ADR-0029](0029-el-acuse-del-webhook-no-espera-al-turno.md), [ADR-0030](0030-autenticacion-de-operadores.md), [ADR-0035](0035-reglas-de-la-bandeja-manual.md), [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md), [ADR-0050](0050-filtros-de-la-bandeja.md) |
 
 ---
@@ -66,7 +66,7 @@ Quedaban cuatro preguntas abiertas:
 | 13 | **Se publica después del commit, nunca adentro de la transacción.** Publica el que conduce la escritura: |
 | | · `whatsapp/`, al terminar el webhook, **una vez por conversación** aunque el payload traiga varios mensajes |
 | | · `turn/`, **una vez al terminar el turno**, también si falló, porque cada escritura del turno confirmó por su cuenta |
-| | · `inbox/`, al responder (después del envío, para que la fila ya diga enviado o fallido), al cambiar el modo y al cambiar la estrella |
+| | · `inbox/`, al responder (después del envío, para que la fila ya diga enviado o fallido), al cambiar el modo y al cambiar la estrella ([ADR-0053](0053-estrella-de-seguimiento.md)) · **y al marcar leída, agregado por [ADR-0052](0052-marca-de-leida.md)** |
 | | · `agents/`, al pausar o dar de baja un agente IA: una vez por cada conversación cuyo bot apagó. **Esto enmienda ADR-0038 §4** |
 | 14 | **Publicar nunca bloquea a quien publica.** Los avisos entran a una cola de 256; si está llena, el aviso se descarta y queda en el log. El webhook no espera a la bandeja, igual que no espera al turno ([ADR-0029](0029-el-acuse-del-webhook-no-espera-al-turno.md)) |
 | 15 | **Un solo worker lee la fila y reparte.** Hace dos lecturas por aviso: la cuenta de la conversación y su fila del listado |
@@ -84,7 +84,7 @@ Quedaban cuatro preguntas abiertas:
 
 - **`coder/websocket` y no `gorilla/websocket`.** Las dos resuelven el protocolo. `coder/websocket` recibe un `context` en cada lectura, escritura y ping, así que los timeouts y el apagado se escriben igual que en el resto del núcleo. Con `gorilla/websocket` habría que manejar deadlines a mano.
 - **El ticket y no el JWT en la URL.** Una URL queda escrita en los logs de acceso del núcleo y de cualquier proxy en el camino. Un ticket que vence a los 30 segundos y se gasta al usarse no sirve de nada leído de un log. Mandar el JWT en `Sec-WebSocket-Protocol` también lo sacaba de los logs, pero es un uso forzado de ese header.
-- **Leer al operador otra vez (regla 5)** mantiene la regla 2 de [ADR-0030](0030-autenticacion-de-operadores.md): un operador desactivado deja de entrar de inmediato, y no cuando vence su token.
+- **Leer al operador otra vez (regla 5)** aplica la regla 2 de [ADR-0030](0030-autenticacion-de-operadores.md) **al abrir el socket**: un operador desactivado no puede abrir uno nuevo. Pero sólo al abrirlo: lo que cambia después no se relee, y eso **enmienda** esa regla y la *revocación inmediata* de su §4 (ver §4 de este ADR). Releer al operador por cada evento costaría una lectura más por conexión y por aviso.
 - **La misma fila que el listado (regla 8)** hace que el frontend tenga una sola forma de dibujar una conversación, y que el evento no pueda mostrar nada que el listado no muestre.
 - **Después del commit (regla 13)**, porque un evento publicado adentro de una transacción que después se deshace anunciaría algo que no pasó, y el frontend lo dibujaría.
 - **Una vez al final del turno**, y no uno por cada escritura, porque el operador necesita ver lo que el turno dejó, no sus pasos intermedios.
@@ -106,9 +106,11 @@ Quedaban cuatro preguntas abiertas:
 - **Un aviso puede perderse.** Si la cola de 256 se llena —por ejemplo, al pausar un agente IA con cientos de conversaciones—, los avisos que no entran se descartan. La bandeja queda desactualizada hasta el próximo cambio de esa conversación o hasta que el frontend reconecte.
 - **Cortar al cliente lento también le pierde eventos**, y lo obliga a reconectar y volver a pedir la primera página.
 - **Un operador desactivado mientras está conectado sigue recibiendo eventos** hasta que su socket se corta. El bearer lo frena en el próximo pedido HTTP, pero el socket abierto no se revisa.
+- **Lo mismo con un cambio de rol.** El alcance se fija al abrir el socket: un `supervisor` al que le bajan el rol a `operator` sigue recibiendo las conversaciones de todo el equipo, que el Anexo B ya no le deja ver, hasta que reconecta.
 - **El ticket igual pasa por la URL**, y queda en los logs de acceso. Sólo sirve 30 segundos y una vez, pero está.
 - **Si el reparto de ADR-0037 le da a un vendedor una conversación que estaba en el pool, los demás no reciben `conversation.removed`.** Pasa cuando el cliente vuelve a escribir en una conversación que había quedado en el pool porque no había vendedores. Los demás siguen viendo esa fila hasta que refrescan, y si intentan responderla reciben el 409 `conversation_taken` (ADR-0035, regla 8).
-- **Con los filtros *no leídas*, *por etiqueta* o *con recordatorio*, el frontend no puede saber con el evento si la fila sigue entrando en el filtro**, porque la fila no trae esos datos. Tiene que volver a pedir la primera página filtrada.
+- **Con los filtros *no leídas*, *por etiqueta* o *con recordatorio*, el frontend no puede saber con el evento si la fila sigue entrando en el filtro**, porque la fila no trae esos datos. Tiene que volver a pedir la primera página filtrada. **→ Enmendado por [ADR-0052](0052-marca-de-leida.md):** la fila ya trae `unread_count`, así que el costo queda para *por etiqueta* y *con recordatorio*.
+- **Editar o dar de baja un contacto no publica nada.** `contacts/` no conoce el hub, y la fila lleva el nombre, el apellido y el teléfono (ADR-0035, regla 4). Las bandejas abiertas muestran los datos viejos hasta el próximo evento de esa conversación, y la de un contacto dado de baja sigue a la vista hasta que el frontend refresca.
 - **El evento no dice si hay una sugerencia esperando** ([ADR-0046](0046-modo-sugerencia.md)). En modo sugerencia, el frontend tiene que pedirla al recibir el evento de esa conversación.
 - **Cada aviso cuesta dos lecturas a la base**, aunque nadie esté conectado.
 - **Todo se pierde al reiniciar el núcleo**: tickets, conexiones y avisos en cola, porque viven en memoria (ADR-0027).

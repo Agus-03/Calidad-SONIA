@@ -7,7 +7,7 @@
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | El pendiente *"Qué marca una conversación como leída"* del README, y con él el filtro *no leídas* de F23, que devolvía vacío |
 | **Requisitos afectados** | F23 · F22 · F21 · Anexo B |
-| **Enmienda** | [ADR-0050](0050-filtros-de-la-bandeja.md) §4 — *no leídas* deja de devolver vacío · [ADR-0051](0051-bandeja-en-tiempo-real.md) §4 — la fila del evento ya dice cuántos mensajes hay sin leer, así que con el filtro *no leídas* el frontend sabe si la fila sigue entrando |
+| **Enmienda** | [ADR-0050](0050-filtros-de-la-bandeja.md) §4 — *no leídas* deja de devolver vacío · [ADR-0050](0050-filtros-de-la-bandeja.md) §5 — revierte en parte la alternativa descartada *"Sumar a esta fase la escritura de `unread_count`"* · [ADR-0051](0051-bandeja-en-tiempo-real.md) §4 — la fila del evento ya dice cuántos mensajes hay sin leer, así que con el filtro *no leídas* el frontend sabe si la fila sigue entrando · [ADR-0051](0051-bandeja-en-tiempo-real.md), regla 13 — marcar leída se suma a los que publican |
 | **Relacionada con** | [ADR-0020](0020-idempotencia-de-los-mensajes-salientes.md), [ADR-0035](0035-reglas-de-la-bandeja-manual.md), [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md), [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) |
 
 ---
@@ -44,9 +44,9 @@ El anteproyecto no define qué es leer una conversación. Hay que decidir tres c
 | # | Regla |
 |---|---|
 | 6 | **Puede marcarla leída quien puede responderla** ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 5): quien la tiene asignada, o cualquiera si está en el pool. Elegido por el grupo el 2026-09-26 |
-| 7 | **Los rechazos son los de responder.** Un `supervisor` o un `admin` sobre la conversación de un vendedor reciben 409 `conversation_taken`; un `operator` sobre la de otro, 404 `conversation_not_found` (ADR-0035, reglas 3 y 6) |
+| 7 | **Los rechazos de alcance son los de responder.** Los otros no: una conversación resuelta se marca (regla 8), aunque no se pueda responder. Un `supervisor` o un `admin` sobre la conversación de un vendedor reciben 409 `conversation_taken`; un `operator` sobre la de otro, 404 `conversation_not_found` (ADR-0035, reglas 3 y 6) |
 | 8 | **Una conversación sin nada sin leer no se escribe**, y no se le avisa a nadie. Una resuelta se marca como cualquier otra |
-| 9 | **Marcar leída no asigna**, igual que cambiar el modo o la estrella (ADR-0035, regla 13) |
+| 9 | **Marcar leída no asigna**, igual que cambiar el modo ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 13) o la estrella ([ADR-0053](0053-estrella-de-seguimiento.md), regla 6) |
 
 ### 2.4 Qué se ve
 
@@ -61,6 +61,7 @@ El anteproyecto no define qué es leer una conversación. Hay que decidir tres c
 - **Quién responde es quién borra (regla 6).** El contador es un aviso para el vendedor. Si el `supervisor` pudiera borrarlo con sólo mirar, el vendedor perdería el aviso de mensajes que nunca vio. Usar la regla de responder evita inventar un tercer alcance: la bandeja ya tiene uno para leer y otro para responder.
 - **Contar en la misma sentencia (regla 1)** hace que el contador no pueda desalinearse del mensaje: los dos se confirman juntos o ninguno.
 - **Responder marca leída (regla 5)** porque, si no, el vendedor tendría que marcar a mano cada conversación que acaba de contestar.
+- **Revierte en parte un descarte de [ADR-0050](0050-filtros-de-la-bandeja.md) §5**, que dejó afuera escribir `unread_count` en esta fase porque ningún requisito la ubicaba acá. El grupo la sumó a la Fase 10 junto con F21, porque la marca y el evento en tiempo real se tocan en el mismo lugar. El cierre manual, la otra mitad de aquel descarte, sigue afuera: va a la Fase 11.
 
 ## 4. Consecuencias
 
@@ -77,7 +78,7 @@ El anteproyecto no define qué es leer una conversación. Hay que decidir tres c
 - **El frontend tiene que acordarse de marcar.** Si no manda el `POST`, el contador sólo baja cuando alguien responde.
 - **El `supervisor` que pide marcar la de un vendedor recibe un 409.** El frontend tiene que saber no pedirlo, o ignorar ese rechazo.
 - **Las conversaciones que existían antes de esta fase arrancan en cero**, aunque tengan mensajes del cliente sin contestar: la columna nunca se había escrito.
-- **`last_read_at` no se mueve si no había nada sin leer** (regla 8), así que dice cuándo se borró el último aviso, no cuándo se abrió la conversación por última vez.
+- **`last_read_at` no dice lo mismo según quién lo escribió.** Con el `POST`, no se mueve si no había nada sin leer (regla 8). Al responder, se escribe siempre (regla 5), haya o no algo sin leer. Así que es la última vez que alguien respondió o que borró un aviso pendiente, no la última vez que alguien abrió la conversación.
 
 ## 5. Alternativas descartadas
 

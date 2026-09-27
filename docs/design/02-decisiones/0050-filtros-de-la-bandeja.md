@@ -2,12 +2,12 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 · **§4 enmendado por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): *no leídas* deja de devolver vacío, porque cada mensaje del cliente suma y leer o responder lo borra |
+| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 · **§4 y §5 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): *no leídas* deja de devolver vacío, porque cada mensaje del cliente suma y leer o responder lo borra, y la alternativa de §5 que descartaba escribir `unread_count` en esta fase queda revertida en esa mitad |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Qué lee cada filtro de F23, cómo se combinan, qué pasa con los que todavía no tienen datos, y el pendiente de [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md): cómo convive el cursor con los filtros |
 | **Requisitos afectados** | F23 · F22 · F24 · F25 · F28 · Anexo B |
-| **Enmienda** | [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md), *Lo que queda abierto* — ningún filtro cambia el orden, así que el cursor de la bandeja sirve igual para un listado filtrado y no hace falta un cursor propio |
+| **Enmienda** | [ADR-0035](0035-reglas-de-la-bandeja-manual.md), *Lo que queda abierto* — la fila *"Qué filtros ofrece la bandeja"*, que los mandaba a la Fase 10, queda resuelta · [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md), *Lo que queda abierto* — ningún filtro cambia el orden, así que el cursor de la bandeja sirve igual para un listado filtrado y no hace falta un cursor propio |
 | **Relacionada con** | [ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md), [ADR-0003](0003-etiquetas-catalogo-y-relaciones.md), [ADR-0004](0004-asignacion-de-conversaciones.md), [ADR-0035](0035-reglas-de-la-bandeja-manual.md) |
 
 ---
@@ -20,7 +20,7 @@ Al llegar a la Fase 10, el esquema tiene una columna o una tabla para cada filtr
 
 | Filtro | Qué lee | Quién lo escribe |
 |---|---|---|
-| No leídas | `conversations.unread_count` | Nadie todavía |
+| No leídas | `conversations.unread_count` | Nadie todavía → **desde [ADR-0052](0052-marca-de-leida.md)**, cada mensaje del cliente suma, y leer o responder lo borra |
 | Resueltas | `conversations.status = 'resolved'` | Nadie todavía: el cierre manual de [ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md) (d) no está construido |
 | Por etiqueta | `conversation_labels` | F24, en la **Fase 11** |
 | Con recordatorio | `reminders` | F28, en la **Fase 11** |
@@ -79,7 +79,7 @@ Los otros tres sí tienen datos: *asignadas* (`operator_id`, desde la Fase 5), *
 
 ### Negativas / costos asumidos
 
-- **Cuatro filtros devuelven vacío hasta que algo los alimente.** *No leídas* y *resueltas* no tienen fase asignada: nada escribe `unread_count` ni cierra una conversación. *Por etiqueta* y *con recordatorio* esperan a F24 y F28 (Fase 11). **Una bandeja vacía con el filtro puesto se lee igual que "no hay ninguna"**, y el frontend tiene que saberlo para no presentarlo como un resultado.
+- **Cuatro filtros devuelven vacío hasta que algo los alimente.** ~~*No leídas* y *resueltas* no tienen fase asignada: nada escribe `unread_count` ni cierra una conversación.~~ **→ Enmendado por [ADR-0052](0052-marca-de-leida.md):** *no leídas* ya se alimenta, y *resueltas* quedó en la Fase 11, con el cierre manual (pendiente del README). *Por etiqueta* y *con recordatorio* esperan a F24 y F28 (Fase 11). **Una bandeja vacía con el filtro puesto se lee igual que "no hay ninguna"**, y el frontend tiene que saberlo para no presentarlo como un resultado.
 - ***En espera* no se ordena por tiempo de espera.** Se ordena por última actividad, como el resto. Para ver primero la que más espera, el frontend tiene que ordenar la página que recibió, y eso no ordena las páginas siguientes.
 - **Cambiar de filtro vuelve a la primera página.** Un cursor de un listado usado con otro filtro continúa desde una posición que no significa nada en el nuevo, y la API no lo detecta.
 - **Una sola etiqueta por consulta.** Filtrar por *"Ventas o Reclamos"* necesita dos consultas.
@@ -92,7 +92,7 @@ Los otros tres sí tienen datos: *asignadas* (`operator_id`, desde la Fase 5), *
 | Alternativa | Motivo del descarte |
 |---|---|
 | **Construir sólo los tres filtros con datos** y dejar los otros cuatro para la Fase 11 | Deja el contrato con el frontend incompleto y obliga a cambiar la API en la Fase 11. El grupo prefirió cerrarlo ahora y asumir los filtros vacíos |
-| **Sumar a esta fase la escritura de `unread_count` y el cierre de conversaciones** | Son dos funcionalidades nuevas, sin ADR, colgadas de una tarea de filtros. Agrandan la fase sin un requisito que las ubique acá |
+| **Sumar a esta fase la escritura de `unread_count` y el cierre de conversaciones** | Son dos funcionalidades nuevas, sin ADR, colgadas de una tarea de filtros. Agrandan la fase sin un requisito que las ubique acá. **→ Revertida en parte por [ADR-0052](0052-marca-de-leida.md)**: el grupo sumó a esta fase la escritura de `unread_count`; el cierre sigue afuera |
 | **Combinar con OR** | Sumar un filtro agrandaría el listado. Ninguna lectura de F23 lo pide |
 | **Aceptar `false` como *"filtrar lo contrario"*** (`assigned=false` para el pool) | F23 enumera filtros, no sus negaciones: sería agregar filtros que el requisito no pide |
 | **Un cursor propio por filtro**, con el orden de cada uno | Sólo *en espera* tendría un orden distinto, y F23 no lo pide. Dos cursores son dos reglas de paginación que pueden discrepar |

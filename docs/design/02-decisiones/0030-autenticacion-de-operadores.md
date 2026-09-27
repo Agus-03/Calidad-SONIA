@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **regla 2 y §4 enmendados por [ADR-0051](0051-bandeja-en-tiempo-real.md)** (2026-09-26): en el socket de la bandeja en tiempo real, `role` y `active` se leen una sola vez, al abrirlo, así que desactivar a un operador o bajarle el rol no corta un socket que ya está abierto |
 | **Fecha** | 2026-09-09 |
 | **Etapa** | Construcción — Fase 2 (login y operadores) |
 | **Resuelve** | Cómo se autentica un operador ante el núcleo y cómo se guarda su contraseña |

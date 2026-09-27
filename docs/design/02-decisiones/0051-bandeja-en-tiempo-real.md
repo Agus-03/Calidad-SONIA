@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 |
+| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 enmendado por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio* |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Cómo implementa el núcleo F21: con qué librería, cómo se autentica una conexión que el navegador abre sin header `Authorization`, qué eventos existen, quién los publica y qué pasa cuando algo falla |

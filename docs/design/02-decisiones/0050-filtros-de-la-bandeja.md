@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 |
+| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 · **§4 enmendado por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): *no leídas* deja de devolver vacío, porque cada mensaje del cliente suma y leer o responder lo borra |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Qué lee cada filtro de F23, cómo se combinan, qué pasa con los que todavía no tienen datos, y el pendiente de [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md): cómo convive el cursor con los filtros |

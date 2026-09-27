@@ -93,6 +93,7 @@ type Aggregate interface {
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
+	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -393,6 +394,33 @@ func (s *Service) SetStarred(ctx context.Context, scope Scope, conversationID uu
 	}
 	s.opts.Events.Changed(conversationID)
 	return starred, nil
+}
+
+// MarkRead clears the unread count when the conversation is on screen (ADR-0052). Who may clear it is who may answer it: its holder,
+// or anybody when it is in the pool (ADR-0035, regla 5). A supervisor looking at a vendor's conversation does not take the vendor's
+// warning away, and is told the conversation is somebody else's; an operator is told it does not exist, as always.
+//
+// A conversation with nothing unread is answered and not written, and nobody is told: nothing changed.
+func (s *Service) MarkRead(ctx context.Context, scope Scope, conversationID uuid.UUID) error {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return err
+	}
+	if err := mayAnswer(scope, target); err != nil {
+		return err
+	}
+	if target.UnreadCount == 0 {
+		return nil
+	}
+
+	if err := s.opts.Aggregate.MarkRead(ctx, conversationID); err != nil {
+		if errors.Is(err, conversations.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	s.opts.Events.Changed(conversationID)
+	return nil
 }
 
 // maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of

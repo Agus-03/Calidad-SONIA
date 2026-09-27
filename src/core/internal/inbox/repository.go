@@ -32,7 +32,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 //
 // The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
-SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred,
+SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count,
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -172,7 +172,7 @@ func (r *Repository) SummaryOf(ctx context.Context, conversationID uuid.UUID) (u
 // removed (ADR-0038). The ownership rule restricts writes and not reads.
 const targetSelect = `
 SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode,
-          COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred
+          COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count
 FROM      conversations c
 JOIN      contacts ct ON ct.id = c.contact_id
 LEFT JOIN ai_agents a ON a.id = c.ai_agent_id
@@ -183,7 +183,7 @@ func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, accountID, conversationID).
 		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt, &t.AIAgentID, &t.Mode,
-			&t.AIAgentAvailable, &t.Starred)
+			&t.AIAgentAvailable, &t.Starred, &t.UnreadCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrNotFound
 	}
@@ -322,7 +322,7 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred,
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,

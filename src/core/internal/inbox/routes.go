@@ -7,7 +7,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// Written once so the seven routes of one conversation cannot drift apart.
+// Written once so the eight routes of one conversation cannot drift apart.
 const routeBase = "/conversations"
 
 // The three roles enter every route, and what each one reaches is decided inside: refusing the listing to an operator would take away
@@ -28,5 +28,7 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPatch, Path: routeBase + "/:id/mode", Roles: enums.OperatorRoleValues, Handler: c.setMode},
 		// F25 names no role, so the star has the reach of the thread for all three, which the service decides (ADR-0035, regla 2).
 		{Method: http.MethodPatch, Path: routeBase + "/:id/starred", Roles: enums.OperatorRoleValues, Handler: c.setStarred},
+		// Who may answer is who may clear the unread: the holder, or anybody for the pool, which the service decides (ADR-0052).
+		{Method: http.MethodPost, Path: routeBase + "/:id/read", Roles: enums.OperatorRoleValues, Handler: c.markRead},
 	}
 }

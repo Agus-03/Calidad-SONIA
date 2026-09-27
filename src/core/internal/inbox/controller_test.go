@@ -852,6 +852,89 @@ func TestTheStarHandlerRefusesWithoutAnActor(t *testing.T) {
 	}
 }
 
+func postRead(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/conversations/"+conversationID+"/read", nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestEveryRoleClearsTheUnreadOfThePool walks the route with the three roles, because a wrong Roles list compiles (ADR-0052).
+func TestEveryRoleClearsTheUnreadOfThePool(t *testing.T) {
+	for _, role := range enums.OperatorRoleValues {
+		t.Run(string(role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(nil)
+			target.UnreadCount = 2
+			d.store.targets[target.ConversationID] = target
+
+			if rec := postRead(mountDesk(role, d), target.ConversationID.String()); rec.Code != http.StatusNoContent {
+				t.Fatalf("POST as %s: got %d, want 204 - body %s", role, rec.Code, rec.Body)
+			}
+			if len(d.aggregate.read) != 1 {
+				t.Fatal("the unread was not cleared")
+			}
+		})
+	}
+}
+
+// TestEachReadRefusalHasItsOwnCode is what the frontend switches on: a supervisor learns the conversation is taken, an operator
+// that it does not exist (ADR-0035, reglas 3 y 6).
+func TestEachReadRefusalHasItsOwnCode(t *testing.T) {
+	someoneElse := id.New()
+	for _, tc := range []struct {
+		name     string
+		role     enums.OperatorRole
+		shape    func(*desk) string
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", enums.OperatorRoleAdmin, func(*desk) string { return "no-es-un-id" }, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the conversation does not exist", enums.OperatorRoleAdmin, func(*desk) string { return id.New().String() }, http.StatusNotFound, "conversation_not_found"},
+		{"a supervisor on a vendor's conversation", enums.OperatorRoleSupervisor, func(d *desk) string {
+			return d.open(&someoneElse).ConversationID.String()
+		}, http.StatusConflict, "conversation_taken"},
+		{"an operator on another's conversation", enums.OperatorRoleOperator, func(d *desk) string {
+			return d.open(&someoneElse).ConversationID.String()
+		}, http.StatusNotFound, "conversation_not_found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			rec := postRead(mountDesk(tc.role, d), tc.shape(d))
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheUnreadCountIsOnTheRow: the badge and the filter of F23 read it without opening the conversation (ADR-0052).
+func TestTheUnreadCountIsOnTheRow(t *testing.T) {
+	store := &stubStore{rows: []Summary{{ID: id.New(), UnreadCount: 4, LastActivityAt: time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)}}}
+	rec := get(mountDesk(enums.OperatorRoleAdmin, newDesk(store)), url.Values{})
+	if !strings.Contains(rec.Body.String(), `"unread_count":4`) {
+		t.Fatalf("the row does not carry the unread count - body %s", rec.Body)
+	}
+}
+
+// TestTheReadHandlerRefusesWithoutAnActor guards the wiring the same way the other handlers do.
+func TestTheReadHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPost, "/conversations/x/read", nil)
+
+	NewController(newDesk(&stubStore{}).service, nil).markRead(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
 func getSuggestion(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/suggestion", nil)
 	req.Header.Set("Authorization", "Bearer cualquier-cosa")

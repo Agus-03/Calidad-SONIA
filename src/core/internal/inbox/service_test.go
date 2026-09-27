@@ -621,6 +621,81 @@ func TestTheStarReportsWhatTheAggregateSaid(t *testing.T) {
 	}
 }
 
+// TestWhoMayClearTheUnreadIsWhoMayAnswer is ADR-0052 as a table: the holder, or anybody for the pool, clears it; a supervisor
+// looking at a vendor's conversation is told it is taken and clears nothing; an operator is told another's does not exist. Nothing
+// unread writes nothing and tells nobody, and a resolved conversation is read like any other.
+func TestWhoMayClearTheUnreadIsWhoMayAnswer(t *testing.T) {
+	me, other := id.New(), id.New()
+
+	for _, tc := range []struct {
+		name      string
+		holder    *uuid.UUID
+		role      enums.OperatorRole
+		shape     func(*Target)
+		wantErr   error
+		wantWrite bool
+	}{
+		{"the holder clears it", &me, enums.OperatorRoleOperator, func(*Target) {}, nil, true},
+		{"anybody clears one of the pool", nil, enums.OperatorRoleOperator, func(*Target) {}, nil, true},
+		{"a supervisor does not clear a vendor's warning", &other, enums.OperatorRoleSupervisor, func(*Target) {}, ErrTaken, false},
+		{"another's does not exist for an operator", &other, enums.OperatorRoleOperator, func(*Target) {}, ErrNotFound, false},
+		{"a resolved one is read like any other", &me, enums.OperatorRoleOperator,
+			func(t *Target) { t.Status = enums.ConversationStatusResolved }, nil, true},
+		{"nothing unread writes nothing", &me, enums.OperatorRoleOperator, func(t *Target) { t.UnreadCount = 0 }, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(tc.holder)
+			target.UnreadCount = 3
+			tc.shape(&target)
+			d.store.targets[target.ConversationID] = target
+
+			err := d.service.MarkRead(context.Background(), scopeOf(me, tc.role), target.ConversationID)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("MarkRead: got %v, want %v", err, tc.wantErr)
+			}
+			if written := len(d.aggregate.read) == 1; written != tc.wantWrite {
+				t.Fatalf("written = %v, want %v", written, tc.wantWrite)
+			}
+			// Told only when something changed, and reading never takes the pool (ADR-0035, regla 13).
+			if told := len(d.events.told) == 1; told != tc.wantWrite {
+				t.Fatalf("told the hub %v, want %v", d.events.told, tc.wantWrite)
+			}
+			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 {
+				t.Fatal("marking read assigned the conversation")
+			}
+		})
+	}
+}
+
+// TestTheReadReportsWhatTheAggregateSaid covers the row gone between the read and the write, and a database that did not answer.
+func TestTheReadReportsWhatTheAggregateSaid(t *testing.T) {
+	boom := errors.New("connection refused")
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{"the row was gone", conversations.ErrNotFound, ErrNotFound},
+		{"the database did not answer", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			d.aggregate.readErr = tc.err
+			target := d.open(nil)
+			target.UnreadCount = 1
+			d.store.targets[target.ConversationID] = target
+
+			if err := d.service.MarkRead(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("MarkRead: got %v, want %v", err, tc.wantErr)
+			}
+			if len(d.events.told) != 0 {
+				t.Fatalf("a failed read told the hub %v", d.events.told)
+			}
+		})
+	}
+}
+
 // ADR-0046, section 2.5: the text copied from a suggestion is sent as the Operator's, and the draft is reviewed with the message in
 // the same transaction, as accepted when it left untouched.
 func TestASentSuggestionIsReviewedWithTheMessage(t *testing.T) {

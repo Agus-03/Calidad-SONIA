@@ -151,12 +151,16 @@ func (r *Repository) MarkFailed(ctx context.Context, messageID uuid.UUID, errorC
 // The window keeps Meta's clock, because Meta is the one that measures it (ADR-0008); the activity takes the database clock, the one
 // TouchOutbound writes too, so the inbox never orders by two clocks at once (C06). Both only move forward: Meta may deliver an older
 // message after a newer one, and that late webhook must not shorten the window or sink the conversation in the inbox.
+//
+// Every customer message counts one more unread, in the same statement: a redelivery never gets here, because its duplicate wamid
+// refused the insert first (ADR-0052).
 func (r *Repository) TouchInbound(ctx context.Context, conversationID uuid.UUID, at time.Time) error {
 	tag, err := r.exec.Exec(ctx,
 		`UPDATE conversations
 		 SET    last_inbound_at   = GREATEST(last_inbound_at, $2),
 		        window_expires_at = GREATEST(window_expires_at, $3),
 		        last_activity_at  = now(),
+		        unread_count      = unread_count + 1,
 		        updated_at        = now()
 		 WHERE  id = $1`,
 		conversationID, at, at.Add(ServiceWindow))
@@ -201,6 +205,24 @@ func (r *Repository) MarkWaiting(ctx context.Context, conversationID uuid.UUID) 
 	tag, err := r.exec.Exec(ctx, conversationMarkWaiting, conversationID, enums.ConversationStatusWaiting)
 	if err != nil {
 		return fmt.Errorf("conversations: mark waiting: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// last_activity_at is left alone, for the reason the star leaves it: reading is not activity of the channel, and moving the row would
+// shift every cursor in circulation (ADR-0036, ADR-0052).
+const conversationMarkRead = `
+UPDATE conversations
+SET    unread_count = 0, last_read_at = now(), updated_at = now()
+WHERE  id = $1 AND deleted_at IS NULL`
+
+func (r *Repository) MarkRead(ctx context.Context, conversationID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationMarkRead, conversationID)
+	if err != nil {
+		return fmt.Errorf("conversations: mark read: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

@@ -218,7 +218,7 @@ func (s *stubStore) RecordAssignment(_ context.Context, a Assignment) error {
 	return nil
 }
 
-// stubAggregate is conversations/ seen through the six calls the inbox makes, recording each so a case can assert what was
+// stubAggregate is conversations/ seen through the seven calls the inbox makes, recording each so a case can assert what was
 // written and, as often, what was not.
 type stubAggregate struct {
 	claimErr      error
@@ -234,6 +234,16 @@ type stubAggregate struct {
 	failed   map[uuid.UUID]string
 	modes    map[uuid.UUID]enums.AgentMode
 	starred  map[uuid.UUID]bool
+	read     []uuid.UUID
+	readErr  error
+}
+
+func (a *stubAggregate) MarkRead(_ context.Context, conversationID uuid.UUID) error {
+	if a.readErr != nil {
+		return a.readErr
+	}
+	a.read = append(a.read, conversationID)
+	return nil
 }
 
 func (a *stubAggregate) SetStarred(_ context.Context, conversationID uuid.UUID, starred bool) error {

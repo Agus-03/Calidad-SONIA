@@ -47,6 +47,7 @@ type summaryResponse struct {
 	// False when there is no agent or it is paused or removed: the panel greys the switch out instead of trying it (ADR-0038).
 	AIAgentAvailable bool              `json:"ai_agent_available"`
 	Starred          bool              `json:"starred"`
+	UnreadCount      int               `json:"unread_count"`
 	Contact          contactResponse   `json:"contact"`
 	Operator         *operatorResponse `json:"operator"`
 	LastMessage      *messageResponse  `json:"last_message"`
@@ -91,6 +92,7 @@ func present(s Summary) summaryResponse {
 		},
 		AIAgentAvailable: s.AIAgentAvailable,
 		Starred:          s.Starred,
+		UnreadCount:      s.UnreadCount,
 		FailedCount:      s.FailedCount,
 		LastFailedAt:     rfc3339(s.LastFailedAt),
 		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
@@ -347,6 +349,24 @@ func (c *Controller) setMode(gc *gin.Context) {
 		return
 	}
 	soniahttp.OK(gc, modeResponse{ID: conversationID.String(), Mode: string(mode)})
+}
+
+// markRead answers 204: there is nothing to draw back, and the row reaches every inbox by the stream (ADR-0051, ADR-0052).
+func (c *Controller) markRead(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+	if err := c.service.MarkRead(gc.Request.Context(), scope, conversationID); err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.NoContent(gc)
 }
 
 // A pointer so false is a value and not an absence: the binding refuses a zero bool as missing (F25).

@@ -731,6 +731,66 @@ func TestTheRowOfAnEventIsTheRowOfTheListing(t *testing.T) {
 	})
 }
 
+// TestAnswerAndReadClearTheUnreadAgainstRealDDL is ADR-0052 through the inbox: answering the pool clears it with the real aggregate,
+// a supervisor cannot clear a vendor's, the holder can, and the filter of F23 follows (ADR-0050).
+func TestAnswerAndReadClearTheUnreadAgainstRealDDL(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET unread_count = 2 WHERE id = ANY($1)`, []uuid.UUID{w.pooledConv, w.mineConv}); err != nil {
+			t.Fatalf("mark unread: %v", err)
+		}
+		service := sendingDesk(exec, &stubSender{wamid: "wamid.double"})
+		mine := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		supervisor := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleSupervisor}
+		unread := func(conversationID uuid.UUID) int {
+			t.Helper()
+			var n int
+			if err := exec.QueryRow(ctx, `SELECT unread_count FROM conversations WHERE id = $1`, conversationID).Scan(&n); err != nil {
+				t.Fatalf("read unread: %v", err)
+			}
+			return n
+		}
+
+		// The pool's window is seeded in 2999, so the answer is not refused before it is written.
+		if _, err := service.Send(ctx, mine, w.pooledConv, "te ayudo", nil); err != nil {
+			t.Fatalf("answering the pool: %v", err)
+		}
+		if n := unread(w.pooledConv); n != 0 {
+			t.Fatalf("after answering: unread %d, want 0", n)
+		}
+
+		if err := service.MarkRead(ctx, supervisor, w.mineConv); !errors.Is(err, ErrTaken) {
+			t.Fatalf("a supervisor on a vendor's conversation: got %v, want ErrTaken", err)
+		}
+		if n := unread(w.mineConv); n != 2 {
+			t.Fatalf("the supervisor's look cleared the vendor's warning: unread %d", n)
+		}
+		rows, err := NewRepository(exec).List(ctx, supervisor, Filter{Unread: true}, nil, 1000)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if !containsID(rows, w.mineConv) || containsID(rows, w.pooledConv) {
+			t.Fatalf("no leidas holds %v, want the vendor's and not the answered one", idsOf(rows))
+		}
+
+		if err := service.MarkRead(ctx, mine, w.mineConv); err != nil {
+			t.Fatalf("the holder marking read: %v", err)
+		}
+		if n := unread(w.mineConv); n != 0 {
+			t.Fatalf("after the holder read it: unread %d, want 0", n)
+		}
+	})
+}
+
+func containsID(rows []Summary, want uuid.UUID) bool {
+	for _, r := range rows {
+		if r.ID == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock (ADR-0036, regla 2), the
 // failed answer in its place with its code and its author, the hidden message left out, and the reach of the listing applied to one
 // conversation (ADR-0035, regla 2).

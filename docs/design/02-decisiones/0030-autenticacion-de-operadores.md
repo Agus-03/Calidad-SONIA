@@ -35,7 +35,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 | # | Regla |
 |---|---|
 | 1 | **El token lleva únicamente `sub`** —el `operator_id`—, más `iat` y `exp`. Ni el rol, ni el correo, ni el nombre |
-| 2 | **`role` y `active` se leen de la fila de `operators` en cada petición.** El token dice quién es; la base dice qué puede |
+| 2 | **`role` y `active` se leen de la fila de `operators` en cada petición.** El token dice quién es; la base dice qué puede **→ Enmendado por [ADR-0051](0051-bandeja-en-tiempo-real.md):** en el socket de la bandeja se leen una vez, al abrirlo. |
 | 3 | **Vida de 12 horas, sin *refresh token*.** Vencido, se vuelve a loguear |
 | 4 | **Transporte en el header `Authorization`, nunca en cookie** |
 | 5 | **El secreto sale de `JWT_SECRET`, del entorno, validado al arrancar:** si falta, el proceso no levanta (regla 10 de `CLAUDE.md`) |
@@ -51,7 +51,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 
 - **El header y no la cookie, porque el frontend está en otro origen.** Una cookie cruzando orígenes exige `SameSite=None` más `Secure`, CORS con credenciales, y defensa de CSRF encima — porque el navegador la manda sola, que es justamente lo que la hace vulnerable. `Authorization` no lo manda nadie sin escribirlo, así que no hay CSRF que defender. La cookie compra protección contra XSS que el header no da; se elige el problema que el otro equipo resuelve en su propio código sobre el que obliga a coordinar configuración entre dos equipos.
 
-- **El rol no viaja en el token porque la fila se lee igual.** El middleware necesita saber si el operador sigue activo, y eso no se puede firmar de antemano. Ya que se va a la base, el rol sale de ahí. Lo que compra: **desactivar o borrar un operador le corta el acceso en la petición siguiente, y un cambio de rol pega enseguida** — que es exactamente lo que ADR-0011 necesita para que "el módulo de contactos es de `admin`" sea un control y no una promesa. Un token que llevara el rol adentro convertiría revocar un permiso en algo que tarda hasta doce horas.
+- **El rol no viaja en el token porque la fila se lee igual.** El middleware necesita saber si el operador sigue activo, y eso no se puede firmar de antemano. Ya que se va a la base, el rol sale de ahí. Lo que compra: **desactivar o borrar un operador le corta el acceso en la petición siguiente, y un cambio de rol pega enseguida** — que es exactamente lo que ADR-0011 necesita para que "el módulo de contactos es de `admin`" sea un control y no una promesa. Un token que llevara el rol adentro convertiría revocar un permiso en algo que tarda hasta doce horas. **→ Enmendado por [ADR-0051](0051-bandeja-en-tiempo-real.md):** en un socket ya abierto, ni la desactivación ni el cambio de rol pegan hasta que reconecta.
 
 - **bcrypt y no argon2id, porque hay un solo número que defender.** argon2id es mejor **bien calibrado** y peor **mal calibrado**, y calibrarlo exige elegir memoria, iteraciones y paralelismo contra el hardware donde va a correr. OE7 pide despliegue en producción real y esa infraestructura no está elegida: serían tres números puestos a ciegas, que después nadie vuelve a revisar. bcrypt con costo 12 es una decisión con un parámetro, treinta años de uso y ninguna calibración pendiente. El límite de 72 bytes es real y no molesta a nadie.
 
@@ -64,7 +64,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 ### Positivas
 
 - **Ninguna tabla nueva y ninguna migración.** La Fase 2 entera se construye sobre el esquema que ya existe.
-- **La revocación de una persona es inmediata**, que es la propiedad que ADR-0011 necesitaba y la que suele perderse al elegir JWT.
+- **La revocación de una persona es inmediata**, que es la propiedad que ADR-0011 necesitaba y la que suele perderse al elegir JWT. **→ Enmendado por [ADR-0051](0051-bandeja-en-tiempo-real.md):** salvo en un socket ya abierto de la bandeja en tiempo real, que sigue recibiendo eventos hasta que se corta.
 - **Sirve a cualquier frontend, en cualquier origen**, sin que el otro equipo tenga que configurar nada más que un header.
 - **La costura desaparece.** `auth.go` deja de tener un comentario que avisa que no es un mecanismo.
 

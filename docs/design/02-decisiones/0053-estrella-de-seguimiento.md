@@ -23,7 +23,7 @@ F25 no dice quién pone la estrella, si es de cada persona o de la conversación
 |---|---|
 | 1 | **`PATCH /api/v1/conversations/:id/starred`**, con `{"starred": true}` o `{"starred": false}`, responde 200 con el estado final. Un cuerpo sin `starred`, o con algo que no es booleano, es un 400 `invalid_body`: `false` es un valor, no una ausencia |
 | 2 | **La estrella es una sola por conversación**, compartida por todos los que la ven, como la columna del Anexo C |
-| 3 | **Tiene el alcance del hilo** ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 2), para los tres roles: el `operator`, sobre las suyas y las del pool; `supervisor` y `admin`, sobre todas las de la cuenta. Lo que queda fuera de alcance es un 404 `conversation_not_found` (regla 3) |
+| 3 | **Tiene el alcance del hilo** ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 2), para los tres roles: el `operator`, sobre las suyas y las del pool; `supervisor` y `admin`, sobre todas las de la cuenta. Lo que queda fuera de alcance es un 404 `conversation_not_found` ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 3) |
 | 4 | **Una conversación resuelta se puede destacar** |
 | 5 | **Pedir el estado que ya tiene no escribe** ni avisa a nadie, y responde 200 igual |
 | 6 | **Destacar no asigna**, por la misma razón que cambiar el modo no asigna ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), regla 13): asigna responder, y destacar no es responder |

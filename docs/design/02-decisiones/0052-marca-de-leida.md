@@ -30,7 +30,7 @@ El anteproyecto no define qué es leer una conversación. Hay que decidir tres c
 |---|---|
 | 1 | **Cada mensaje del cliente suma uno**, en la misma sentencia que mueve la ventana de 24 horas, dentro de la transacción del webhook |
 | 2 | **Un reenvío de Meta no suma**: el `wamid` duplicado se rechaza antes de llegar a esa sentencia |
-| 3 | **La respuesta del bot no borra nada.** Que el bot haya contestado no significa que el vendedor leyó lo que escribió el cliente |
+| 3 | **La respuesta del bot no borra nada, y tampoco el texto fijo del sistema** que sale cuando se corta un turno. Que algo automático haya contestado no significa que el vendedor leyó lo que escribió el cliente |
 
 ### 2.2 Qué borra
 

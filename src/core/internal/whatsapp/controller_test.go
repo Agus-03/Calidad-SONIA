@@ -31,7 +31,7 @@ func (r *recordingCollector) Collect(_ context.Context, conversationID, _ uuid.U
 
 func mount(collector MessageCollector) (*stubChannel, *stubAggregate, http.Handler) {
 	repo, agg, cs := channel()
-	controller := NewController(service(repo, agg, cs, slog.Default()), collector, slog.Default())
+	controller := NewController(ControllerOptions{Service: service(repo, agg, cs, slog.Default()), Collector: collector, Logger: slog.Default()})
 	return repo, agg, soniahttp.NewRouter(soniahttp.RouterOptions{
 		PublicControllers: []soniahttp.Controller{controller},
 	})
@@ -95,6 +95,57 @@ func TestReceiveStoresTheMessageAndAddsItToItsBatchBeforeAnswering(t *testing.T)
 	defer collector.mu.Unlock()
 	if len(collector.collected) != 1 || collector.collected[0] != agg.conversationID {
 		t.Fatalf("the message was collected for %v, want the conversation just written", collector.collected)
+	}
+}
+
+// recordingEvents is inbox's hub as the channel sees it, recording each conversation it was told about.
+type recordingEvents struct{ told []uuid.UUID }
+
+func (e *recordingEvents) Changed(conversationID uuid.UUID) { e.told = append(e.told, conversationID) }
+
+// TestReceiveTellsTheInboxOncePerConversation is F21 on the channel side: after the commit, once per conversation even when one
+// payload carries two messages of the same customer, and never for a forged body, which stored no message (F20, ADR-0051).
+func TestReceiveTellsTheInboxOncePerConversation(t *testing.T) {
+	second := strings.Replace(metaTextPayload, `}]
+      }`, `}, {
+          "from": "5493510000000",
+          "id": "wamid.segundo",
+          "timestamp": "1772841601",
+          "type": "text",
+          "text": {"body": "y por el envio?"}
+        }]
+      }`, 1)
+	if second == metaTextPayload {
+		t.Fatal("the fixture changed shape: the second message was not added")
+	}
+
+	for _, tc := range []struct {
+		name, body, secret string
+		want               int
+	}{
+		{"one message", metaTextPayload, testAppSecret, 1},
+		{"two messages of the same customer", second, testAppSecret, 1},
+		{"a forged body", metaTextPayload, "no-soy-meta", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, agg, cs := channel()
+			events := &recordingEvents{}
+			engine := soniahttp.NewRouter(soniahttp.RouterOptions{PublicControllers: []soniahttp.Controller{
+				NewController(ControllerOptions{Service: service(repo, agg, cs, slog.Default()), Events: events}),
+			}})
+
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, webhook(tc.body, sign(tc.body, tc.secret)))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d, want 200", rec.Code)
+			}
+			if len(events.told) != tc.want {
+				t.Fatalf("the inbox was told %v, want %d", events.told, tc.want)
+			}
+			if tc.want == 1 && events.told[0] != agg.conversationID {
+				t.Fatalf("the inbox was told about %v, want the conversation just written %v", events.told[0], agg.conversationID)
+			}
+		})
 	}
 }
 

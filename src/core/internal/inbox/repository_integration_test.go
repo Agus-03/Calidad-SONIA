@@ -691,6 +691,46 @@ func TestEachFilterOfF23AgainstRealDDL(t *testing.T) {
 	})
 }
 
+// TestTheRowOfAnEventIsTheRowOfTheListing is SummaryOf against real DDL: the event of F21 carries the same row the listing draws,
+// with its account, and a deleted conversation or one never written is not found (C09, ADR-0051).
+func TestTheRowOfAnEventIsTheRowOfTheListing(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		account, row, err := repo.SummaryOf(ctx, w.mineConv)
+		if err != nil {
+			t.Fatalf("SummaryOf: %v", err)
+		}
+		if account != w.account {
+			t.Fatalf("the account is %v, want %v", account, w.account)
+		}
+		listed, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		var fromListing *Summary
+		for i := range listed {
+			if listed[i].ID == w.mineConv {
+				fromListing = &listed[i]
+			}
+		}
+		if fromListing == nil {
+			t.Fatalf("the listing does not show %v", w.mineConv)
+		}
+		if row.Operator == nil || row.Operator.ID != w.mine || row.FailedCount != fromListing.FailedCount ||
+			row.LastMessage == nil || fromListing.LastMessage == nil || row.LastMessage.ID != fromListing.LastMessage.ID {
+			t.Fatalf("the event row %+v differs from the listing row %+v", row, *fromListing)
+		}
+
+		for _, missing := range []uuid.UUID{w.deletedConv, id.New()} {
+			if _, _, err := repo.SummaryOf(ctx, missing); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("SummaryOf %v: got %v, want ErrNotFound", missing, err)
+			}
+		}
+	})
+}
+
 // TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock (ADR-0036, regla 2), the
 // failed answer in its place with its code and its author, the hidden message left out, and the reach of the listing applied to one
 // conversation (ADR-0035, regla 2).

@@ -137,6 +137,35 @@ func (r *Repository) List(ctx context.Context, scope Scope, filter Filter, after
 	return out, nil
 }
 
+// The account first and the row after, because summarySelect is scoped by account and the hub only knows the conversation: which
+// operators may hear of it is decided after, per connection.
+const summaryAccount = `
+SELECT ct.account_id
+FROM   conversations c
+JOIN   contacts ct ON ct.id = c.contact_id
+WHERE  c.id = $1 AND c.deleted_at IS NULL AND ct.deleted_at IS NULL`
+
+// SummaryOf reads one row of the inbox as the listing draws it, for the event F21 pushes when it changes (ADR-0051).
+func (r *Repository) SummaryOf(ctx context.Context, conversationID uuid.UUID) (uuid.UUID, Summary, error) {
+	var accountID uuid.UUID
+	err := r.exec.QueryRow(ctx, summaryAccount, conversationID).Scan(&accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, Summary{}, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, Summary{}, fmt.Errorf("inbox: read the account of a conversation: %w", err)
+	}
+
+	s, err := scanSummary(r.exec.QueryRow(ctx, summarySelect+" AND c.id = $3", accountID, enums.MessageStatusFailed, conversationID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, Summary{}, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, Summary{}, err
+	}
+	return accountID, s, nil
+}
+
 // Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists,
 // and one whose contact was taken down is one nobody answers any more (ADR-0035, regla 1).
 // The agent is joined for the switch of the bot, which needs the three conditions the turn reads: it exists, is active and was not

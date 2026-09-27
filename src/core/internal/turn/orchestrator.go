@@ -82,6 +82,8 @@ type Options struct {
 	Brain     Brain
 	Channel   Channel
 	Sender    whatsapp.Sender
+	// Nil tells nobody, which is what every test of the turn alone needs.
+	Events Events
 
 	// Bounds how long one goroutine can live, and with it how long a deployment waits before cutting (ADR-0029).
 	Budget       time.Duration
@@ -89,6 +91,11 @@ type Options struct {
 	RetryBackoff time.Duration
 
 	Logger *slog.Logger
+}
+
+// Events is inbox's hub as the turn sees it: the conversation a turn wrote in, told once the turn is over (ADR-0051).
+type Events interface {
+	Changed(conversationID uuid.UUID)
 }
 
 type Orchestrator struct {
@@ -123,6 +130,11 @@ func (o *Orchestrator) Start(ctx context.Context, batch Batch) {
 				slog.String("batch_id", batch.ID.String()),
 				slog.String("cause", err.Error()),
 			)
+		}
+		// Once, at the end, and after a failure too: every write of the turn committed on its own (the answer, its send, the
+		// transfer, the draft), so the row the operators get is whatever the turn left, never a step it rolled back (ADR-0051).
+		if o.opts.Events != nil {
+			o.opts.Events.Changed(batch.ConversationID)
 		}
 	}()
 }

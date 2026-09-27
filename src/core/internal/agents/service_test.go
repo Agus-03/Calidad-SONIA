@@ -220,6 +220,52 @@ func TestPausingAnAIAgentTurnsOffItsBots(t *testing.T) {
 	}
 }
 
+// recordingEvents is inbox's hub as agents/ sees it.
+type recordingEvents struct{ told []uuid.UUID }
+
+func (e *recordingEvents) Changed(conversationID uuid.UUID) { e.told = append(e.told, conversationID) }
+
+// TestThePauseAndTheRemovalTellTheInbox is what ADR-0038 left for Fase 10: the vendors hear in the moment that the bots of their
+// conversations went off, once the pause or the removal committed, and a pause that failed tells nobody (ADR-0051).
+func TestThePauseAndTheRemovalTellTheInbox(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		act  func(*Service, uuid.UUID) error
+	}{
+		{"a pause", nil, func(s *Service, agentID uuid.UUID) error {
+			_, err := s.Update(context.Background(), testAccount, testOperator, agentID, func(c *Config) { c.Active = false })
+			return err
+		}},
+		{"a removal", nil, func(s *Service, agentID uuid.UUID) error {
+			return s.Delete(context.Background(), testAccount, testOperator, agentID)
+		}},
+		{"a pause that failed", errors.New("postgres: gone"), func(s *Service, agentID uuid.UUID) error {
+			_, err := s.Update(context.Background(), testAccount, testOperator, agentID, func(c *Config) { c.Active = false })
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			existing := seeded("Agente")
+			conversations := &stubConversations{turnedOff: []uuid.UUID{id.New(), id.New()}, err: tc.err}
+			service := serviceWith(newStubRepo(existing), &stubInboxes{}, conversations, priced())
+			events := &recordingEvents{}
+			service.opts.Events = events
+
+			if err := tc.act(service, existing.ID); !errors.Is(err, tc.err) {
+				t.Fatalf("got %v, want %v", err, tc.err)
+			}
+			want := conversations.turnedOff
+			if tc.err != nil {
+				want = nil
+			}
+			if !slices.Equal(events.told, want) {
+				t.Fatalf("the inbox was told %v, want %v", events.told, want)
+			}
+		})
+	}
+}
+
 // A pause that cannot turn the bots off does not commit: a pause with its bots still on is the switch that lies (ADR-0038).
 func TestAPauseThatCannotTurnTheBotsOffDoesNotHappen(t *testing.T) {
 	existing := seeded("Agente")

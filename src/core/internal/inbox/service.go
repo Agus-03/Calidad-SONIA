@@ -107,6 +107,18 @@ type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
+// Events is the hub as the service sees it, told after each write commits and never inside it (ADR-0051).
+type Events interface {
+	Changed(conversationID uuid.UUID)
+	LeftPool(conversationID uuid.UUID)
+}
+
+// silence is what a service built without a hub tells: nothing, so a test or a tool never needs one.
+type silence struct{}
+
+func (silence) Changed(uuid.UUID)  {}
+func (silence) LeftPool(uuid.UUID) {}
+
 // TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
 type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Reviews) error) error
 
@@ -118,6 +130,7 @@ type Options struct {
 	Tx      TxFunc
 	Channel Channel
 	Sender  whatsapp.Sender
+	Events  Events
 	Logger  *slog.Logger
 }
 
@@ -126,6 +139,9 @@ type Service struct{ opts Options }
 func NewService(opts Options) *Service {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+	if opts.Events == nil {
+		opts.Events = silence{}
 	}
 	return &Service{opts: opts}
 }
@@ -185,7 +201,13 @@ func paginate[T any](rows []T, limit int, cursorOf func(T) Cursor) ([]T, *Cursor
 // mayRead is the reach of the listing applied to one conversation: the operator reads its own and the pool, and the two roles above
 // it read the whole team (ADR-0035, reglas 1 y 2).
 func mayRead(scope Scope, t Target) bool {
-	return scope.seesTheWholeTeam() || t.OperatorID == nil || *t.OperatorID == scope.OperatorID
+	return canSee(scope, t.OperatorID)
+}
+
+// canSee is the reach as a function of who holds the conversation, so the hub decides who hears a change with the same rule the
+// listing and the thread apply (ADR-0035, reglas 1 y 2).
+func canSee(scope Scope, holder *uuid.UUID) bool {
+	return scope.seesTheWholeTeam() || holder == nil || *holder == scope.OperatorID
 }
 
 // Send writes the operator's answer before it leaves and sends it at most once (ADR-0020). Taking the conversation out of the pool
@@ -240,7 +262,15 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 		return Message{}, err
 	}
 
-	return s.deliver(ctx, target, inbox, message), nil
+	delivered := s.deliver(ctx, target, inbox, message)
+	// After the send, so the row the event carries already says sent or failed. Taking the pool is the one change that takes the
+	// row out of the other operators' inboxes (ADR-0035, regla 7).
+	if target.OperatorID == nil {
+		s.opts.Events.LeftPool(target.ConversationID)
+	} else {
+		s.opts.Events.Changed(target.ConversationID)
+	}
+	return delivered, nil
 }
 
 // review marks the draft accepted or edited, compared with the trimmed text the Operator sent (ADR-0046, section 2.5).
@@ -324,6 +354,7 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 
 	switch err := s.opts.Aggregate.SetMode(ctx, conversationID, mode); {
 	case err == nil:
+		s.opts.Events.Changed(conversationID)
 		return mode, nil
 	case errors.Is(err, conversations.ErrNoAIAgent):
 		// The read already refused a conversation with no agent, so the predicate refused a pause or a removal that committed in
@@ -360,6 +391,7 @@ func (s *Service) SetStarred(ctx context.Context, scope Scope, conversationID uu
 		}
 		return false, err
 	}
+	s.opts.Events.Changed(conversationID)
 	return starred, nil
 }
 

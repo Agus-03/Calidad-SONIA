@@ -78,11 +78,19 @@ type Conversations interface {
 // TxFunc runs fn in one transaction with every collaborator bound to it (regla 5), and is a function so a test needs no PostgreSQL.
 type TxFunc func(ctx context.Context, fn func(Store, Inboxes, Conversations) error) error
 
+// Events is inbox's hub as agents/ sees it: the bots a pause or a removal turned off, told once it committed. ADR-0038 left the
+// vendor with nothing telling it in the moment; this is that telling (ADR-0051).
+type Events interface {
+	Changed(conversationID uuid.UUID)
+}
+
 type Options struct {
 	Repo      store
 	Tx        TxFunc
 	Catalogue Catalogue
-	Logger    *slog.Logger
+	// Nil tells nobody, which is what every test of the agents alone needs.
+	Events Events
+	Logger *slog.Logger
 }
 
 type Service struct{ opts Options }
@@ -203,6 +211,7 @@ func (s *Service) Update(ctx context.Context, accountID, operatorID, agentID uui
 		return AIAgent{}, err
 	}
 
+	s.told(turnedOff)
 	if len(turnedOff) > 0 {
 		s.opts.Logger.Info("ai agent paused, its bots turned off",
 			slog.String("ai_agent_id", agentID.String()), slog.String("operator_id", operatorID.String()),
@@ -238,10 +247,20 @@ func (s *Service) Delete(ctx context.Context, accountID, operatorID, agentID uui
 		return err
 	}
 
+	s.told(turnedOff)
 	s.opts.Logger.Info("ai agent removed",
 		slog.String("ai_agent_id", agentID.String()), slog.String("operator_id", operatorID.String()),
 		slog.Int("cleared_inboxes", len(cleared)), slog.Int("turned_off_conversations", len(turnedOff)))
 	return nil
+}
+
+func (s *Service) told(conversationIDs []uuid.UUID) {
+	if s.opts.Events == nil {
+		return
+	}
+	for _, conversationID := range conversationIDs {
+		s.opts.Events.Changed(conversationID)
+	}
 }
 
 func (s *Service) priced(ctx context.Context) (brainclient.ModelsResponse, error) {

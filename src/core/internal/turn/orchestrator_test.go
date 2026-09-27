@@ -256,6 +256,41 @@ func TestShutdownWaitsForTheTurnsInFlight(t *testing.T) {
 	}
 }
 
+// recordingEvents is inbox's hub as the turn sees it. Locked, because the turn tells it from its own goroutine.
+type recordingEvents struct {
+	mu   sync.Mutex
+	told []uuid.UUID
+}
+
+func (e *recordingEvents) Changed(conversationID uuid.UUID) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.told = append(e.told, conversationID)
+}
+
+// TestTheInboxHearsOfATurnOnceItIsOver is F21 on the turn side: one event per turn, after its last write, so the row the
+// operators get already carries the answer and its send (ADR-0051).
+func TestTheInboxHearsOfATurnOnceItIsOver(t *testing.T) {
+	h := conductor()
+	events := &recordingEvents{}
+	h.orchestrator.opts.Events = events
+	batch := h.closed()
+
+	h.orchestrator.Start(context.Background(), batch)
+	if err := h.orchestrator.Wait(context.Background()); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+
+	events.mu.Lock()
+	defer events.mu.Unlock()
+	if len(events.told) != 1 || events.told[0] != batch.ConversationID {
+		t.Fatalf("the inbox was told %v, want the conversation of the turn once", events.told)
+	}
+	if len(h.aggregate.sent) != 1 {
+		t.Fatal("the turn told the inbox without having answered")
+	}
+}
+
 // Start registers the turn before returning, so a shutdown that begins the instant it returns still finds it.
 func TestStartRegistersTheTurnBeforeItReturns(t *testing.T) {
 	h := conductor()

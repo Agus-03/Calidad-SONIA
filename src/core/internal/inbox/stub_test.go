@@ -333,7 +333,14 @@ func (s *stubSender) Send(ctx context.Context, _ whatsapp.Inbox, to, text string
 
 // desk is the service with every collaborator doubled. The transaction is a plain call: what these cases check is the order and the
 // presence of the writes, and binding them to one transaction is the pool's job, proven by the integration cases.
+// stubEvents records what the service tells the hub, in order.
+type stubEvents struct{ told []string }
+
+func (e *stubEvents) Changed(uuid.UUID)  { e.told = append(e.told, "changed") }
+func (e *stubEvents) LeftPool(uuid.UUID) { e.told = append(e.told, "left pool") }
+
 type desk struct {
+	events    *stubEvents
 	store     *stubStore
 	aggregate *stubAggregate
 	reviews   *stubReviews
@@ -346,7 +353,7 @@ func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
@@ -355,6 +362,7 @@ func newDesk(store *stubStore) *desk {
 		},
 		Channel: d.channel,
 		Sender:  d.sender,
+		Events:  d.events,
 		Logger:  slog.New(slog.DiscardHandler),
 	})
 	return d

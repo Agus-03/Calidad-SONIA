@@ -86,7 +86,7 @@ Cada regla de abajo está en el código. Si una deja de ser cierta, es que el id
 - `id.New()` para toda clave primaria: UUID v7 generado en la aplicación (C04). `uuid.New()` (v4) sólo en tests, nunca en una fila persistida.
 - Todo identificador que viene de afuera se parsea antes de tocar una consulta.
 - `time.Time` en el modelo, `time.Duration` en la configuración; una duración que se persiste o se loguea va en milisegundos, con el sufijo en el nombre.
-- Concurrencia poca y explícita: la goroutine del servidor en `app/app.go`, con su error por un canal buffereado, y una por turno en `turn/orchestrator.go` (ADR-0029), contada en un `sync.WaitGroup` y con su propio deadline. Toda goroutine tiene cómo terminar y alguien que la espera: `signal.NotifyContext` en `main.go`, y después `server.Shutdown` y `Orchestrator.Wait` con timeout, porque un turno en vuelo tiene un cliente esperando.
+- Concurrencia poca y explícita: la goroutine del servidor en `app/app.go`, con su error por un canal buffereado, una por turno en `turn/orchestrator.go` (ADR-0029), contada en un `sync.WaitGroup` y con su propio deadline, y en `inbox/websocket.go` el worker del hub más una por socket abierto (ADR-0051), contadas en otro. Toda goroutine tiene cómo terminar y alguien que la espera: `signal.NotifyContext` en `main.go`, y después `Hub.Close`, `server.Shutdown` y `Orchestrator.Wait` con timeout, porque un turno en vuelo tiene un cliente esperando.
 - `panic` sólo donde es correcto que el proceso no pueda seguir —`id.New()` es el caso— y `Recovery` lo convierte en 500 sin bajar el proceso.
 
 ## 10. Comentarios
@@ -106,6 +106,6 @@ Cada regla de abajo está en el código. Si una deja de ser cierta, es que el id
 
 ## 12. Lo que no hay
 
-Sin ORM, sin framework de inyección, sin librería de assertions, sin logger de terceros. Las dependencias directas son `gin`, `pgx` y `uuid`, más las dos que trajo ADR-0030 —`golang-jwt/jwt` y `golang.org/x/crypto` para bcrypt—, y nada más.
+Sin ORM, sin framework de inyección, sin librería de assertions, sin logger de terceros. Las dependencias directas son `gin`, `pgx` y `uuid`, más las dos que trajo ADR-0030 —`golang-jwt/jwt` y `golang.org/x/crypto` para bcrypt— y `coder/websocket`, que trajo ADR-0051 para F21, y nada más.
 
 Si algo de eso hace falta, es una decisión de arquitectura: va a un ADR, no a un `go get`.

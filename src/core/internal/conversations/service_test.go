@@ -34,6 +34,25 @@ type fakeStore struct {
 	claimErr    error
 	claimedBy   map[uuid.UUID]uuid.UUID
 	modes       map[uuid.UUID]enums.AgentMode
+	starred     map[uuid.UUID]bool
+	read        []uuid.UUID
+	readErr     error
+}
+
+func (f *fakeStore) MarkRead(_ context.Context, conversationID uuid.UUID) error {
+	if f.readErr != nil {
+		return f.readErr
+	}
+	f.read = append(f.read, conversationID)
+	return nil
+}
+
+func (f *fakeStore) SetStarred(_ context.Context, conversationID uuid.UUID, starred bool) error {
+	if f.starred == nil {
+		f.starred = map[uuid.UUID]bool{}
+	}
+	f.starred[conversationID] = starred
+	return nil
 }
 
 func (f *fakeStore) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
@@ -355,6 +374,10 @@ func TestAnOperatorAnswerNamesThePersonAndNoAIAgent(t *testing.T) {
 	if len(store.appended) != 1 || store.touchedOut != 1 {
 		t.Fatalf("appended %d and moved the activity %d times, want 1 and 1", len(store.appended), store.touchedOut)
 	}
+	// Whoever answered read what they answered (ADR-0052).
+	if len(store.read) != 1 || store.read[0] != conversation {
+		t.Fatalf("marked read %v, want the conversation answered", store.read)
+	}
 }
 
 // TestAnAnswerMovesTheActivityWhoeverWroteIt keeps the inbox order honest: the agent's answers move the column the same as a person's.
@@ -368,6 +391,10 @@ func TestAnAnswerMovesTheActivityWhoeverWroteIt(t *testing.T) {
 	if store.touchedOut != 1 {
 		t.Fatalf("the agent's answer moved the activity %d times, want 1", store.touchedOut)
 	}
+	// The bot answering is not the vendor reading what the customer wrote (ADR-0052).
+	if len(store.read) != 0 {
+		t.Fatalf("the agent's answer marked the conversation read: %v", store.read)
+	}
 }
 
 // TestAnOutboundWriteThatFailsSaysSo keeps a half-written answer from being reported as written.
@@ -380,6 +407,7 @@ func TestAnOutboundWriteThatFailsSaysSo(t *testing.T) {
 	}{
 		{"the row could not be written", &fakeStore{appendErr: boom}},
 		{"the activity could not be moved", &fakeStore{touchOutErr: boom}},
+		{"the conversation could not be marked read", &fakeStore{readErr: boom}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NewService(tc.store, slog.Default()).
@@ -419,6 +447,32 @@ func TestSetModeReachesTheStore(t *testing.T) {
 	}
 	if store.modes[conversation] != enums.AgentModeOff {
 		t.Fatalf("the mode did not reach the store: %v", store.modes)
+	}
+}
+
+// TestSetStarredReachesTheStore is the passthrough F25 needs: the inbox never writes the starred column with SQL of its own (regla 1).
+func TestSetStarredReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).SetStarred(context.Background(), conversation, true); err != nil {
+		t.Fatalf("SetStarred: %v", err)
+	}
+	if got, ok := store.starred[conversation]; !ok || !got {
+		t.Fatalf("the star did not reach the store: %v", store.starred)
+	}
+}
+
+// TestMarkReadReachesTheStore is the passthrough the inbox needs: the unread count is this aggregate's column (regla 1, ADR-0052).
+func TestMarkReadReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).MarkRead(context.Background(), conversation); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	if len(store.read) != 1 || store.read[0] != conversation {
+		t.Fatalf("the read did not reach the store: %v", store.read)
 	}
 }
 

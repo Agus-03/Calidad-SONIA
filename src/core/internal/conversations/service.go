@@ -40,6 +40,8 @@ type store interface {
 	MarkWaiting(ctx context.Context, conversationID uuid.UUID) error
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
+	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
+	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error
@@ -160,8 +162,10 @@ func (s *Service) RecordSystemOutbound(ctx context.Context, conversationID uuid.
 
 // RecordOperatorOutbound is the same write-before-send for an answer a person typed: the sender check of messages wants the
 // operator's id and no agent's, so the row names who wrote it and nothing else (H-09, ADR-0020).
+//
+// It also marks the conversation read, in the caller's transaction: whoever answered read what they answered (ADR-0052).
 func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, operatorID uuid.UUID, text string, at time.Time) (Message, error) {
-	return s.appendOutbound(ctx, Message{
+	message, err := s.appendOutbound(ctx, Message{
 		ID:               id.New(),
 		ConversationID:   conversationID,
 		Direction:        enums.MessageDirectionOutbound,
@@ -171,6 +175,13 @@ func (s *Service) RecordOperatorOutbound(ctx context.Context, conversationID, op
 		ContentType:      enums.MessageContentTypeText,
 		SentAt:           at,
 	})
+	if err != nil {
+		return Message{}, err
+	}
+	if err := s.repo.MarkRead(ctx, conversationID); err != nil {
+		return Message{}, fmt.Errorf("conversations: record operator outbound: %w", err)
+	}
+	return message, nil
 }
 
 // appendOutbound moves last_activity_at with the row, for the agent and the operator alike: the inbox orders by that column, and
@@ -197,6 +208,17 @@ func (s *Service) Claim(ctx context.Context, conversationID, operatorID uuid.UUI
 // loss of the agent, or it could never be turned back on (F27, ADR-0035 regla 12). Which modes a caller may ask for is the caller's rule.
 func (s *Service) SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
 	return s.repo.SetMode(ctx, conversationID, mode)
+}
+
+// MarkRead clears the unread count of F23: the column is this aggregate's, and who may clear it is the caller's rule (ADR-0052).
+func (s *Service) MarkRead(ctx context.Context, conversationID uuid.UUID) error {
+	return s.repo.MarkRead(ctx, conversationID)
+}
+
+// SetStarred is how the inbox marks a conversation for follow-up: the flag is this aggregate's column (F25, regla 1). Who may star
+// which conversation is the caller's rule.
+func (s *Service) SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error {
+	return s.repo.SetStarred(ctx, conversationID, starred)
 }
 
 // TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),

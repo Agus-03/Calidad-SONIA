@@ -72,7 +72,7 @@ const writeGrace = 5 * time.Second
 
 // store is the pool-bound slice of the repository: the reads, which need no transaction of their own.
 type store interface {
-	List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error)
+	List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) ([]Summary, error)
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
@@ -92,6 +92,8 @@ type Aggregate interface {
 	MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, at time.Time) error
 	MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
+	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
+	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -106,6 +108,18 @@ type Channel interface {
 	InboxByID(ctx context.Context, inboxID uuid.UUID) (whatsapp.Inbox, error)
 }
 
+// Events is the hub as the service sees it, told after each write commits and never inside it (ADR-0051).
+type Events interface {
+	Changed(conversationID uuid.UUID)
+	LeftPool(conversationID uuid.UUID)
+}
+
+// silence is what a service built without a hub tells: nothing, so a test or a tool never needs one.
+type silence struct{}
+
+func (silence) Changed(uuid.UUID)  {}
+func (silence) LeftPool(uuid.UUID) {}
+
 // TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
 type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Reviews) error) error
 
@@ -117,6 +131,7 @@ type Options struct {
 	Tx      TxFunc
 	Channel Channel
 	Sender  whatsapp.Sender
+	Events  Events
 	Logger  *slog.Logger
 }
 
@@ -126,18 +141,21 @@ func NewService(opts Options) *Service {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	if opts.Events == nil {
+		opts.Events = silence{}
+	}
 	return &Service{opts: opts}
 }
 
 // List asks for one row more than it answers, because that row is the only honest way to know another page exists: a full page could
 // just as well be the last one, and a cursor handed out for nothing sends the frontend to ask for an empty page (ADR-0036, regla 7).
-func (s *Service) List(ctx context.Context, scope Scope, after *Cursor, limit int) (Page, error) {
+func (s *Service) List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) (Page, error) {
 	// The controller never sends less than one, but a page of zero would index the row before the first one below.
 	if limit < 1 {
 		limit = 1
 	}
 
-	rows, err := s.opts.Repo.List(ctx, scope, after, limit+1)
+	rows, err := s.opts.Repo.List(ctx, scope, filter, after, limit+1)
 	if err != nil {
 		return Page{}, err
 	}
@@ -184,7 +202,13 @@ func paginate[T any](rows []T, limit int, cursorOf func(T) Cursor) ([]T, *Cursor
 // mayRead is the reach of the listing applied to one conversation: the operator reads its own and the pool, and the two roles above
 // it read the whole team (ADR-0035, reglas 1 y 2).
 func mayRead(scope Scope, t Target) bool {
-	return scope.seesTheWholeTeam() || t.OperatorID == nil || *t.OperatorID == scope.OperatorID
+	return canSee(scope, t.OperatorID)
+}
+
+// canSee is the reach as a function of who holds the conversation, so the hub decides who hears a change with the same rule the
+// listing and the thread apply (ADR-0035, reglas 1 y 2).
+func canSee(scope Scope, holder *uuid.UUID) bool {
+	return scope.seesTheWholeTeam() || holder == nil || *holder == scope.OperatorID
 }
 
 // Send writes the operator's answer before it leaves and sends it at most once (ADR-0020). Taking the conversation out of the pool
@@ -239,7 +263,15 @@ func (s *Service) Send(ctx context.Context, scope Scope, conversationID uuid.UUI
 		return Message{}, err
 	}
 
-	return s.deliver(ctx, target, inbox, message), nil
+	delivered := s.deliver(ctx, target, inbox, message)
+	// After the send, so the row the event carries already says sent or failed. Taking the pool is the one change that takes the
+	// row out of the other operators' inboxes (ADR-0035, regla 7).
+	if target.OperatorID == nil {
+		s.opts.Events.LeftPool(target.ConversationID)
+	} else {
+		s.opts.Events.Changed(target.ConversationID)
+	}
+	return delivered, nil
 }
 
 // review marks the draft accepted or edited, compared with the trimmed text the Operator sent (ADR-0046, section 2.5).
@@ -323,6 +355,7 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 
 	switch err := s.opts.Aggregate.SetMode(ctx, conversationID, mode); {
 	case err == nil:
+		s.opts.Events.Changed(conversationID)
 		return mode, nil
 	case errors.Is(err, conversations.ErrNoAIAgent):
 		// The read already refused a conversation with no agent, so the predicate refused a pause or a removal that committed in
@@ -333,6 +366,61 @@ func (s *Service) SetMode(ctx context.Context, scope Scope, conversationID uuid.
 	default:
 		return "", err
 	}
+}
+
+// SetStarred marks one conversation for follow-up or clears the mark (F25). The reach is the thread's: whoever can read the
+// conversation can star it, because F25 names no role and the star is a mark on what the caller already sees (ADR-0035, regla 2).
+//
+// A resolved conversation is starred too: a follow-up is what comes after the work, not part of it. And starring never assigns,
+// for the same reason turning the bot off does not (ADR-0035, regla 13).
+func (s *Service) SetStarred(ctx context.Context, scope Scope, conversationID uuid.UUID, starred bool) (bool, error) {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return false, err
+	}
+	if !mayRead(scope, target) {
+		return false, ErrNotFound
+	}
+	// The same as the mode: asking for the state it already has is answered and not written twice.
+	if target.Starred == starred {
+		return starred, nil
+	}
+
+	if err := s.opts.Aggregate.SetStarred(ctx, conversationID, starred); err != nil {
+		if errors.Is(err, conversations.ErrNotFound) {
+			return false, ErrNotFound
+		}
+		return false, err
+	}
+	s.opts.Events.Changed(conversationID)
+	return starred, nil
+}
+
+// MarkRead clears the unread count when the conversation is on screen (ADR-0052). Who may clear it is who may answer it: its holder,
+// or anybody when it is in the pool (ADR-0035, regla 5). A supervisor looking at a vendor's conversation does not take the vendor's
+// warning away, and is told the conversation is somebody else's; an operator is told it does not exist, as always.
+//
+// A conversation with nothing unread is answered and not written, and nobody is told: nothing changed.
+func (s *Service) MarkRead(ctx context.Context, scope Scope, conversationID uuid.UUID) error {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return err
+	}
+	if err := mayAnswer(scope, target); err != nil {
+		return err
+	}
+	if target.UnreadCount == 0 {
+		return nil
+	}
+
+	if err := s.opts.Aggregate.MarkRead(ctx, conversationID); err != nil {
+		if errors.Is(err, conversations.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	s.opts.Events.Changed(conversationID)
+	return nil
 }
 
 // maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of

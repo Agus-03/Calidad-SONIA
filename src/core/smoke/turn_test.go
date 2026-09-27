@@ -276,6 +276,8 @@ func postWebhookSaying(t *testing.T, base, wamid, secret, from, said string) int
 }
 
 // The answer hangs from generations.message_id, the link of ADR-0017 (i).2: no batch column points at it (F10).
+// Only once the answer has a status: the row is written before the send and marked after it, and a poll landing in between would
+// read an answer that is neither sent nor failed yet.
 const turnOutcome = `
 SELECT b.processed_at IS NOT NULL,
        coalesce(b.error_message, ''),
@@ -302,7 +304,8 @@ FROM   messages i
 JOIN   message_batches b ON b.id = i.message_batch_id
 JOIN   generations g ON g.message_batch_id = b.id
 JOIN   messages o ON o.id = g.message_id
-WHERE  i.wamid = $1`
+WHERE  i.wamid = $1
+  AND  o.status IS NOT NULL`
 
 func awaitTurn(ctx context.Context, t *testing.T, pool db.Pool, wamid string) outcome {
 	t.Helper()

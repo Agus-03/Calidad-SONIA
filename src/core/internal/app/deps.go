@@ -37,6 +37,8 @@ type wiring struct {
 	turns *turn.Orchestrator
 	// Held so the shutdown can stop it first: a poller still ticking would keep adding turns to what the deployment waits for.
 	poller *turn.Poller
+	// Held so the shutdown can close the sockets, which the server does not track once they are hijacked (ADR-0051).
+	hub *inbox.Hub
 }
 
 // wire builds the object graph, repository then service then controller: it is the only part that grows with each context.
@@ -52,6 +54,9 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 
 	aggregate := conversations.NewService(conversations.NewRepository(pool), log)
 	channelRepo := whatsapp.NewRepository(pool, cipher)
+
+	// The fan-out of F21, told by every package that writes a conversation once its transaction committed (ADR-0051).
+	hub := inbox.NewHub(inbox.HubOptions{Rows: inbox.NewRepository(pool), Logger: log})
 
 	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
 	// the instance would tie two contexts together for a reason that is not a reason of the domain.
@@ -97,6 +102,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		}),
 		Channel:      channelRepo,
 		Sender:       send,
+		Events:       hub,
 		Budget:       cfg.TurnBudget,
 		MaxRetries:   cfg.TurnMaxRetries,
 		RetryBackoff: cfg.TurnRetryBackoff,
@@ -124,7 +130,12 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger:      log,
 	})
 
-	channel := whatsapp.NewController(whatsapp.NewService(channelRepo, channelTx, log), collector, log)
+	channel := whatsapp.NewController(whatsapp.ControllerOptions{
+		Service:   whatsapp.NewService(channelRepo, channelTx, log),
+		Collector: collector,
+		Events:    hub,
+		Logger:    log,
+	})
 
 	tokens := auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL)
 	people := operators.NewService(operators.NewRepository(pool), tokens, log)
@@ -144,6 +155,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		},
 		Channel: channelRepo,
 		Sender:  send,
+		Events:  hub,
 		Logger:  log,
 	})
 
@@ -166,6 +178,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			})
 		},
 		Catalogue: adminBrain,
+		Events:    hub,
 		Logger:    log,
 	})
 
@@ -194,12 +207,17 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger: log,
 	})
 
+	// The socket is public for the router because the browser cannot send the bearer on it; its ticket is the credential, and the
+	// operator is read again with the same lookup the bearer uses (ADR-0051).
+	gate := inbox.NewStreamGate(hub, resolveActor(people), log)
+
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
+			inbox.NewStreamController(hub, log),
 			agents.NewController(identity, log),
 			agents.NewComponentsController(blocks, log),
 			agents.NewPreviewController(previews, log),
@@ -207,9 +225,10 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),
-		publicControllers: []soniahttp.Controller{channel, operators.NewLoginController(people, log)},
+		publicControllers: []soniahttp.Controller{channel, operators.NewLoginController(people, log), gate},
 		turns:             turns,
 		poller:            poller,
+		hub:               hub,
 	}, nil
 }
 

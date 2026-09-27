@@ -198,7 +198,7 @@ func TestTheInboxOfEachRoleIsTheOneAnexoBDescribes(t *testing.T) {
 			{enums.OperatorRoleAdmin, 3, []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv}},
 		} {
 			t.Run(string(tc.role), func(t *testing.T) {
-				rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: tc.role}, nil, tc.limit)
+				rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: tc.role}, Filter{}, nil, tc.limit)
 				if err != nil {
 					t.Fatalf("List: %v", err)
 				}
@@ -220,7 +220,7 @@ func TestTheCursorContinuesStrictlyAfterTheRowItNamed(t *testing.T) {
 
 		var after *Cursor
 		for i, want := range []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv} {
-			page, err := service.List(ctx, scope, after, 1)
+			page, err := service.List(ctx, scope, Filter{}, after, 1)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -242,7 +242,7 @@ func TestAFailedSendStaysVisibleInTheInbox(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
 
-		rows, err := NewRepository(exec).List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, nil, 3)
+		rows, err := NewRepository(exec).List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -289,7 +289,7 @@ func TestAContactTakenDownLeavesTheInbox(t *testing.T) {
 			t.Fatalf("take the contact down: %v", err)
 		}
 
-		rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, nil, 3)
+		rows, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -529,7 +529,7 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 		// And the listing says so before anyone tries: the state of the bot F22 shows, read with the same three conditions.
 		available := func() bool {
 			t.Helper()
-			rows, err := NewRepository(exec).List(ctx, supervisor, nil, 1000)
+			rows, err := NewRepository(exec).List(ctx, supervisor, Filter{}, nil, 1000)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -551,6 +551,244 @@ func TestASupervisorTurnsTheBotOffWithoutTakingTheConversation(t *testing.T) {
 			t.Fatal("the listing says the resumed agent cannot answer")
 		}
 	})
+}
+
+// TestAStarIsSharedAndLeavesTheInboxInPlace is F25 end to end against real DDL: the operator stars a conversation of the pool, the
+// supervisor sees the same star on the listing, and the order of the inbox does not move, so no cursor in circulation shifts (ADR-0036).
+func TestAStarIsSharedAndLeavesTheInboxInPlace(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		service := sendingDesk(exec, &stubSender{})
+		operator := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		supervisor := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleSupervisor}
+		head := []uuid.UUID{w.theirsConv, w.mineConv, w.pooledConv}
+
+		starredOf := func() map[uuid.UUID]bool {
+			t.Helper()
+			rows, err := NewRepository(exec).List(ctx, supervisor, Filter{}, nil, len(head))
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if got := idsOf(rows); !sameIDs(got, head) {
+				t.Fatalf("the head of the inbox is %v, want %v in the same order as before the star", got, head)
+			}
+			out := map[uuid.UUID]bool{}
+			for _, r := range rows {
+				out[r.ID] = r.Starred
+			}
+			return out
+		}
+
+		if starredOf()[w.pooledConv] {
+			t.Fatal("the pooled conversation is starred before anyone starred it")
+		}
+		if got, err := service.SetStarred(ctx, operator, w.pooledConv, true); err != nil || !got {
+			t.Fatalf("the operator starring the pool: got %v, %v", got, err)
+		}
+		if starred := starredOf(); !starred[w.pooledConv] || starred[w.mineConv] || starred[w.theirsConv] {
+			t.Fatalf("after one star the listing says %v, want only the pooled conversation starred", starred)
+		}
+
+		// Another's conversation stays out of reach for the operator, and nothing is written.
+		if _, err := service.SetStarred(ctx, operator, w.theirsConv, true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("the operator starring another's conversation: got %v, want ErrNotFound", err)
+		}
+
+		if got, err := service.SetStarred(ctx, supervisor, w.pooledConv, false); err != nil || got {
+			t.Fatalf("the supervisor clearing the star: got %v, %v", got, err)
+		}
+		if starred := starredOf(); starred[w.pooledConv] || starred[w.theirsConv] {
+			t.Fatalf("after clearing the listing says %v, want nothing starred", starred)
+		}
+
+		// Starring never takes the pool (ADR-0035, regla 13).
+		var holder *uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT operator_id FROM conversations WHERE id = $1`, w.pooledConv).Scan(&holder); err != nil {
+			t.Fatalf("read the holder: %v", err)
+		}
+		if holder != nil {
+			t.Fatalf("a star took the pool for %v", *holder)
+		}
+	})
+}
+
+// TestEachFilterOfF23AgainstRealDDL gives each seeded conversation one mark a filter reads, and checks every filter answers its own
+// among them: the SQL of narrow() is only proven here, since the stub filters in Go (ADR-0050). The world is read out of the whole
+// filtered listing because the demo rows may match a filter too.
+func TestEachFilterOfF23AgainstRealDDL(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		mark := func(what, sql string, args ...any) {
+			t.Helper()
+			if _, err := exec.Exec(ctx, sql, args...); err != nil {
+				t.Fatalf("%s: %v", what, err)
+			}
+		}
+
+		// Theirs: unread and waiting. Mine: assigned already, starred, and resolved. The pool: a label and a reminder.
+		mark("unread", `UPDATE conversations SET unread_count = 2, status = 'waiting' WHERE id = $1`, w.theirsConv)
+		mark("starred", `UPDATE conversations SET starred = true, status = 'resolved' WHERE id = $1`, w.mineConv)
+		label, gone := id.New(), id.New()
+		for _, l := range []uuid.UUID{label, gone} {
+			mark("a label", `INSERT INTO labels (id, account_id, name, color, created_by_operator_id) VALUES ($1, $2, $3, '#000000', $4)`,
+				l, w.account, "Filtro "+l.String(), w.mine)
+			mark("label the pool", `INSERT INTO conversation_labels (id, conversation_id, label_id) VALUES ($1, $2, $3)`, id.New(), w.pooledConv, l)
+		}
+		// A label taken out of the catalog no longer filters (C09).
+		mark("delete a label", `UPDATE labels SET deleted_at = now() WHERE id = $1`, gone)
+		var contact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, w.pooledConv).Scan(&contact); err != nil {
+			t.Fatalf("read the contact: %v", err)
+		}
+		mark("a reminder", `INSERT INTO reminders (id, contact_id, operator_id, description, due_at) VALUES ($1, $2, $3, 'llamar', now())`,
+			id.New(), contact, w.mine)
+		// A deleted reminder of another contact marks nothing.
+		var theirsContact uuid.UUID
+		if err := exec.QueryRow(ctx, `SELECT contact_id FROM conversations WHERE id = $1`, w.theirsConv).Scan(&theirsContact); err != nil {
+			t.Fatalf("read the contact: %v", err)
+		}
+		mark("a deleted reminder", `INSERT INTO reminders (id, contact_id, operator_id, description, due_at, deleted_at) VALUES ($1, $2, $3, 'no', now(), now())`,
+			id.New(), theirsContact, w.mine)
+
+		waiting, resolved := enums.ConversationStatusWaiting, enums.ConversationStatusResolved
+		admin := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}
+		operator := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		for _, tc := range []struct {
+			name   string
+			scope  Scope
+			filter Filter
+			want   []uuid.UUID
+		}{
+			{"no leídas", admin, Filter{Unread: true}, []uuid.UUID{w.theirsConv}},
+			{"asignadas", admin, Filter{Assigned: true}, []uuid.UUID{w.theirsConv, w.mineConv}},
+			{"asignadas, for an operator, are its own", operator, Filter{Assigned: true}, []uuid.UUID{w.mineConv}},
+			{"destacadas", admin, Filter{Starred: true}, []uuid.UUID{w.mineConv}},
+			{"en espera", admin, Filter{Status: &waiting}, []uuid.UUID{w.theirsConv}},
+			{"resueltas", admin, Filter{Status: &resolved}, []uuid.UUID{w.mineConv}},
+			{"por etiqueta", admin, Filter{LabelID: &label}, []uuid.UUID{w.pooledConv}},
+			{"por una etiqueta borrada", admin, Filter{LabelID: &gone}, []uuid.UUID{}},
+			{"con recordatorio", admin, Filter{WithReminder: true}, []uuid.UUID{w.pooledConv}},
+			{"combinadas", admin, Filter{Assigned: true, Unread: true, Status: &waiting}, []uuid.UUID{w.theirsConv}},
+			{"combinadas sin coincidencia", admin, Filter{Starred: true, WithReminder: true}, []uuid.UUID{}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				rows, err := NewRepository(exec).List(ctx, tc.scope, tc.filter, nil, 1000)
+				if err != nil {
+					t.Fatalf("List: %v", err)
+				}
+				seeded := map[uuid.UUID]bool{w.theirsConv: true, w.mineConv: true, w.pooledConv: true, w.deletedConv: true}
+				got := []uuid.UUID{}
+				for _, r := range rows {
+					if seeded[r.ID] {
+						got = append(got, r.ID)
+					}
+				}
+				if !sameIDs(got, tc.want) {
+					t.Fatalf("the filtered inbox holds %v of the seeded ones, want %v", got, tc.want)
+				}
+			})
+		}
+	})
+}
+
+// TestTheRowOfAnEventIsTheRowOfTheListing is SummaryOf against real DDL: the event of F21 carries the same row the listing draws,
+// with its account, and a deleted conversation or one never written is not found (C09, ADR-0051).
+func TestTheRowOfAnEventIsTheRowOfTheListing(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		repo := NewRepository(exec)
+
+		account, row, err := repo.SummaryOf(ctx, w.mineConv)
+		if err != nil {
+			t.Fatalf("SummaryOf: %v", err)
+		}
+		if account != w.account {
+			t.Fatalf("the account is %v, want %v", account, w.account)
+		}
+		listed, err := repo.List(ctx, Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleAdmin}, Filter{}, nil, 3)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		var fromListing *Summary
+		for i := range listed {
+			if listed[i].ID == w.mineConv {
+				fromListing = &listed[i]
+			}
+		}
+		if fromListing == nil {
+			t.Fatalf("the listing does not show %v", w.mineConv)
+		}
+		if row.Operator == nil || row.Operator.ID != w.mine || row.FailedCount != fromListing.FailedCount ||
+			row.LastMessage == nil || fromListing.LastMessage == nil || row.LastMessage.ID != fromListing.LastMessage.ID {
+			t.Fatalf("the event row %+v differs from the listing row %+v", row, *fromListing)
+		}
+
+		for _, missing := range []uuid.UUID{w.deletedConv, id.New()} {
+			if _, _, err := repo.SummaryOf(ctx, missing); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("SummaryOf %v: got %v, want ErrNotFound", missing, err)
+			}
+		}
+	})
+}
+
+// TestAnswerAndReadClearTheUnreadAgainstRealDDL is ADR-0052 through the inbox: answering the pool clears it with the real aggregate,
+// a supervisor cannot clear a vendor's, the holder can, and the filter of F23 follows (ADR-0050).
+func TestAnswerAndReadClearTheUnreadAgainstRealDDL(t *testing.T) {
+	inTx(t, func(ctx context.Context, exec db.Executor) {
+		w := seedWorld(t, ctx, exec)
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET unread_count = 2 WHERE id = ANY($1)`, []uuid.UUID{w.pooledConv, w.mineConv}); err != nil {
+			t.Fatalf("mark unread: %v", err)
+		}
+		service := sendingDesk(exec, &stubSender{wamid: "wamid.double"})
+		mine := Scope{AccountID: w.account, OperatorID: w.mine, Role: enums.OperatorRoleOperator}
+		supervisor := Scope{AccountID: w.account, OperatorID: w.theirs, Role: enums.OperatorRoleSupervisor}
+		unread := func(conversationID uuid.UUID) int {
+			t.Helper()
+			var n int
+			if err := exec.QueryRow(ctx, `SELECT unread_count FROM conversations WHERE id = $1`, conversationID).Scan(&n); err != nil {
+				t.Fatalf("read unread: %v", err)
+			}
+			return n
+		}
+
+		// The pool's window is seeded in 2999, so the answer is not refused before it is written.
+		if _, err := service.Send(ctx, mine, w.pooledConv, "te ayudo", nil); err != nil {
+			t.Fatalf("answering the pool: %v", err)
+		}
+		if n := unread(w.pooledConv); n != 0 {
+			t.Fatalf("after answering: unread %d, want 0", n)
+		}
+
+		if err := service.MarkRead(ctx, supervisor, w.mineConv); !errors.Is(err, ErrTaken) {
+			t.Fatalf("a supervisor on a vendor's conversation: got %v, want ErrTaken", err)
+		}
+		if n := unread(w.mineConv); n != 2 {
+			t.Fatalf("the supervisor's look cleared the vendor's warning: unread %d", n)
+		}
+		rows, err := NewRepository(exec).List(ctx, supervisor, Filter{Unread: true}, nil, 1000)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if !containsID(rows, w.mineConv) || containsID(rows, w.pooledConv) {
+			t.Fatalf("no leidas holds %v, want the vendor's and not the answered one", idsOf(rows))
+		}
+
+		if err := service.MarkRead(ctx, mine, w.mineConv); err != nil {
+			t.Fatalf("the holder marking read: %v", err)
+		}
+		if n := unread(w.mineConv); n != 0 {
+			t.Fatalf("after the holder read it: unread %d, want 0", n)
+		}
+	})
+}
+
+func containsID(rows []Summary, want uuid.UUID) bool {
+	for _, r := range rows {
+		if r.ID == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestTheThreadIsReadNewestFirstWithItsFailures proves the thread against real DDL: newest first by our clock (ADR-0036, regla 2), the

@@ -32,6 +32,12 @@ type Summary struct {
 	AIAgentID *uuid.UUID
 	Contact   Contact
 
+	// One flag per conversation and not per Operator, as the schema has it: whoever starred it, everyone who reaches it sees it (F25).
+	Starred bool
+
+	// The customer messages since somebody who could clear it last read the conversation: one count for all, not one per Operator (ADR-0052).
+	UnreadCount int
+
 	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
 	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
 	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.
@@ -89,6 +95,17 @@ type Cursor struct {
 	ID uuid.UUID
 }
 
+// Filter is the seven filters of F23, combined with AND and always inside the reach: a filter narrows what the role sees and never
+// widens it. None of them changes the order, so the cursor of ADR-0036 continues a filtered listing too (ADR-0050).
+type Filter struct {
+	Unread       bool
+	Assigned     bool
+	Starred      bool
+	WithReminder bool
+	Status       *enums.ConversationStatus
+	LabelID      *uuid.UUID
+}
+
 // ThreadMessage is a message as the thread of one conversation shows it: the message the listing draws, plus who wrote it when a
 // person did, and the instant it was recorded, which is what orders the thread (C06, ADR-0036 regla 2).
 type ThreadMessage struct {
@@ -118,6 +135,8 @@ type Target struct {
 	Mode            enums.AgentMode
 	// False when the agent is paused or removed, or there is none: turning the bot on then names one that cannot answer (ADR-0038).
 	AIAgentAvailable bool
+	Starred          bool
+	UnreadCount      int
 }
 
 // Assignment is one row of conversation_assignments: immutable, because F26 asks for the history and a row that changes is not one.

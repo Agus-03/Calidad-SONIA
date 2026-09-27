@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · revisada dos veces antes del merge. El 2026-09-13, al construir la vinculación de un agente IA a una bandeja: la regla 5 se detalla y se agregan las reglas 12 a 14. El 2026-09-19, tras las revisiones de diseño y de código: **la regla 4 se invierte** (la pausa y la baja apagan el bot), se agregan las reglas 15 y 16, y las reglas 11 y 13 pasan a apoyarse en enmiendas declaradas |
+| **Estado** | Aceptada · revisada dos veces antes del merge. El 2026-09-13, al construir la vinculación de un agente IA a una bandeja: la regla 5 se detalla y se agregan las reglas 12 a 14. El 2026-09-19, tras las revisiones de diseño y de código: **la regla 4 se invierte** (la pausa y la baja apagan el bot), se agregan las reglas 15 y 16, y las reglas 11 y 13 pasan a apoyarse en enmiendas declaradas · **§4 enmendado por [ADR-0051](0051-bandeja-en-tiempo-real.md)** (2026-09-26): la pausa y la baja le avisan en el momento, por la bandeja en tiempo real, al vendedor de cada conversación cuyo bot apagaron |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 6 (identidad del agente IA) |
 | **Resuelve** | Qué significa dar de baja o pausar un agente IA, qué pasa con lo que lo nombraba, cómo llega a una bandeja, cómo se evita guardar un agente IA que no puede responder, cómo se evita que un bot se vea prendido sin poder responder y qué de la fila se ofrece antes de la Fase 9 |
@@ -77,7 +77,7 @@ Construir el ABM destapó seis preguntas que ni F17 ni el catálogo responden:
 
 ### Negativas / costos asumidos
 
-- **Pausar deja al cliente sin respuesta automática.** El vendedor asignado tiene que contestar. La bandeja le muestra el bot apagado, pero nada le avisa en el momento: los avisos en tiempo real son de la Fase 10.
+- **Pausar deja al cliente sin respuesta automática.** El vendedor asignado tiene que contestar. La bandeja le muestra el bot apagado, pero nada le avisa en el momento: los avisos en tiempo real son de la Fase 10. **→ Resuelto por [ADR-0051](0051-bandeja-en-tiempo-real.md), regla 13.**
 - **Reactivar un agente IA no vuelve a prender ninguna conversación.** La pausa las apagó todas, y hay que prenderlas de nuevo una por una; cuáles eran está en la auditoría de la pausa (`turned_off_conversation_ids`).
 - **Una pausa escribe todas las conversaciones del agente IA en una transacción**, incluidas las resueltas, y la lista entera queda en una fila de auditoría. Con el volumen del cooperante son pocas; con miles, la pausa tardaría, bloquearía esas filas mientras dura y dejaría una fila de auditoría grande.
 - **Un webhook espera a una pausa o una baja en curso de su agente IA**, porque lo lee con `FOR SHARE`. La espera dura lo que la pausa, que son milisegundos con el volumen actual.

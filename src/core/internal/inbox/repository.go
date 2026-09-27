@@ -32,7 +32,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 //
 // The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
-SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false),
+SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count,
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -71,12 +71,45 @@ func reach(s Scope) (where string, args []any) {
 	return fmt.Sprintf(" AND (c.operator_id = $%d OR c.operator_id IS NULL)", len(args)), args
 }
 
+// narrow appends the filters of F23 after the reach, so a filter can only take rows away from what the role already sees (ADR-0050).
+// Every value travels as a placeholder, the status too, so a renamed value in enums.yaml cannot silently match nothing (C07).
+func narrow(where string, args []any, f Filter) (string, []any) {
+	if f.Unread {
+		where += " AND c.unread_count > 0"
+	}
+	if f.Assigned {
+		where += " AND c.operator_id IS NOT NULL"
+	}
+	if f.Starred {
+		where += " AND c.starred"
+	}
+	if f.Status != nil {
+		args = append(args, *f.Status)
+		where += fmt.Sprintf(" AND c.status = $%d", len(args))
+	}
+	// A label taken out of the catalog no longer exists for the inbox, like any row deleted logically (C09).
+	if f.LabelID != nil {
+		args = append(args, *f.LabelID)
+		where += fmt.Sprintf(` AND EXISTS (
+       SELECT 1 FROM conversation_labels cl JOIN labels l ON l.id = cl.label_id
+       WHERE  cl.conversation_id = c.id AND cl.label_id = $%d AND l.deleted_at IS NULL)`, len(args))
+	}
+	// Reminders hang from the contact and not the conversation, so one raised in an earlier conversation still marks this one (ADR-0002 (c)).
+	if f.WithReminder {
+		where += ` AND EXISTS (
+       SELECT 1 FROM reminders r
+       WHERE  r.contact_id = c.contact_id AND r.deleted_at IS NULL)`
+	}
+	return where, args
+}
+
 // List answers up to limit rows after the cursor, newest activity first. Deciding whether another page exists is the service's.
 //
 // The row comparison is what makes the cursor exact: both columns descend together, so "(a, b) < (x, y)" is "strictly after the row
 // the last page ended on", and the id settles two conversations touched in the same microsecond (ADR-0036, regla 3).
-func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error) {
+func (r *Repository) List(ctx context.Context, scope Scope, filter Filter, after *Cursor, limit int) ([]Summary, error) {
 	where, args := reach(scope)
+	where, args = narrow(where, args, filter)
 	if after != nil {
 		args = append(args, after.At, after.ID)
 		where += fmt.Sprintf(" AND (c.last_activity_at, c.id) < ($%d, $%d)", len(args)-1, len(args))
@@ -104,13 +137,42 @@ func (r *Repository) List(ctx context.Context, scope Scope, after *Cursor, limit
 	return out, nil
 }
 
+// The account first and the row after, because summarySelect is scoped by account and the hub only knows the conversation: which
+// operators may hear of it is decided after, per connection.
+const summaryAccount = `
+SELECT ct.account_id
+FROM   conversations c
+JOIN   contacts ct ON ct.id = c.contact_id
+WHERE  c.id = $1 AND c.deleted_at IS NULL AND ct.deleted_at IS NULL`
+
+// SummaryOf reads one row of the inbox as the listing draws it, for the event F21 pushes when it changes (ADR-0051).
+func (r *Repository) SummaryOf(ctx context.Context, conversationID uuid.UUID) (uuid.UUID, Summary, error) {
+	var accountID uuid.UUID
+	err := r.exec.QueryRow(ctx, summaryAccount, conversationID).Scan(&accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, Summary{}, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, Summary{}, fmt.Errorf("inbox: read the account of a conversation: %w", err)
+	}
+
+	s, err := scanSummary(r.exec.QueryRow(ctx, summarySelect+" AND c.id = $3", accountID, enums.MessageStatusFailed, conversationID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, Summary{}, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, Summary{}, err
+	}
+	return accountID, s, nil
+}
+
 // Scoped by the account of the contact, like the listing: a conversation of another account is one this caller cannot know exists,
 // and one whose contact was taken down is one nobody answers any more (ADR-0035, regla 1).
 // The agent is joined for the switch of the bot, which needs the three conditions the turn reads: it exists, is active and was not
 // removed (ADR-0038). The ownership rule restricts writes and not reads.
 const targetSelect = `
 SELECT    c.id, c.inbox_id, ct.phone_whatsapp, c.operator_id, c.status, c.window_expires_at, c.ai_agent_id, c.mode,
-          COALESCE(a.active AND a.deleted_at IS NULL, false)
+          COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count
 FROM      conversations c
 JOIN      contacts ct ON ct.id = c.contact_id
 LEFT JOIN ai_agents a ON a.id = c.ai_agent_id
@@ -121,7 +183,7 @@ func (r *Repository) Target(ctx context.Context, accountID, conversationID uuid.
 	var t Target
 	err := r.exec.QueryRow(ctx, targetSelect, accountID, conversationID).
 		Scan(&t.ConversationID, &t.InboxID, &t.ContactPhone, &t.OperatorID, &t.Status, &t.WindowExpiresAt, &t.AIAgentID, &t.Mode,
-			&t.AIAgentAvailable)
+			&t.AIAgentAvailable, &t.Starred, &t.UnreadCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrNotFound
 	}
@@ -260,7 +322,7 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable,
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,

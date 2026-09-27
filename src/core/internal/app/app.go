@@ -92,7 +92,13 @@ func Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// The server first, so no message joins a batch from here on (ADR-0029).
+	// The sockets before the server: Shutdown does not wait for a hijacked connection, and closing them with going away is what
+	// tells each frontend to reconnect instead of reading silence as an empty inbox (ADR-0051).
+	if err := deps.hub.Close(shutdownCtx); err != nil {
+		log.Warn("shutdown cut the inbox sockets", slog.String("cause", err.Error()))
+	}
+
+	// Then the server, before the poller and the turns, so no message joins a batch from here on (ADR-0029).
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return err
 	}

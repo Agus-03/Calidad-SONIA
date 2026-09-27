@@ -139,7 +139,7 @@ sonia/
 │   │   │   │                           attributes: guarda lo que extrae F31 y lo muestra en la ficha (ADR-0047)
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
-│   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038)
+│   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038) · cada mensaje del cliente suma a unread_count y la respuesta de un operador lo borra (ADR-0052)
 │   │   │   │   ├── repository.go       recibe el Executor de quien conduce
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
@@ -157,9 +157,10 @@ sonia/
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
 │   │   │   │   ├── reasoning_controller.go  GET /conversations/:id/generations/:generation_id/components
-│   │   │   │   ├── websocket.go        fan-out a los operadores conectados
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · escribe conversation_assignments
+│   │   │   │   ├── websocket.go        F21: el hub en memoria (ADR-0027) · tickets de un uso · cada evento con el alcance del listado · nunca bloquea a quien publica (ADR-0051)
+│   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial (ADR-0051)
+│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052)
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels

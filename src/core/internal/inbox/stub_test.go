@@ -24,6 +24,11 @@ type stubStore struct {
 	err       error
 	lastLimit int
 
+	// What the filters of F23 read and a Summary does not carry, keyed by conversation: the stub filters like the query does.
+	unread    map[uuid.UUID]bool
+	labels    map[uuid.UUID][]uuid.UUID
+	reminders map[uuid.UUID]bool
+
 	targets     map[uuid.UUID]Target
 	assignments []Assignment
 	assignErr   error
@@ -95,7 +100,35 @@ func before(a, b Summary) bool {
 	return bytes.Compare(a.ID[:], b.ID[:]) > 0
 }
 
-func (s *stubStore) List(_ context.Context, scope Scope, after *Cursor, limit int) ([]Summary, error) {
+// matches is narrow() of the repository, one row at a time.
+func (s *stubStore) matches(f Filter, row Summary) bool {
+	if f.Unread && !s.unread[row.ID] {
+		return false
+	}
+	if f.Assigned && row.Operator == nil {
+		return false
+	}
+	if f.Starred && !row.Starred {
+		return false
+	}
+	if f.Status != nil && row.Status != *f.Status {
+		return false
+	}
+	if f.WithReminder && !s.reminders[row.ID] {
+		return false
+	}
+	if f.LabelID != nil {
+		for _, label := range s.labels[row.ID] {
+			if label == *f.LabelID {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func (s *stubStore) List(_ context.Context, scope Scope, filter Filter, after *Cursor, limit int) ([]Summary, error) {
 	s.lastLimit = limit
 	if s.err != nil {
 		return nil, s.err
@@ -103,7 +136,7 @@ func (s *stubStore) List(_ context.Context, scope Scope, after *Cursor, limit in
 
 	reached := []Summary{}
 	for _, row := range s.rows {
-		if s.reaches(scope, row) {
+		if s.reaches(scope, row) && s.matches(filter, row) {
 			reached = append(reached, row)
 		}
 	}
@@ -185,7 +218,7 @@ func (s *stubStore) RecordAssignment(_ context.Context, a Assignment) error {
 	return nil
 }
 
-// stubAggregate is conversations/ seen through the five calls the inbox makes, recording each so a case can assert what was
+// stubAggregate is conversations/ seen through the seven calls the inbox makes, recording each so a case can assert what was
 // written and, as often, what was not.
 type stubAggregate struct {
 	claimErr      error
@@ -193,12 +226,35 @@ type stubAggregate struct {
 	markSentErr   error
 	markFailedErr error
 	setModeErr    error
+	setStarredErr error
 
 	claimed  map[uuid.UUID]uuid.UUID
 	recorded []conversations.Message
 	sent     map[uuid.UUID]string
 	failed   map[uuid.UUID]string
 	modes    map[uuid.UUID]enums.AgentMode
+	starred  map[uuid.UUID]bool
+	read     []uuid.UUID
+	readErr  error
+}
+
+func (a *stubAggregate) MarkRead(_ context.Context, conversationID uuid.UUID) error {
+	if a.readErr != nil {
+		return a.readErr
+	}
+	a.read = append(a.read, conversationID)
+	return nil
+}
+
+func (a *stubAggregate) SetStarred(_ context.Context, conversationID uuid.UUID, starred bool) error {
+	if a.setStarredErr != nil {
+		return a.setStarredErr
+	}
+	if a.starred == nil {
+		a.starred = map[uuid.UUID]bool{}
+	}
+	a.starred[conversationID] = starred
+	return nil
 }
 
 func (a *stubAggregate) SetMode(_ context.Context, conversationID uuid.UUID, mode enums.AgentMode) error {
@@ -287,7 +343,14 @@ func (s *stubSender) Send(ctx context.Context, _ whatsapp.Inbox, to, text string
 
 // desk is the service with every collaborator doubled. The transaction is a plain call: what these cases check is the order and the
 // presence of the writes, and binding them to one transaction is the pool's job, proven by the integration cases.
+// stubEvents records what the service tells the hub, in order.
+type stubEvents struct{ told []string }
+
+func (e *stubEvents) Changed(uuid.UUID)  { e.told = append(e.told, "changed") }
+func (e *stubEvents) LeftPool(uuid.UUID) { e.told = append(e.told, "left pool") }
+
 type desk struct {
+	events    *stubEvents
 	store     *stubStore
 	aggregate *stubAggregate
 	reviews   *stubReviews
@@ -300,7 +363,7 @@ func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
@@ -309,6 +372,7 @@ func newDesk(store *stubStore) *desk {
 		},
 		Channel: d.channel,
 		Sender:  d.sender,
+		Events:  d.events,
 		Logger:  slog.New(slog.DiscardHandler),
 	})
 	return d

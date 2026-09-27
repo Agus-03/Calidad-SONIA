@@ -95,6 +95,165 @@ func TestAnOperatorTakesThePoolByAnsweringThroughTheRealProcess(t *testing.T) {
 	}
 }
 
+// TestAStarIsSharedThroughTheRealProcess walks F25 the way the inbox would: one operator stars a conversation of the pool, the other
+// sees the same star on its listing, clearing it clears it for both, and the row keeps its place because a star is not activity
+// (ADR-0036). It fails if the route is not plugged into the process or the listing stops carrying the flag.
+func TestAStarIsSharedThroughTheRealProcess(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	d := buildDesk(ctx, t, pool)
+	first := login(t, core, d.first, walkerPassword)
+	second := login(t, core, d.second, walkerPassword)
+	conversation := d.conversation.String()
+	path := "/api/v1/conversations/" + conversation + "/starred"
+
+	_, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", second, "")
+	starred, activity := starOf(t, body, conversation)
+	if starred {
+		t.Fatalf("the conversation is starred before anyone starred it - %s", body)
+	}
+
+	status, body := call(t, core, http.MethodPatch, path, first, `{"starred":true}`)
+	if status != http.StatusOK {
+		t.Fatalf("starring a conversation of the pool: got %d, want 200 - %s", status, body)
+	}
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", second, "")
+	if got, moved := starOf(t, body, conversation); !got || moved != activity {
+		t.Fatalf("the other operator sees starred %v with activity %q, want true and %q unchanged - %s", got, moved, activity, body)
+	}
+
+	if status, body := call(t, core, http.MethodPatch, path, second, `{"starred":false}`); status != http.StatusOK {
+		t.Fatalf("clearing the star: got %d, want 200 - %s", status, body)
+	}
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", first, "")
+	if got, _ := starOf(t, body, conversation); got {
+		t.Fatalf("the star cleared by one operator is still there for the other - %s", body)
+	}
+}
+
+// TestTheInboxFiltersThroughTheRealProcess walks F23 over HTTP: the query reaches the SQL, a filter narrows what the operator sees,
+// two combine, and a flag the listing cannot honour is refused instead of read as off (ADR-0050).
+func TestTheInboxFiltersThroughTheRealProcess(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	d := buildDesk(ctx, t, pool)
+	first := login(t, core, d.first, walkerPassword)
+	conversation := d.conversation.String()
+	if status, body := call(t, core, http.MethodPatch, "/api/v1/conversations/"+conversation+"/starred", first, `{"starred":true}`); status != http.StatusOK {
+		t.Fatalf("starring the conversation: got %d, want 200 - %s", status, body)
+	}
+
+	for _, tc := range []struct {
+		query  string
+		listed bool
+	}{
+		{"starred=true", true},
+		{"starred=true&status=active", true},
+		{"starred=true&status=resolved", false},
+		{"assigned=true", false},
+	} {
+		status, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100&"+tc.query, first, "")
+		if status != http.StatusOK {
+			t.Fatalf("GET with %s: got %d, want 200 - %s", tc.query, status, body)
+		}
+		if got := listed(t, body, conversation); got != tc.listed {
+			t.Fatalf("with %s the conversation listed = %v, want %v - %s", tc.query, got, tc.listed, body)
+		}
+	}
+
+	status, body := call(t, core, http.MethodGet, "/api/v1/conversations?unread=1", first, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("a flag that is not true: got %d, want 400 - %s", status, body)
+	}
+	if code, _ := refusal(t, body); code != "invalid_filter" {
+		t.Fatalf("the refusal says %q, want invalid_filter", code)
+	}
+}
+
+// TestReadingClearsTheUnreadThroughTheRealProcess walks ADR-0052 over HTTP: the unread count is on the row and in the filter of F23,
+// an operator who reads a conversation of the pool clears it for everyone, and the filter stops listing it.
+func TestReadingClearsTheUnreadThroughTheRealProcess(t *testing.T) {
+	core, _, pool := stack(t)
+	ctx := context.Background()
+	waitForHealth(t, core)
+
+	d := buildDesk(ctx, t, pool)
+	first := login(t, core, d.first, walkerPassword)
+	second := login(t, core, d.second, walkerPassword)
+	conversation := d.conversation.String()
+	// Written by hand, like the rest of the desk: the count a webhook leaves is proven against real DDL in conversations/.
+	if _, err := pool.Exec(ctx, `UPDATE conversations SET unread_count = 2 WHERE id = $1`, d.conversation); err != nil {
+		t.Fatalf("seeding the unread count: %v", err)
+	}
+
+	_, body := call(t, core, http.MethodGet, "/api/v1/conversations?limit=100&unread=true", second, "")
+	if !listed(t, body, conversation) || unreadOf(t, body, conversation) != 2 {
+		t.Fatalf("the unread conversation is not in no leidas with its count - %s", body)
+	}
+
+	if status, body := call(t, core, http.MethodPost, "/api/v1/conversations/"+conversation+"/read", first, ""); status != http.StatusNoContent {
+		t.Fatalf("reading a conversation of the pool: got %d, want 204 - %s", status, body)
+	}
+
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100&unread=true", second, "")
+	if listed(t, body, conversation) {
+		t.Fatalf("the conversation read by one operator is still unread for the other - %s", body)
+	}
+	_, body = call(t, core, http.MethodGet, "/api/v1/conversations?limit=100", second, "")
+	if got := unreadOf(t, body, conversation); got != 0 {
+		t.Fatalf("the row says %d unread after it was read, want 0 - %s", got, body)
+	}
+}
+
+// unreadOf reads the unread count of one conversation of an inbox page, and fails when the conversation is not on it.
+func unreadOf(t *testing.T, body, conversationID string) int {
+	t.Helper()
+
+	var page struct {
+		Items []struct {
+			ID          string `json:"id"`
+			UnreadCount int    `json:"unread_count"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &page); err != nil {
+		t.Fatalf("the inbox is not json: %v - %s", err, body)
+	}
+	for _, one := range page.Items {
+		if one.ID == conversationID {
+			return one.UnreadCount
+		}
+	}
+	t.Fatalf("the conversation %s is not on the inbox page - %s", conversationID, body)
+	return 0
+}
+
+// starOf reads the star and the last activity of one conversation of an inbox page, and fails when the conversation is not on it.
+func starOf(t *testing.T, body, conversationID string) (bool, string) {
+	t.Helper()
+
+	var page struct {
+		Items []struct {
+			ID             string `json:"id"`
+			Starred        bool   `json:"starred"`
+			LastActivityAt string `json:"last_activity_at"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &page); err != nil {
+		t.Fatalf("the inbox is not json: %v - %s", err, body)
+	}
+	for _, one := range page.Items {
+		if one.ID == conversationID {
+			return one.Starred, one.LastActivityAt
+		}
+	}
+	t.Fatalf("the conversation %s is not on the inbox page - %s", conversationID, body)
+	return false, ""
+}
+
 type drawnMessage struct {
 	SenderType       string
 	Status           string

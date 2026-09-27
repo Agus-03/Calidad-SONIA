@@ -25,18 +25,32 @@ type MessageCollector interface {
 	Collect(ctx context.Context, conversationID, messageID uuid.UUID, aiAgentID *uuid.UUID) error
 }
 
+// Events is inbox's hub as the channel sees it: a conversation the webhook wrote in, told once the transaction committed (ADR-0051).
+type Events interface {
+	Changed(conversationID uuid.UUID)
+}
+
+type ControllerOptions struct {
+	Service *Service
+	// Nil simply means the message is stored and joins no batch, which is what every test of the channel alone needs.
+	Collector MessageCollector
+	// Nil tells nobody, for the same reason.
+	Events Events
+	Logger *slog.Logger
+}
+
 type Controller struct {
 	service   *Service
 	collector MessageCollector
+	events    Events
 	log       *slog.Logger
 }
 
-// collector nil simply means the message is stored and joins no batch, which is what every test of the channel alone needs.
-func NewController(service *Service, collector MessageCollector, log *slog.Logger) *Controller {
-	if log == nil {
-		log = slog.Default()
+func NewController(opts ControllerOptions) *Controller {
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
-	return &Controller{service: service, collector: collector, log: log}
+	return &Controller{service: opts.Service, collector: opts.Collector, events: opts.Events, log: opts.Logger}
 }
 
 // verify echoes the challenge verbatim: Meta compares the body byte for byte, so a JSON envelope fails the subscription.
@@ -88,6 +102,18 @@ func (c *Controller) receive(gc *gin.Context) {
 					slog.String("message_id", in.MessageID.String()),
 					slog.String("cause", err.Error()),
 				)
+			}
+		}
+	}
+
+	// F21 is this line: the service already committed, so what the operators hear is what is stored. Once per conversation, since
+	// one payload can carry several messages of the same customer.
+	if c.events != nil {
+		told := map[uuid.UUID]bool{}
+		for _, in := range inbound {
+			if !told[in.ConversationID] {
+				told[in.ConversationID] = true
+				c.events.Changed(in.ConversationID)
 			}
 		}
 	}

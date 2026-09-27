@@ -517,6 +517,163 @@ func TestTheBotIsTurnedOffWithoutLosingItsAIAgent(t *testing.T) {
 	}
 }
 
+// TestAStarMarksTheConversationWithoutMovingItInTheInbox is F25 against real DDL: the flag goes on and off, and last_activity_at stays
+// where the channel left it, because the inbox and every cursor in circulation are ordered by it (ADR-0036).
+func TestAStarMarksTheConversationWithoutMovingItInTheInbox(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, _ := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		read := func(conversationID uuid.UUID) (bool, time.Time) {
+			t.Helper()
+			var starred bool
+			var activity time.Time
+			if err := exec.QueryRow(ctx, `SELECT starred, last_activity_at FROM conversations WHERE id = $1`, conversationID).
+				Scan(&starred, &activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+			return starred, activity
+		}
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, nil, false, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		starred, before := read(conversation.ID)
+		if starred {
+			t.Fatal("a conversation is born starred")
+		}
+
+		for _, want := range []bool{true, false} {
+			if err := service.SetStarred(ctx, conversation.ID, want); err != nil {
+				t.Fatalf("SetStarred %v: %v", want, err)
+			}
+			starred, activity := read(conversation.ID)
+			if starred != want {
+				t.Fatalf("after SetStarred %v the column says %v", want, starred)
+			}
+			if !activity.Equal(before) {
+				t.Fatalf("the star moved last_activity_at from %v to %v", before, activity)
+			}
+		}
+
+		if err := service.SetStarred(ctx, id.New(), true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("starring a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		// A conversation deleted logically is one that does not exist (C09).
+		if _, err := exec.Exec(ctx, `UPDATE conversations SET deleted_at = now() WHERE id = $1`, conversation.ID); err != nil {
+			t.Fatalf("delete the conversation: %v", err)
+		}
+		if err := service.SetStarred(ctx, conversation.ID, true); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("starring a deleted conversation: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheUnreadCountIsTheCustomerMessagesNobodyRead is ADR-0052 against real DDL: each customer message counts one, a redelivery
+// counts nothing, the bot answering clears nothing, and an operator answering or marking read clears it without moving the inbox.
+func TestTheUnreadCountIsTheCustomerMessagesNobodyRead(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		read := func(conversationID uuid.UUID) (int, *time.Time, time.Time) {
+			t.Helper()
+			var unread int
+			var lastRead *time.Time
+			var activity time.Time
+			if err := exec.QueryRow(ctx, `SELECT unread_count, last_read_at, last_activity_at FROM conversations WHERE id = $1`, conversationID).
+				Scan(&unread, &lastRead, &activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+			return unread, lastRead, activity
+		}
+
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		operator, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+
+		first := "wamid.unread." + id.New().String()
+		for _, wamid := range []string{first, "wamid.unread." + id.New().String()} {
+			if _, err := service.RecordInbound(ctx, conversation, wamid, "hola", enums.MessageContentTypeText, time.Now().UTC()); err != nil {
+				t.Fatalf("RecordInbound: %v", err)
+			}
+		}
+		if unread, lastRead, _ := read(conversation.ID); unread != 2 || lastRead != nil {
+			t.Fatalf("after two messages: unread %d, last read %v, want 2 and never", unread, lastRead)
+		}
+
+		// Meta redelivering the first message: the insert refuses it, so nothing counts. The savepoint keeps the refusal from
+		// aborting the case's transaction.
+		if _, err := exec.Exec(ctx, `SAVEPOINT redelivery`); err != nil {
+			t.Fatalf("savepoint: %v", err)
+		}
+		if _, err := service.RecordInbound(ctx, conversation, first, "hola", enums.MessageContentTypeText, time.Now().UTC()); !errors.Is(err, ErrDuplicateWAMID) {
+			t.Fatalf("a redelivery: got %v, want ErrDuplicateWAMID", err)
+		}
+		if _, err := exec.Exec(ctx, `ROLLBACK TO SAVEPOINT redelivery`); err != nil {
+			t.Fatalf("rollback to savepoint: %v", err)
+		}
+		if unread, _, _ := read(conversation.ID); unread != 2 {
+			t.Fatalf("after a redelivery: unread %d, want still 2", unread)
+		}
+
+		if _, err := service.RecordOutbound(ctx, conversation.ID, agent, "buenas", time.Now().UTC()); err != nil {
+			t.Fatalf("RecordOutbound: %v", err)
+		}
+		if unread, _, _ := read(conversation.ID); unread != 2 {
+			t.Fatalf("after the bot answered: unread %d, want still 2", unread)
+		}
+
+		if _, err := service.RecordOperatorOutbound(ctx, conversation.ID, operator, "te ayudo", time.Now().UTC()); err != nil {
+			t.Fatalf("RecordOperatorOutbound: %v", err)
+		}
+		unread, lastRead, activity := read(conversation.ID)
+		if unread != 0 || lastRead == nil {
+			t.Fatalf("after an operator answered: unread %d, last read %v, want 0 and now", unread, lastRead)
+		}
+
+		if _, err := service.RecordInbound(ctx, conversation, "wamid.unread."+id.New().String(), "gracias", enums.MessageContentTypeText, time.Now().UTC()); err != nil {
+			t.Fatalf("RecordInbound: %v", err)
+		}
+		_, _, activity = read(conversation.ID)
+		if err := service.MarkRead(ctx, conversation.ID); err != nil {
+			t.Fatalf("MarkRead: %v", err)
+		}
+		if unread, _, after := read(conversation.ID); unread != 0 || !after.Equal(activity) {
+			t.Fatalf("after marking read: unread %d and activity %v, want 0 and %v unchanged", unread, after, activity)
+		}
+
+		if err := service.MarkRead(ctx, id.New()); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("marking read a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
 
 // Where a turn that produced no answer leaves the conversation (07-secuencia secciones 4 y 5). Against real DDL because the value
 // has to pass the CHECK of ConversationStatus: a status the schema refuses would only show up on the first blocked turn.

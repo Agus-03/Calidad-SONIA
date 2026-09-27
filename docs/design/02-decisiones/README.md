@@ -76,6 +76,7 @@ Dos reglas que conviene sostener:
 | [0048](0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md) | El contexto dinámico: quién escribe cada tabla y cómo se reescribe en cada turno | Fase 9 · F04 · F11 · OE2 · OE4 · enmienda la regla 3 de `08-structure-rules`, `07-secuencia` §0, §2, §3 y §4 B.2 paso 5, y la Regla 3 de `03-capa-prompts`, y deja sin uso `extracted_data_json` del DER | Aceptada |
 | [0049](0049-visualizacion-de-los-componentes-de-cada-respuesta.md) | La visualización del razonamiento: qué componentes se muestran de cada respuesta, y a quién el texto | Fase 9 · F05 · Anexo B · enmienda `generations.reasoning_json` del DER | Aceptada |
 | [0050](0050-filtros-de-la-bandeja.md) | Los filtros de la bandeja: qué lee cada uno, cómo se combinan y cómo conviven con el cursor | Fase 10 · F23 · enmienda el pendiente de ADR-0036 | Aceptada · construir los siete filtros aunque cuatro den vacío, elegido por el grupo el 2026-09-26 |
+| [0051](0051-bandeja-en-tiempo-real.md) | La bandeja en tiempo real: cómo se conecta el operador, qué se le empuja y cuándo | Fase 10 · F21 · enmienda ADR-0038 §4 | Aceptada · la librería y el ticket de un solo uso, elegidos por el grupo el 2026-09-26 |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

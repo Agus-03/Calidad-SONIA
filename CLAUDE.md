@@ -42,6 +42,7 @@ Jerarquía. Ante conflicto, gana la de más arriba.
 ## Convenciones de modelado
 
 **Antes de producir cualquier modelo de datos, diagrama, SQL o código, leer [`docs/design/00-convenciones.md`](docs/design/00-convenciones.md).**
+**Antes de hacer cualquier cambio en el frontend, leer SIEMPRE [`.agents/rules/frontend_standards.md`](.agents/rules/frontend_standards.md).**
 
 Las tres reglas que más fácil se violan por costumbre:
 

@@ -121,13 +121,6 @@ function App() {
         <button type="submit" className="btn-primary" disabled={isLoading}>
           {isLoading ? <span className="spinner"></span> : 'Iniciar Sesión'}
         </button>
-
-        <div className="separator">O</div>
-
-        <button type="button" className="btn-secondary" onClick={handleNotImplemented}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 8}}><path d="M21 12.24c0-.82-.07-1.61-.2-2.37H12v4.49h5.05a4.34 4.34 0 0 1-1.88 2.85v2.37h3.04c1.78-1.64 2.81-4.06 2.81-6.94Z" fill="currentColor"/><path d="M12 21.5c2.53 0 4.65-.84 6.2-2.27l-3.04-2.37c-.84.56-1.92.89-3.16.89-2.43 0-4.49-1.64-5.23-3.85H3.6v2.44C5.15 19.43 8.32 21.5 12 21.5Z" fill="#34A853"/><path d="M6.77 13.9a5.41 5.41 0 0 1 0-3.8V7.66H3.6a9.5 9.5 0 0 0 0 8.68l3.17-2.44Z" fill="#FBBC05"/><path d="M12 5.38c1.38 0 2.62.48 3.59 1.41l2.69-2.69C16.63 2.54 14.51 1.5 12 1.5 8.32 1.5 5.15 3.57 3.6 6.66l3.17 2.44c.74-2.21 2.8-3.72 5.23-3.72Z" fill="#EA4335"/></svg>
-          Iniciar sesión con Google/Microsoft
-        </button>
       </form>
     </div>
   )

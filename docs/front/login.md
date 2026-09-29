@@ -46,10 +46,6 @@ Es la vista por defecto al ingresar a la plataforma sin autenticación.
 
 3. **Botón de Acción Principal (Submit):** `[DISPONIBLE EN BACKEND]` Botón ancho total con el texto "Iniciar Sesión". Envía `POST /auth/login` con `{ email, password }`. Muestra un estado de carga (spinner) mientras procesa la respuesta.
 
-4. **Separador Visual:** Línea horizontal con el texto "O" en el medio.
-
-5. **Autenticación de Terceros (SSO):** `[NO DISPONIBLE EN BACKEND]` Botón secundario "Iniciar sesión con Google/Microsoft". Al hacer clic, debe mostrar mensaje/Toast de falta de implementación: *"Característica en desarrollo o pendiente de integración con backend"*.
-
 ---
 
 ### Sub-vista 2: Recuperación de Contraseña - `/forgot-password` `[NO DISPONIBLE EN BACKEND]`

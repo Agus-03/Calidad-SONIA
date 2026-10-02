@@ -38,6 +38,15 @@ type fakeStore struct {
 	read        []uuid.UUID
 	readErr     error
 	resolvedBy  map[uuid.UUID]uuid.UUID
+	scores      map[uuid.UUID]int
+}
+
+func (f *fakeStore) Score(_ context.Context, conversationID, _ uuid.UUID, score int) error {
+	if f.scores == nil {
+		f.scores = map[uuid.UUID]int{}
+	}
+	f.scores[conversationID] = score
+	return nil
 }
 
 func (f *fakeStore) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, _ time.Duration) error {
@@ -519,5 +528,18 @@ func TestWithExecutorLeavesADoubledStoreAlone(t *testing.T) {
 	service := NewService(&fakeStore{}, slog.Default())
 	if service.WithExecutor(nil) != service {
 		t.Fatal("binding a doubled store built a new service")
+	}
+}
+
+// TestScoreReachesTheStore is the passthrough F13 needs: the score is this aggregate's column (regla 1, ADR-0055).
+func TestScoreReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).Score(context.Background(), conversation, uuid.New(), 4); err != nil {
+		t.Fatalf("Score: %v", err)
+	}
+	if store.scores[conversation] != 4 {
+		t.Fatalf("the score did not reach the store: %v", store.scores)
 	}
 }

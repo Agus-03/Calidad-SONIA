@@ -48,6 +48,7 @@ type store interface {
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
+	Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
@@ -231,6 +232,11 @@ func (s *Service) SetStarred(ctx context.Context, conversationID uuid.UUID, star
 // Resolve is the manual close of ADR-0002 (d); the status is this aggregate's column, and who may close is the caller's rule (ADR-0054).
 func (s *Service) Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
 	return s.repo.Resolve(ctx, conversationID, operatorID, turnBudget)
+}
+
+// Score is F13 written by its owner: the score is this aggregate's column, and who may score is the caller's rule (ADR-0055).
+func (s *Service) Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	return s.repo.Score(ctx, conversationID, operatorID, score)
 }
 
 // TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),

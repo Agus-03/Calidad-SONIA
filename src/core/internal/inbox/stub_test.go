@@ -240,6 +240,21 @@ type stubAggregate struct {
 	resolvedBy    map[uuid.UUID]uuid.UUID
 	resolveErr    error
 	resolveBudget time.Duration
+
+	scores   map[uuid.UUID]int
+	scoredBy map[uuid.UUID]uuid.UUID
+	scoreErr error
+}
+
+func (a *stubAggregate) Score(_ context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	if a.scoreErr != nil {
+		return a.scoreErr
+	}
+	if a.scores == nil {
+		a.scores, a.scoredBy = map[uuid.UUID]int{}, map[uuid.UUID]uuid.UUID{}
+	}
+	a.scores[conversationID], a.scoredBy[conversationID] = score, operatorID
+	return nil
 }
 
 func (a *stubAggregate) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {

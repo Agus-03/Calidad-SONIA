@@ -361,3 +361,21 @@ func (r *Repository) Resolve(ctx context.Context, conversationID, operatorID uui
 		return ErrResolved
 	}
 }
+
+// The vendor and the status are in the predicate, and a new score overwrites the last with its author and instant (ADR-0055).
+const conversationScore = `
+UPDATE conversations
+SET    quality_score = $2, scored_by_operator_id = $3, scored_at = now(), updated_at = now()
+WHERE  id = $1 AND operator_id = $3 AND status = $4 AND deleted_at IS NULL`
+
+// Nothing matched is read as ErrNotFound: the caller read a resolved conversation of its own first, and a resolved one never reopens.
+func (r *Repository) Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	tag, err := r.exec.Exec(ctx, conversationScore, conversationID, score, operatorID, enums.ConversationStatusResolved)
+	if err != nil {
+		return fmt.Errorf("conversations: score: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

@@ -33,6 +33,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
 SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count,
+       c.quality_score,
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -322,7 +323,7 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount,
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount, &s.QualityScore,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,

@@ -48,6 +48,7 @@ type summaryResponse struct {
 	AIAgentAvailable bool              `json:"ai_agent_available"`
 	Starred          bool              `json:"starred"`
 	UnreadCount      int               `json:"unread_count"`
+	QualityScore     *int              `json:"quality_score"`
 	Contact          contactResponse   `json:"contact"`
 	Operator         *operatorResponse `json:"operator"`
 	LastMessage      *messageResponse  `json:"last_message"`
@@ -93,6 +94,7 @@ func present(s Summary) summaryResponse {
 		AIAgentAvailable: s.AIAgentAvailable,
 		Starred:          s.Starred,
 		UnreadCount:      s.UnreadCount,
+		QualityScore:     s.QualityScore,
 		FailedCount:      s.FailedCount,
 		LastFailedAt:     rfc3339(s.LastFailedAt),
 		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
@@ -423,6 +425,42 @@ func (c *Controller) setStarred(gc *gin.Context) {
 	soniahttp.OK(gc, starredResponse{ID: conversationID.String(), Starred: starred})
 }
 
+// A pointer so a missing score is told apart from a zero, which the service refuses as off the scale anyway (ADR-0055).
+type scoreRequest struct {
+	Score *int `json:"score" binding:"required"`
+}
+
+type scoreResponse struct {
+	ID    string `json:"id"`
+	Score int    `json:"score"`
+}
+
+// setScore answers the score the conversation ends with, which overwrites the one before (ADR-0055).
+func (c *Controller) setScore(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req scoreRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "score is required, a whole number from 1 to 5").WithCause(err))
+		return
+	}
+
+	score, err := c.service.Score(gc.Request.Context(), scope, conversationID, *req.Score)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.OK(gc, scoreResponse{ID: conversationID.String(), Score: score})
+}
+
 // translate turns what the package knows into what the frontend switches on, and lets anything else fall through as a 500.
 func translate(err error) error {
 	switch {
@@ -450,6 +488,12 @@ func translate(err error) error {
 		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot or closes it: answer it first").WithCause(err)
 	case errors.Is(err, ErrTurnInProgress):
 		return soniahttp.Conflict("turn_in_progress", "the bot is still answering this conversation: close it once the answer arrives").WithCause(err)
+	case errors.Is(err, ErrInvalidScore):
+		return soniahttp.BadRequest("invalid_score", "the score is a whole number from 1 to 5").WithCause(err)
+	case errors.Is(err, ErrNotResolved):
+		return soniahttp.Conflict("conversation_not_resolved", "only a resolved conversation is scored").WithCause(err)
+	case errors.Is(err, ErrNotTheVendor):
+		return soniahttp.Conflict("not_the_vendor", "only the vendor of the conversation scores it").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:

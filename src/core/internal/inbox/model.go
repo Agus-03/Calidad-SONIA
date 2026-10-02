@@ -38,6 +38,9 @@ type Summary struct {
 	// The customer messages since somebody who could clear it last read the conversation: one count for all, not one per Operator (ADR-0052).
 	UnreadCount int
 
+	// F13: one to five from the vendor, nil until it scores; a new score overwrites the last one (ADR-0055).
+	QualityScore *int
+
 	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
 	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
 	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.

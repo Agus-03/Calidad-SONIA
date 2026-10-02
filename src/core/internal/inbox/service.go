@@ -64,11 +64,23 @@ var (
 
 	// ErrTurnInProgress is a close while the bot still owes an answer: the frontend waits for it, and this is the backstop (ADR-0054).
 	ErrTurnInProgress = errors.New("inbox: the bot is still answering the conversation")
+
+	// ErrInvalidScore is a score off the scale of one to five the group chose, like stars (ADR-0055).
+	ErrInvalidScore = errors.New("inbox: the score is not a whole number from 1 to 5")
+
+	// ErrNotResolved is a score on an open conversation: F13 scores the closed ones, whose work is over (ADR-0055).
+	ErrNotResolved = errors.New("inbox: the conversation is not resolved")
+
+	// ErrNotTheVendor is a score from anybody but the vendor holding the conversation, who the group chose to score it (ADR-0055).
+	ErrNotTheVendor = errors.New("inbox: only the vendor of the conversation scores it")
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
 // F26 can tell taking the pool by answering from the two assignments of the dispatcher (dispatch.go) and from the ones somebody asked for.
 const autoAssignReason = "auto_assigned_on_first_reply"
+
+// The scale of F13 the group chose, one to five like stars, which the schema checks too (ADR-0055).
+const minScore, maxScore = 1, 5
 
 // A timeout is the most likely cause of the write after a failed send, so it cannot run on the context that just expired.
 const writeGrace = 5 * time.Second
@@ -98,6 +110,7 @@ type Aggregate interface {
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
+	Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -458,6 +471,37 @@ func (s *Service) Resolve(ctx context.Context, scope Scope, conversationID uuid.
 	default:
 		return err
 	}
+}
+
+// Score is F13: the vendor scores the conversation it held once it is resolved, and a new score overwrites the last (ADR-0055).
+func (s *Service) Score(ctx context.Context, scope Scope, conversationID uuid.UUID, score int) (int, error) {
+	if score < minScore || score > maxScore {
+		return 0, ErrInvalidScore
+	}
+
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return 0, err
+	}
+	// Reach first, as everywhere: another vendor's conversation does not exist for an operator (ADR-0035, regla 3).
+	if !mayRead(scope, target) {
+		return 0, ErrNotFound
+	}
+	if target.Status != enums.ConversationStatusResolved {
+		return 0, ErrNotResolved
+	}
+	if target.OperatorID == nil || *target.OperatorID != scope.OperatorID {
+		return 0, ErrNotTheVendor
+	}
+
+	if err := s.opts.Aggregate.Score(ctx, conversationID, scope.OperatorID, score); err != nil {
+		if errors.Is(err, conversations.ErrNotFound) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	s.opts.Events.Changed(conversationID)
+	return score, nil
 }
 
 // maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of

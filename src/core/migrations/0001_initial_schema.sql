@@ -105,7 +105,8 @@ CREATE TABLE conversations (
     status                  varchar     NOT NULL CHECK (status IN ('active', 'waiting', 'resolved')),
     mode                    varchar     NOT NULL CHECK (mode IN ('autonomous', 'suggestion', 'off')),
     starred                 boolean     NOT NULL DEFAULT false,
-    quality_score           smallint,
+    -- ADR-0055: F13 scores from one to five, like stars; NULL is a conversation nobody scored yet.
+    quality_score           smallint    CHECK (quality_score BETWEEN 1 AND 5),
     scored_by_operator_id   uuid        REFERENCES operators (id),
     scored_at               timestamptz,
     first_response_at       timestamptz,

@@ -718,6 +718,10 @@ func TestTheRowOfAnEventIsTheRowOfTheListing(t *testing.T) {
 		if fromListing == nil {
 			t.Fatalf("the listing does not show %v", w.mineConv)
 		}
+		// Nobody scored it, and nil is how the row says so: a zero would read as a score off the scale (ADR-0055).
+		if row.QualityScore != nil || fromListing.QualityScore != nil {
+			t.Fatalf("an unscored conversation carries the scores %v and %v", row.QualityScore, fromListing.QualityScore)
+		}
 		if row.Operator == nil || row.Operator.ID != w.mine || row.FailedCount != fromListing.FailedCount ||
 			row.LastMessage == nil || fromListing.LastMessage == nil || row.LastMessage.ID != fromListing.LastMessage.ID {
 			t.Fatalf("the event row %+v differs from the listing row %+v", row, *fromListing)

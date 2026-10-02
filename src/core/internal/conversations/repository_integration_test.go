@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
@@ -863,6 +864,81 @@ func TestATurnThatAnsweredNobodyLeavesTheConversationWaiting(t *testing.T) {
 
 		if err := service.MarkWaiting(ctx, id.New()); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("marking a conversation that does not exist: got %v, want ErrNotFound", err)
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestTheVendorScoresAResolvedConversationAndMayScoreItAgain is ADR-0055 against real DDL: the vendor, closed ones, one to five.
+func TestTheVendorScoresAResolvedConversationAndMayScoreItAgain(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		vendor, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		other, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		if err := service.Claim(ctx, conversation.ID, vendor); err != nil {
+			t.Fatalf("Claim: %v", err)
+		}
+
+		if err := service.Score(ctx, conversation.ID, vendor, 4); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("scoring an open conversation: got %v, want ErrNotFound", err)
+		}
+		if err := service.Resolve(ctx, conversation.ID, vendor, time.Minute); err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if err := service.Score(ctx, conversation.ID, other, 4); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("scoring another vendor's: got %v, want ErrNotFound", err)
+		}
+
+		read := func() (int, uuid.UUID) {
+			t.Helper()
+			var score int
+			var by uuid.UUID
+			var at *time.Time
+			if err := exec.QueryRow(ctx, `SELECT quality_score, scored_by_operator_id, scored_at FROM conversations WHERE id = $1`,
+				conversation.ID).Scan(&score, &by, &at); err != nil {
+				t.Fatalf("read the score: %v", err)
+			}
+			if at == nil {
+				t.Fatal("the score was written with no instant")
+			}
+			return score, by
+		}
+		for _, want := range []int{4, 2} {
+			if err := service.Score(ctx, conversation.ID, vendor, want); err != nil {
+				t.Fatalf("Score %d: %v", want, err)
+			}
+			// The second score overwrites the first, which the group accepted along with losing it (ADR-0055).
+			if score, by := read(); score != want || by != vendor {
+				t.Fatalf("the row holds %d by %v, want %d by %v", score, by, want, vendor)
+			}
+		}
+
+		// Last, because the refusal aborts the transaction: the scale lives in the schema too, not only in the service.
+		_, err = exec.Exec(ctx, `UPDATE conversations SET quality_score = 6 WHERE id = $1`, conversation.ID)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Fatalf("a score of 6: got %v, want the check violation 23514", err)
 		}
 		return rollback
 	})

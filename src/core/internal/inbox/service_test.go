@@ -854,3 +854,91 @@ func TestTheSuggestionIsReadWithTheReachOfTheThread(t *testing.T) {
 		t.Fatalf("Suggestion of another's: got %v, want ErrNotFound", err)
 	}
 }
+
+// TestOnlyTheVendorScoresAResolvedConversation is ADR-0055 as a table: the vendor scores what it held once closed, one to five.
+func TestOnlyTheVendorScoresAResolvedConversation(t *testing.T) {
+	me, other := id.New(), id.New()
+	resolved := func(t *Target) { t.Status = enums.ConversationStatusResolved }
+
+	for _, tc := range []struct {
+		name    string
+		holder  *uuid.UUID
+		role    enums.OperatorRole
+		shape   func(*Target)
+		score   int
+		wantErr error
+	}{
+		{"the vendor scores its closed one", &me, enums.OperatorRoleOperator, resolved, 5, nil},
+		{"a supervisor who held it scores it too", &me, enums.OperatorRoleSupervisor, resolved, 1, nil},
+		{"zero is off the scale", &me, enums.OperatorRoleOperator, resolved, 0, ErrInvalidScore},
+		{"six is off the scale", &me, enums.OperatorRoleOperator, resolved, 6, ErrInvalidScore},
+		{"an open one is not scored", &me, enums.OperatorRoleOperator, func(*Target) {}, 3, ErrNotResolved},
+		{"a waiting one is not scored", &me, enums.OperatorRoleOperator,
+			func(t *Target) { t.Status = enums.ConversationStatusWaiting }, 3, ErrNotResolved},
+		{"a supervisor does not score a vendor's", &other, enums.OperatorRoleSupervisor, resolved, 3, ErrNotTheVendor},
+		{"an admin does not score a vendor's", &other, enums.OperatorRoleAdmin, resolved, 3, ErrNotTheVendor},
+		{"nobody scores one closed in the pool", nil, enums.OperatorRoleOperator, resolved, 3, ErrNotTheVendor},
+		{"another's does not exist for an operator", &other, enums.OperatorRoleOperator, resolved, 3, ErrNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(tc.holder)
+			tc.shape(&target)
+			d.store.targets[target.ConversationID] = target
+
+			got, err := d.service.Score(context.Background(), scopeOf(me, tc.role), target.ConversationID, tc.score)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Score: got %v, want %v", err, tc.wantErr)
+			}
+			written, ok := d.aggregate.scores[target.ConversationID]
+			if ok != (tc.wantErr == nil) {
+				t.Fatalf("written = %v, want %v", ok, tc.wantErr == nil)
+			}
+			if ok && (written != tc.score || got != tc.score || d.aggregate.scoredBy[target.ConversationID] != me) {
+				t.Fatalf("wrote %d by %v and answered %d, want %d by %v", written, d.aggregate.scoredBy[target.ConversationID], got, tc.score, me)
+			}
+			if told := len(d.events.told) == 1; told != ok {
+				t.Fatalf("told the hub %v, want only after a score", d.events.told)
+			}
+			// Scoring is not answering: it never takes the pool (ADR-0035 regla 13, ADR-0055).
+			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 {
+				t.Fatal("scoring assigned the conversation")
+			}
+		})
+	}
+}
+
+// TestTheScoreReportsWhatTheAggregateSaid covers a row gone between the read and the write, and a database that did not answer.
+func TestTheScoreReportsWhatTheAggregateSaid(t *testing.T) {
+	me := id.New()
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{"the row is gone", conversations.ErrNotFound, ErrNotFound},
+		{"the database did not answer", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			d.aggregate.scoreErr = tc.err
+			target := d.open(&me)
+			target.Status = enums.ConversationStatusResolved
+			d.store.targets[target.ConversationID] = target
+
+			if _, err := d.service.Score(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, 3); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Score: got %v, want %v", err, tc.wantErr)
+			}
+			if len(d.events.told) != 0 {
+				t.Fatalf("told the hub %v after a score that did not happen", d.events.told)
+			}
+		})
+	}
+
+	d := newDesk(&stubStore{})
+	if _, err := d.service.Score(context.Background(), scopeOf(me, enums.OperatorRoleAdmin), id.New(), 3); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Score on a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}

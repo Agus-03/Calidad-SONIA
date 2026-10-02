@@ -30,8 +30,7 @@ JOIN     prompt_components pc ON pc.id = v.prompt_component_id
 WHERE    gc.generation_id = $1
 ORDER BY gc.position`
 
-// Reasoning answers ErrGenerationNotFound when the generation is not one of this conversation. It reads the text of every version,
-// and the service is the one that decides who keeps it.
+// Reasoning reads the text of every version and leaves to the service who keeps it; another conversation's is ErrGenerationNotFound.
 func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
 	var out Reasoning
 	err := r.exec.QueryRow(ctx, reasoningGeneration, generationID, conversationID).

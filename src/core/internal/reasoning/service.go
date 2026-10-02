@@ -21,8 +21,7 @@ type Service struct {
 
 func NewService(repo store, reach Reach) *Service { return &Service{repo: repo, reach: reach} }
 
-// Reasoning answers F05 with the reach of the thread: what the Operator cannot read it cannot ask about. The text of each
-// component stays with the admin, who is the one with access to the configuration it comes from (ADR-0049).
+// Reasoning answers F05 with the reach of the thread, and the text of each component only to the admin, who owns it (ADR-0049).
 func (s *Service) Reasoning(ctx context.Context, scope inbox.Scope, conversationID, generationID uuid.UUID) (Reasoning, error) {
 	if err := s.reach.Reachable(ctx, scope, conversationID); err != nil {
 		return Reasoning{}, err

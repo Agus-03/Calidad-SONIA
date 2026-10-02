@@ -64,9 +64,7 @@ func twoConversations(t *testing.T, ctx context.Context, exec db.Executor) (mine
 	return conversation(), conversation()
 }
 
-// ADR-0049 against the real DDL: the components come in the order they were assembled, with the version that was used and not the
-// current one, a component removed afterwards still shows, and an id of another conversation is not found. The thread names the
-// generation behind the answer it produced.
+// ADR-0049 against real DDL: the versions used, in order, a removed one still shown, another thread's not found, the thread naming it.
 func TestTheReasoningIsTheVersionsTheGenerationWasAssembledFrom(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		mineConv, theirsConv := twoConversations(t, ctx, exec)

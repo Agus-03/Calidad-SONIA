@@ -44,8 +44,7 @@ func (c *StreamController) ticket(gc *gin.Context) {
 	soniahttp.Created(gc, ticketResponse{Ticket: token, ExpiresAt: expiresAt.UTC().Format(time.RFC3339)})
 }
 
-// StreamGate is the socket itself. Public for the router because the browser cannot send the bearer when it opens a WebSocket:
-// the ticket is the credential, and the operator is read again from the database before anything is sent (ADR-0051).
+// StreamGate is the socket, public because a WebSocket cannot carry the bearer: the ticket is the credential (ADR-0051).
 type StreamGate struct {
 	hub    *Hub
 	lookup soniahttp.ActorLookup
@@ -76,8 +75,7 @@ func (g *StreamGate) stream(gc *gin.Context) {
 		return
 	}
 
-	// The origin is not checked because the ticket is the credential: a page of another site cannot get one without the operator's
-	// bearer, which is what an origin check would protect (ADR-0051).
+	// No origin check: another site cannot get a ticket without the operator's bearer, which is what it would protect (ADR-0051).
 	conn, err := websocket.Accept(gc.Writer, gc.Request, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		// Accept already answered the browser; what is left is the trace.

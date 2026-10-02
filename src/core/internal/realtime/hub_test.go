@@ -172,9 +172,7 @@ func (r received) about() string {
 	return r.Type + " " + r.ID
 }
 
-// TestEachOperatorHearsWhatItsInboxShows is the reach of ADR-0035 applied to F21: the holder and the roles that see the whole team
-// hear a change, another vendor and another account do not. A change every one of them reaches goes out right after, so a socket
-// that should hear nothing of the first reads the second and the case never waits on a silence.
+// TestEachOperatorHearsWhatItsInboxShows is ADR-0035 on F21; a change all reach goes last, so no case ever waits on a silence.
 func TestEachOperatorHearsWhatItsInboxShows(t *testing.T) {
 	l := newLine(t)
 	account, elsewhere := id.New(), id.New()
@@ -210,8 +208,7 @@ func TestEachOperatorHearsWhatItsInboxShows(t *testing.T) {
 	}
 }
 
-// TestTakingThePoolTellsTheOthersToDropTheRow is LeftPool: the vendor who can no longer see the conversation is told its id and
-// nothing else, which it had on screen a moment ago; a plain change of a conversation it never saw tells it nothing (ADR-0051).
+// TestTakingThePoolTellsTheOthersToDropTheRow: the vendor who lost sight of it gets only its id, and nothing of others (ADR-0051).
 func TestTakingThePoolTellsTheOthersToDropTheRow(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -234,8 +231,7 @@ func TestTakingThePoolTellsTheOthersToDropTheRow(t *testing.T) {
 	}
 }
 
-// TestARowThatCannotBeReadTellsNobody: a contact taken down leaves every inbox, and a failed read sends nothing rather than a
-// half event. The readable one goes last, so it is the first thing the socket hears only if the two before it sent nothing.
+// TestARowThatCannotBeReadTellsNobody: a gone contact or a failed read sends nothing, and the readable one last proves it.
 func TestARowThatCannotBeReadTellsNobody(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -254,8 +250,7 @@ func TestARowThatCannotBeReadTellsNobody(t *testing.T) {
 	}
 }
 
-// TestATicketOpensOneSocketOnce is ADR-0051's credential: unknown, used or expired tickets are refused before the upgrade, with a
-// code the frontend switches on to ask for a new one; an operator disabled after asking is refused too.
+// TestATicketOpensOneSocketOnce: unknown, used, expired tickets and a disabled operator are refused before the upgrade (ADR-0051).
 func TestATicketOpensOneSocketOnce(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -307,8 +302,7 @@ func TestATicketOpensOneSocketOnce(t *testing.T) {
 	}
 }
 
-// TestTheTicketRouteIsBehindTheBearerForEveryRole walks the authenticated half with the three roles, because a wrong Roles list
-// compiles: a role refused here could never open its inbox in real time.
+// TestTheTicketRouteIsBehindTheBearerForEveryRole, because a wrong Roles list compiles and that role would lose real time.
 func TestTheTicketRouteIsBehindTheBearerForEveryRole(t *testing.T) {
 	hub := NewHub(HubOptions{Rows: &stubRows{rows: map[uuid.UUID]stubRow{}}})
 	t.Cleanup(func() { _ = hub.Close(context.Background()) })
@@ -370,8 +364,7 @@ func TestASlowClientIsCutAndNotWaitedFor(t *testing.T) {
 	}
 }
 
-// TestClosingTheHubSaysGoingAway is what tells the frontend to reconnect after a deployment instead of reading an empty inbox, and
-// a notice after the close is dropped without blocking the caller (ADR-0027, ADR-0051).
+// TestClosingTheHubSaysGoingAway, so the frontend reconnects after a deploy, and a later notice never blocks (ADR-0027, ADR-0051).
 func TestClosingTheHubSaysGoingAway(t *testing.T) {
 	l := newLine(t)
 	conn := l.connect(t, l.actor(id.New(), enums.OperatorRoleAdmin))

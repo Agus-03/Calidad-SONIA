@@ -44,8 +44,7 @@ type HubOptions struct {
 	Logger *slog.Logger
 }
 
-// Hub is the fan-out of F21: the operators connected to this process, and what changed in the conversations they reach. It lives in
-// memory because the core runs as one instance (ADR-0027); a second one would not reach the operators connected to the first.
+// Hub is the fan-out of F21, in memory because the core runs as one instance: a second would miss the first's sockets (ADR-0027).
 type Hub struct {
 	opts HubOptions
 
@@ -65,8 +64,7 @@ type ticket struct {
 	expiresAt  time.Time
 }
 
-// notice is one conversation that changed. leftPool marks the one change that takes a row away from somebody's inbox: a
-// conversation of the pool taken by another operator (ADR-0051).
+// notice is one conversation that changed; leftPool marks a pool conversation taken by another, which leaves other inboxes (ADR-0051).
 type notice struct {
 	conversationID uuid.UUID
 	leftPool       bool
@@ -90,8 +88,7 @@ func NewHub(opts HubOptions) *Hub {
 	return h
 }
 
-// Issue hands out a ticket for the socket: the browser cannot send the bearer when it opens one, and the JWT in the URL would end up
-// in every access log on the way (ADR-0051).
+// Issue hands out a ticket because a socket cannot carry the bearer, and a JWT in the URL would land in every access log (ADR-0051).
 func (h *Hub) Issue(operatorID uuid.UUID) (string, time.Time, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -125,12 +122,10 @@ func (h *Hub) Redeem(token string) (uuid.UUID, error) {
 	return issued.operatorID, nil
 }
 
-// Changed is what a package that writes a conversation says after its transaction commits. Never inside it: a rollback would push
-// a change that did not happen (ADR-0051). It never blocks the caller.
+// Changed is said after the writer's commit and never inside it, or a rollback would push a change that never was (ADR-0051).
 func (h *Hub) Changed(conversationID uuid.UUID) { h.post(notice{conversationID: conversationID}) }
 
-// LeftPool is Changed for a conversation that was in the pool and is somebody's now: the operators who can no longer see it are
-// told to drop its row, which every one of them had in front of them a moment ago (ADR-0035, regla 1).
+// LeftPool tells whoever can no longer see a conversation taken from the pool to drop the row they had on screen (ADR-0035, regla 1).
 func (h *Hub) LeftPool(conversationID uuid.UUID) {
 	h.post(notice{conversationID: conversationID, leftPool: true})
 }
@@ -187,8 +182,7 @@ type conversationEvent struct {
 	ID           string `json:"id,omitempty"`
 }
 
-// fanOut reads the row once and decides per connection, with the reach of the listing: an operator never receives a conversation
-// it could not open (ADR-0035, reglas 1 y 3).
+// fanOut reads the row once and decides per connection with the reach of the listing, so nobody hears what it cannot open (ADR-0035).
 func (h *Hub) fanOut(n notice) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
@@ -290,8 +284,7 @@ func (h *Hub) Serve(ctx context.Context, conn *websocket.Conn, scope inbox.Scope
 		h.running.Done()
 	}()
 
-	// The browser sends nothing on this socket: reading is only how its close and the pongs are heard. On a context of its own,
-	// because CloseRead drops the connection without a close frame when its context ends, and ending ours has to say why.
+	// Read only to hear the close and the pongs, on its own context: CloseRead drops without a close frame when its context ends.
 	left := conn.CloseRead(context.WithoutCancel(ctx))
 	ping := time.NewTicker(pingInterval)
 	defer ping.Stop()

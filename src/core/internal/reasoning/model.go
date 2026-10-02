@@ -12,8 +12,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
 
-// ErrGenerationNotFound is a generation that does not exist or is not of the conversation in the path: F05 reads one answer of
-// one thread, and an id of another conversation is not one of them.
+// ErrGenerationNotFound covers a generation of another conversation too: F05 reads one answer of the thread in the path.
 var ErrGenerationNotFound = errors.New("reasoning: generation not found")
 
 // Reach is inbox/: what the Operator cannot read it cannot ask about, which is the reach of the thread (ADR-0035, ADR-0063).
@@ -21,8 +20,7 @@ type Reach interface {
 	Reachable(ctx context.Context, scope inbox.Scope, conversationID uuid.UUID) error
 }
 
-// Reasoning is F05: the components a generation was assembled from, in the order they went in, which is what "influyeron" reads
-// as since the DER made generation_components its evidence (ADR-0049).
+// Reasoning is F05: the components a generation was assembled from, in order, since generation_components is the evidence (ADR-0049).
 type Reasoning struct {
 	GenerationID uuid.UUID
 	Status       enums.GenerationStatus

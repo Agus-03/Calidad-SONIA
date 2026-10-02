@@ -142,6 +142,7 @@ sonia/
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
 │   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038) · cada mensaje del cliente suma a unread_count y la respuesta de un operador lo borra (ADR-0052)
 │   │   │   │   ├── repository.go       recibe el Executor de quien conduce
+│   │   │   │   ├── messages_repository.go  los mensajes: escribirlos, ligarlos al bloque y marcarlos enviados o fallidos (regla 2)
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
 │   │   │   │

@@ -433,3 +433,138 @@ func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID
 	}
 	return out, nil
 }
+
+// Whether the person can take conversations now, read in the caller's account: one of another account is one that does not exist.
+const operatorState = `
+SELECT o.active AND o.deleted_at IS NULL
+FROM   operators o
+WHERE  o.id = $1 AND o.account_id = $2`
+
+func (r *Repository) OperatorState(ctx context.Context, accountID, operatorID uuid.UUID) (bool, error) {
+	var available bool
+	err := r.exec.QueryRow(ctx, operatorState, operatorID, accountID).Scan(&available)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrOperatorNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("inbox: read the operator: %w", err)
+	}
+	return available, nil
+}
+
+// Oldest first, which is how a history is read; the id breaks the tie of rows written in one transaction, like a handover's.
+const assignmentsSelect = `
+SELECT a.id, COALESCE(a.reason, ''), a.created_at,
+       f.id, f.name, f.lastname,
+       t.id, t.name, t.lastname,
+       b.id, b.name, b.lastname
+FROM   conversation_assignments a
+JOIN   operators t ON t.id = a.to_operator_id
+LEFT   JOIN operators f ON f.id = a.from_operator_id
+LEFT   JOIN operators b ON b.id = a.assigned_by_operator_id
+WHERE  a.conversation_id = $1
+ORDER  BY a.created_at, a.id`
+
+func (r *Repository) Assignments(ctx context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error) {
+	rows, err := r.exec.Query(ctx, assignmentsSelect, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("inbox: read the assignments: %w", err)
+	}
+	defer rows.Close()
+
+	out := []AssignmentEntry{}
+	for rows.Next() {
+		var e AssignmentEntry
+		var fromID, byID *uuid.UUID
+		var fromName, fromLastname, byName, byLastname *string
+		if err := rows.Scan(&e.ID, &e.Reason, &e.CreatedAt, &fromID, &fromName, &fromLastname,
+			&e.To.ID, &e.To.Name, &e.To.Lastname, &byID, &byName, &byLastname); err != nil {
+			return nil, fmt.Errorf("inbox: scan an assignment: %w", err)
+		}
+		e.From = named(fromID, fromName, fromLastname)
+		e.AssignedBy = named(byID, byName, byLastname)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// named is the person of a LEFT JOIN, which arrives as three nulls when there is none.
+func named(operatorID *uuid.UUID, name, lastname *string) *Operator {
+	if operatorID == nil || name == nil || lastname == nil {
+		return nil
+	}
+	return &Operator{ID: *operatorID, Name: *name, Lastname: *lastname}
+}
+
+// A deleted note leaves the thread and keeps its row (C09); the author is joined so the note is read with its signature.
+const noteSelect = `
+SELECT n.id, n.conversation_id, o.id, o.name, o.lastname, n.content, n.created_at, n.updated_at
+FROM   internal_notes n
+JOIN   operators o ON o.id = n.operator_id
+WHERE  n.deleted_at IS NULL`
+
+func (r *Repository) Notes(ctx context.Context, conversationID uuid.UUID) ([]Note, error) {
+	rows, err := r.exec.Query(ctx, noteSelect+" AND n.conversation_id = $1 ORDER BY n.created_at, n.id", conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("inbox: read the notes: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Note{}
+	for rows.Next() {
+		n, err := scanNote(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// NoteByID reads the note only within its conversation, so an id of another thread is a note that does not exist.
+func (r *Repository) NoteByID(ctx context.Context, conversationID, noteID uuid.UUID) (Note, error) {
+	n, err := scanNote(r.exec.QueryRow(ctx, noteSelect+" AND n.conversation_id = $1 AND n.id = $2", conversationID, noteID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Note{}, ErrNoteNotFound
+	}
+	return n, err
+}
+
+func scanNote(row pgx.Row) (Note, error) {
+	var n Note
+	err := row.Scan(&n.ID, &n.ConversationID, &n.Author.ID, &n.Author.Name, &n.Author.Lastname, &n.Content, &n.CreatedAt, &n.UpdatedAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Note{}, fmt.Errorf("inbox: scan a note: %w", err)
+	}
+	return n, err
+}
+
+func (r *Repository) AddNote(ctx context.Context, n Note) error {
+	if _, err := r.exec.Exec(ctx, `INSERT INTO internal_notes (id, conversation_id, operator_id, content) VALUES ($1, $2, $3, $4)`,
+		n.ID, n.ConversationID, n.Author.ID, n.Content); err != nil {
+		return fmt.Errorf("inbox: add a note: %w", err)
+	}
+	return nil
+}
+
+// The author is in the predicate of both writes, so the rule holds even if the read before it was stale (ADR-0056).
+func (r *Repository) EditNote(ctx context.Context, noteID, operatorID uuid.UUID, content string) error {
+	return r.noteWrite(ctx, "edit", `UPDATE internal_notes SET content = $3, updated_at = now()
+		WHERE id = $1 AND operator_id = $2 AND deleted_at IS NULL`, noteID, operatorID, content)
+}
+
+func (r *Repository) DeleteNote(ctx context.Context, noteID, operatorID uuid.UUID) error {
+	return r.noteWrite(ctx, "delete", `UPDATE internal_notes SET deleted_at = now(), updated_at = now()
+		WHERE id = $1 AND operator_id = $2 AND deleted_at IS NULL`, noteID, operatorID)
+}
+
+func (r *Repository) noteWrite(ctx context.Context, what, query string, args ...any) error {
+	tag, err := r.exec.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("inbox: %s a note: %w", what, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNoteNotFound
+	}
+	return nil
+}

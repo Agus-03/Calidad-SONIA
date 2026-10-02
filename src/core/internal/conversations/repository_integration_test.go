@@ -946,3 +946,80 @@ func TestTheVendorScoresAResolvedConversationAndMayScoreItAgain(t *testing.T) {
 		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
 	}
 }
+
+// TestAReassignmentMovesOnlyTheHolderAndLosesARace is ADR-0056 against real DDL: the read vendor is in the predicate, resolved ones stay.
+func TestAReassignmentMovesOnlyTheHolderAndLosesARace(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		open := func(vendor uuid.UUID) uuid.UUID {
+			t.Helper()
+			contact, err := insertContact(ctx, exec, account)
+			if err != nil {
+				t.Fatalf("insert contact: %v", err)
+			}
+			conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+			if err != nil {
+				t.Fatalf("EnsureOpen: %v", err)
+			}
+			if err := service.Claim(ctx, conversation.ID, vendor); err != nil {
+				t.Fatalf("Claim: %v", err)
+			}
+			return conversation.ID
+		}
+		holder := func(conversationID uuid.UUID) uuid.UUID {
+			t.Helper()
+			var operatorID uuid.UUID
+			if err := exec.QueryRow(ctx, `SELECT operator_id FROM conversations WHERE id = $1`, conversationID).Scan(&operatorID); err != nil {
+				t.Fatalf("read the vendor: %v", err)
+			}
+			return operatorID
+		}
+		vendor, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		next, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+
+		first := open(vendor)
+		// The caller read the pool, and the conversation is held: somebody took it in between.
+		if err := service.Reassign(ctx, first, nil, next); !errors.Is(err, ErrTaken) {
+			t.Fatalf("reassigning a stale read: got %v, want ErrTaken", err)
+		}
+		if err := service.Reassign(ctx, first, &vendor, next); err != nil {
+			t.Fatalf("Reassign: %v", err)
+		}
+		if got := holder(first); got != next {
+			t.Fatalf("the conversation is held by %v, want %v", got, next)
+		}
+
+		second, closed := open(next), open(next)
+		if err := service.Resolve(ctx, closed, next, time.Minute); err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		moved, err := service.HandOver(ctx, next, vendor)
+		if err != nil {
+			t.Fatalf("HandOver: %v", err)
+		}
+		got := map[uuid.UUID]bool{}
+		for _, conversationID := range moved {
+			got[conversationID] = true
+		}
+		if len(moved) != 2 || !got[first] || !got[second] {
+			t.Fatalf("handed over %v, want the two open ones %v and %v", moved, first, second)
+		}
+		if holder(closed) != next {
+			t.Fatal("the handover moved a resolved conversation")
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}

@@ -67,6 +67,8 @@ type ticket struct {
 type notice struct {
 	conversationID uuid.UUID
 	leftPool       bool
+	// The vendor a reassignment took the conversation from, the one other person who had the row on screen (ADR-0056).
+	formerHolder *uuid.UUID
 }
 
 func NewHub(opts HubOptions) *Hub {
@@ -128,6 +130,11 @@ func (h *Hub) Changed(conversationID uuid.UUID) { h.post(notice{conversationID: 
 // told to drop its row, which every one of them had in front of them a moment ago (ADR-0035, regla 1).
 func (h *Hub) LeftPool(conversationID uuid.UUID) {
 	h.post(notice{conversationID: conversationID, leftPool: true})
+}
+
+// Reassigned is Changed for a conversation F26 moved: only its former vendor is told to drop the row (ADR-0035 regla 3, ADR-0056).
+func (h *Hub) Reassigned(conversationID, formerHolder uuid.UUID) {
+	h.post(notice{conversationID: conversationID, formerHolder: &formerHolder})
 }
 
 func (h *Hub) post(n notice) {
@@ -202,6 +209,8 @@ func (h *Hub) fanOut(n notice) {
 		case canSee(c.scope, holder):
 			c.offer(updated)
 		case n.leftPool:
+			c.offer(removed)
+		case n.formerHolder != nil && *n.formerHolder == c.scope.OperatorID:
 			c.offer(removed)
 		}
 	}

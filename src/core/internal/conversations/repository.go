@@ -379,3 +379,47 @@ func (r *Repository) Score(ctx context.Context, conversationID, operatorID uuid.
 	}
 	return nil
 }
+
+// The vendor the caller read is in the predicate, NULL included, so two reassignments at once write one and the other is refused (ADR-0056).
+const conversationReassign = `
+UPDATE conversations
+SET    operator_id = $3, updated_at = now()
+WHERE  id = $1 AND operator_id IS NOT DISTINCT FROM $2 AND status <> $4 AND deleted_at IS NULL`
+
+// Nothing matched is read as ErrTaken: the caller read the vendor first, so another reassignment or the pool taken in between is why.
+func (r *Repository) Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationReassign, conversationID, from, to, enums.ConversationStatusResolved)
+	if err != nil {
+		return fmt.Errorf("conversations: reassign: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaken
+	}
+	return nil
+}
+
+// Every open conversation of the vendor and none resolved: those keep who attended them, for the sale and the score (ADR-0056).
+const conversationHandOver = `
+UPDATE conversations
+SET    operator_id = $2, updated_at = now()
+WHERE  operator_id = $1 AND status <> $3 AND deleted_at IS NULL
+RETURNING id`
+
+// HandOver answers the conversations it moved, because each needs its own row of history and its own event.
+func (r *Repository) HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, conversationHandOver, from, to, enums.ConversationStatusResolved)
+	if err != nil {
+		return nil, fmt.Errorf("conversations: hand over: %w", err)
+	}
+	defer rows.Close()
+
+	moved := []uuid.UUID{}
+	for rows.Next() {
+		var conversationID uuid.UUID
+		if err := rows.Scan(&conversationID); err != nil {
+			return nil, fmt.Errorf("conversations: scan a conversation handed over: %w", err)
+		}
+		moved = append(moved, conversationID)
+	}
+	return moved, rows.Err()
+}

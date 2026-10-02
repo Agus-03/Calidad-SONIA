@@ -92,6 +92,14 @@ type store interface {
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
 	Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error)
+	OperatorState(ctx context.Context, accountID, operatorID uuid.UUID) (bool, error)
+	Assignments(ctx context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error)
+	Notes(ctx context.Context, conversationID uuid.UUID) ([]Note, error)
+	NoteByID(ctx context.Context, conversationID, noteID uuid.UUID) (Note, error)
+	// The notes are this package's own table and one statement each, so they need no transaction either (ADR-0056).
+	AddNote(ctx context.Context, n Note) error
+	EditNote(ctx context.Context, noteID, operatorID uuid.UUID, content string) error
+	DeleteNote(ctx context.Context, noteID, operatorID uuid.UUID) error
 }
 
 // Store is what this package writes inside the transaction it conducts. Exported because internal/app/deps.go binds it to that
@@ -111,6 +119,8 @@ type Aggregate interface {
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
 	Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error
+	Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error
+	HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error)
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -129,6 +139,7 @@ type Channel interface {
 type Events interface {
 	Changed(conversationID uuid.UUID)
 	LeftPool(conversationID uuid.UUID)
+	Reassigned(conversationID, formerHolder uuid.UUID)
 }
 
 // silence is what a service built without a hub tells: nothing, so a test or a tool never needs one.
@@ -136,6 +147,8 @@ type silence struct{}
 
 func (silence) Changed(uuid.UUID)  {}
 func (silence) LeftPool(uuid.UUID) {}
+
+func (silence) Reassigned(uuid.UUID, uuid.UUID) {}
 
 // TxFunc runs fn in one transaction with both collaborators bound to it (regla 5), and is a function so a test needs no PostgreSQL.
 type TxFunc func(ctx context.Context, fn func(Store, Aggregate, Reviews) error) error

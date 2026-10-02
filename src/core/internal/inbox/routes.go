@@ -7,12 +7,15 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// Written once so the ten routes of one conversation cannot drift apart.
+// Written once so the sixteen routes of one conversation cannot drift apart.
 const routeBase = "/conversations"
 
 // The three roles enter every route, and what each one reaches is decided inside: refusing the listing to an operator would take away
 // the inbox Anexo B gives it, and refusing it the answer would leave nobody to take the pool (ADR-0004).
 func (c *Controller) Routes() []soniahttp.Route {
+	// Anexo B gives reassigning to the Super Agent and denies it to the operator, and the group kept it so (ADR-0056).
+	aboveOperator := []enums.OperatorRole{enums.OperatorRoleSupervisor, enums.OperatorRoleAdmin}
+
 	return []soniahttp.Route{
 		{Method: http.MethodGet, Path: routeBase, Roles: enums.OperatorRoleValues, Handler: c.list},
 		// The reach of the listing, one conversation at a time: what the operator could not see there it cannot read here (ADR-0035, regla 2).
@@ -34,5 +37,14 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPost, Path: routeBase + "/:id/resolve", Roles: enums.OperatorRoleValues, Handler: c.resolve},
 		// F13: only the vendor scores, and only once it is resolved; the three roles enter and the service tells them apart (ADR-0055).
 		{Method: http.MethodPut, Path: routeBase + "/:id/score", Roles: enums.OperatorRoleValues, Handler: c.setScore},
+		{Method: http.MethodPost, Path: routeBase + "/:id/reassign", Roles: aboveOperator, Handler: c.reassign},
+		// The absence of a vendor: every open conversation of one goes to another in one request (ADR-0056).
+		{Method: http.MethodPost, Path: "/inbox/handover", Roles: aboveOperator, Handler: c.handOver},
+		// The history and the notes have the reach of the thread, which the service decides for the three roles (ADR-0056).
+		{Method: http.MethodGet, Path: routeBase + "/:id/assignments", Roles: enums.OperatorRoleValues, Handler: c.assignments},
+		{Method: http.MethodGet, Path: routeBase + "/:id/notes", Roles: enums.OperatorRoleValues, Handler: c.notes},
+		{Method: http.MethodPost, Path: routeBase + "/:id/notes", Roles: enums.OperatorRoleValues, Handler: c.addNote},
+		{Method: http.MethodPatch, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.editNote},
+		{Method: http.MethodDelete, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.deleteNote},
 	}
 }

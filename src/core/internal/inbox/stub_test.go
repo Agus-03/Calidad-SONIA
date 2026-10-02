@@ -43,6 +43,70 @@ type stubStore struct {
 	previous, next           *uuid.UUID
 	previousErr, nextErr     error
 	previousAsked, nextAsked int
+
+	// The people of the account by whether they can take conversations; one missing is of another account (ADR-0056).
+	people  map[uuid.UUID]bool
+	history map[uuid.UUID][]AssignmentEntry
+	notes   map[uuid.UUID]Note
+}
+
+func (s *stubStore) OperatorState(_ context.Context, _, operatorID uuid.UUID) (bool, error) {
+	available, ok := s.people[operatorID]
+	if !ok {
+		return false, ErrOperatorNotFound
+	}
+	return available, nil
+}
+
+func (s *stubStore) Assignments(_ context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error) {
+	return s.history[conversationID], nil
+}
+
+func (s *stubStore) Notes(_ context.Context, conversationID uuid.UUID) ([]Note, error) {
+	out := []Note{}
+	for _, n := range s.notes {
+		if n.ConversationID == conversationID {
+			out = append(out, n)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i].ID[:], out[j].ID[:]) < 0 })
+	return out, nil
+}
+
+// Refused when it is of another conversation, which is what the WHERE of the real read does.
+func (s *stubStore) NoteByID(_ context.Context, conversationID, noteID uuid.UUID) (Note, error) {
+	n, ok := s.notes[noteID]
+	if !ok || n.ConversationID != conversationID {
+		return Note{}, ErrNoteNotFound
+	}
+	return n, nil
+}
+
+func (s *stubStore) AddNote(_ context.Context, n Note) error {
+	if s.notes == nil {
+		s.notes = map[uuid.UUID]Note{}
+	}
+	s.notes[n.ID] = n
+	return nil
+}
+
+func (s *stubStore) EditNote(_ context.Context, noteID, operatorID uuid.UUID, content string) error {
+	n, ok := s.notes[noteID]
+	if !ok || n.Author.ID != operatorID {
+		return ErrNoteNotFound
+	}
+	n.Content = content
+	s.notes[noteID] = n
+	return nil
+}
+
+func (s *stubStore) DeleteNote(_ context.Context, noteID, operatorID uuid.UUID) error {
+	n, ok := s.notes[noteID]
+	if !ok || n.Author.ID != operatorID {
+		return ErrNoteNotFound
+	}
+	delete(s.notes, noteID)
+	return nil
 }
 
 func (s *stubStore) PreviousOperator(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
@@ -244,6 +308,33 @@ type stubAggregate struct {
 	scores   map[uuid.UUID]int
 	scoredBy map[uuid.UUID]uuid.UUID
 	scoreErr error
+
+	reassigned  map[uuid.UUID]uuid.UUID
+	reassignErr error
+	// The store whose targets a handover moves, the way the real UPDATE reads the rows it changes.
+	store *stubStore
+}
+
+func (a *stubAggregate) Reassign(_ context.Context, conversationID uuid.UUID, _ *uuid.UUID, to uuid.UUID) error {
+	if a.reassignErr != nil {
+		return a.reassignErr
+	}
+	if a.reassigned == nil {
+		a.reassigned = map[uuid.UUID]uuid.UUID{}
+	}
+	a.reassigned[conversationID] = to
+	return nil
+}
+
+// HandOver moves what the store holds for from and is still open, the predicate of the real UPDATE.
+func (a *stubAggregate) HandOver(_ context.Context, from, _ uuid.UUID) ([]uuid.UUID, error) {
+	moved := []uuid.UUID{}
+	for conversationID, t := range a.store.targets {
+		if t.OperatorID != nil && *t.OperatorID == from && t.Status != enums.ConversationStatusResolved {
+			moved = append(moved, conversationID)
+		}
+	}
+	return moved, nil
 }
 
 func (a *stubAggregate) Score(_ context.Context, conversationID, operatorID uuid.UUID, score int) error {
@@ -380,6 +471,8 @@ type stubEvents struct{ told []string }
 func (e *stubEvents) Changed(uuid.UUID)  { e.told = append(e.told, "changed") }
 func (e *stubEvents) LeftPool(uuid.UUID) { e.told = append(e.told, "left pool") }
 
+func (e *stubEvents) Reassigned(uuid.UUID, uuid.UUID) { e.told = append(e.told, "reassigned") }
+
 type desk struct {
 	events    *stubEvents
 	store     *stubStore
@@ -397,7 +490,7 @@ func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{store: store}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
@@ -447,4 +540,11 @@ func (d *desk) open(holder *uuid.UUID) Target {
 	}
 	d.store.targets[t.ConversationID] = t
 	return t
+}
+
+// note writes a note of author on the conversation, the way AddNote would.
+func (d *desk) note(conversationID, author uuid.UUID) uuid.UUID {
+	noteID := id.New()
+	_ = d.store.AddNote(context.Background(), Note{ID: noteID, ConversationID: conversationID, Author: Operator{ID: author}, Content: "nota"})
+	return noteID
 }

@@ -190,3 +190,25 @@ type UsedComponent struct {
 	// Nil for everyone but the admin, who is the one with access to the configuration it comes from (ADR-0049).
 	Content *string
 }
+
+// AssignmentEntry is one row of the history F26 asks for, with the people named so it can be read as it comes (ADR-0056).
+type AssignmentEntry struct {
+	ID uuid.UUID
+	// Nil when the conversation came from the pool.
+	From *Operator
+	To   Operator
+	// Nil when the dispatcher assigned it, because nobody did (ADR-0037, regla 5).
+	AssignedBy *Operator
+	Reason     string
+	CreatedAt  time.Time
+}
+
+// Note is one internal note of F26: for the team, signed by who wrote it, and never sent to the customer (ADR-0056).
+type Note struct {
+	ID             uuid.UUID
+	ConversationID uuid.UUID
+	Author         Operator
+	Content        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}

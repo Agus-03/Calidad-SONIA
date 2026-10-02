@@ -49,6 +49,8 @@ type store interface {
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
 	Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error
+	Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error
+	HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error)
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
@@ -237,6 +239,16 @@ func (s *Service) Resolve(ctx context.Context, conversationID, operatorID uuid.U
 // Score is F13 written by its owner: the score is this aggregate's column, and who may score is the caller's rule (ADR-0055).
 func (s *Service) Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error {
 	return s.repo.Score(ctx, conversationID, operatorID, score)
+}
+
+// Reassign is F26 written by its owner: operator_id is this aggregate's column, and who may move it is the caller's rule (ADR-0056).
+func (s *Service) Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error {
+	return s.repo.Reassign(ctx, conversationID, from, to)
+}
+
+// HandOver moves every open conversation of one vendor to another, the absence of ADR-0037 settled by ADR-0056.
+func (s *Service) HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error) {
+	return s.repo.HandOver(ctx, from, to)
 }
 
 // TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),

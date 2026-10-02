@@ -453,3 +453,34 @@ func TestTheServiceTellsTheHubAfterEachWrite(t *testing.T) {
 		})
 	}
 }
+
+// TestAReassignmentTellsOnlyTheFormerVendorToDropTheRow: a vendor who never saw it is told nothing (ADR-0035 regla 3, ADR-0056).
+func TestAReassignmentTellsOnlyTheFormerVendorToDropTheRow(t *testing.T) {
+	l := newLine(t)
+	account := id.New()
+	former := l.actor(account, enums.OperatorRoleOperator)
+	bystander := l.actor(account, enums.OperatorRoleOperator)
+	successor := l.actor(account, enums.OperatorRoleOperator)
+	moved := l.rows.put(account, &successor)
+	pooled := l.rows.put(account, nil)
+
+	conns := map[string]*websocket.Conn{}
+	for name, operatorID := range map[string]uuid.UUID{"former": former, "bystander": bystander, "successor": successor} {
+		conns[name] = l.connect(t, operatorID)
+	}
+
+	l.hub.Reassigned(moved, former)
+	l.hub.Changed(pooled)
+
+	for name, want := range map[string][]string{
+		"former":    {"conversation.removed " + moved.String(), "conversation.updated " + pooled.String()},
+		"bystander": {"conversation.updated " + pooled.String()},
+		"successor": {"conversation.updated " + moved.String(), "conversation.updated " + pooled.String()},
+	} {
+		for _, w := range want {
+			if got := next(t, conns[name]).about(); got != w {
+				t.Fatalf("%s heard %q, want %q", name, got, w)
+			}
+		}
+	}
+}

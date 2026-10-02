@@ -494,6 +494,24 @@ func translate(err error) error {
 		return soniahttp.Conflict("conversation_not_resolved", "only a resolved conversation is scored").WithCause(err)
 	case errors.Is(err, ErrNotTheVendor):
 		return soniahttp.Conflict("not_the_vendor", "only the vendor of the conversation scores it").WithCause(err)
+	case errors.Is(err, ErrCannotReassign):
+		return soniahttp.Forbidden("cannot_reassign", "only a supervisor or an admin reassigns conversations").WithCause(err)
+	case errors.Is(err, ErrNoReason):
+		return soniahttp.BadRequest("invalid_reason", "a reassignment needs a reason").WithCause(err)
+	case errors.Is(err, ErrAlreadyAssigned):
+		return soniahttp.Conflict("already_assigned", "the conversation is already assigned to that operator").WithCause(err)
+	case errors.Is(err, ErrSameOperator):
+		return soniahttp.BadRequest("same_operator", "the handover names the same operator twice").WithCause(err)
+	case errors.Is(err, ErrOperatorNotFound):
+		return soniahttp.NotFound("operator_not_found", "no such operator in the account").WithCause(err)
+	case errors.Is(err, ErrOperatorUnavailable):
+		return soniahttp.Conflict("operator_unavailable", "the operator is disabled or removed").WithCause(err)
+	case errors.Is(err, ErrEmptyNote):
+		return soniahttp.BadRequest("invalid_content", "the note cannot be empty").WithCause(err)
+	case errors.Is(err, ErrNoteNotFound):
+		return soniahttp.NotFound("note_not_found", "no such note in this conversation").WithCause(err)
+	case errors.Is(err, ErrNotTheAuthor):
+		return soniahttp.Forbidden("not_the_author", "only the author edits or deletes a note").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:

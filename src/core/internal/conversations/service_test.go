@@ -39,6 +39,19 @@ type fakeStore struct {
 	readErr     error
 	resolvedBy  map[uuid.UUID]uuid.UUID
 	scores      map[uuid.UUID]int
+	reassigned  map[uuid.UUID]uuid.UUID
+}
+
+func (f *fakeStore) Reassign(_ context.Context, conversationID uuid.UUID, _ *uuid.UUID, to uuid.UUID) error {
+	if f.reassigned == nil {
+		f.reassigned = map[uuid.UUID]uuid.UUID{}
+	}
+	f.reassigned[conversationID] = to
+	return nil
+}
+
+func (f *fakeStore) HandOver(_ context.Context, _, to uuid.UUID) ([]uuid.UUID, error) {
+	return []uuid.UUID{to}, nil
 }
 
 func (f *fakeStore) Score(_ context.Context, conversationID, _ uuid.UUID, score int) error {
@@ -541,5 +554,19 @@ func TestScoreReachesTheStore(t *testing.T) {
 	}
 	if store.scores[conversation] != 4 {
 		t.Fatalf("the score did not reach the store: %v", store.scores)
+	}
+}
+
+// TestReassignAndHandOverReachTheStore are the passthroughs F26 needs: operator_id is this aggregate's column (regla 1, ADR-0056).
+func TestReassignAndHandOverReachTheStore(t *testing.T) {
+	store := &fakeStore{}
+	service := NewService(store, slog.Default())
+	conversation, to := uuid.New(), uuid.New()
+
+	if err := service.Reassign(context.Background(), conversation, nil, to); err != nil || store.reassigned[conversation] != to {
+		t.Fatalf("Reassign: %v, the store holds %v", err, store.reassigned)
+	}
+	if moved, err := service.HandOver(context.Background(), uuid.New(), to); err != nil || len(moved) != 1 {
+		t.Fatalf("HandOver: got %v and %v, want what the store moved", moved, err)
 	}
 }

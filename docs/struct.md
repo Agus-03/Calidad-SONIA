@@ -161,10 +161,12 @@ sonia/
 │   │   │   │   ├── handover_controller.go  POST /conversations/:id/reassign · POST /inbox/handover · GET /conversations/:id/assignments
 │   │   │   │   ├── notes.go            F26: las notas internas, con el alcance del hilo · sólo su autor las edita o las borra (ADR-0056)
 │   │   │   │   ├── notes_controller.go  GET y POST /conversations/:id/notes · PATCH y DELETE /conversations/:id/notes/:note_id
+│   │   │   │   ├── labels.go           F24: etiquetas del catálogo, que pregunta a labels/, con el alcance del hilo · pedir el estado que ya existe no es error (ADR-0057)
+│   │   │   │   ├── labels_controller.go  POST /conversations/:id/labels · DELETE /conversations/:id/labels/:label_id
 │   │   │   │   ├── websocket.go        F21: el hub en memoria (ADR-0027) · tickets de un uso · cada evento con el alcance del listado · nunca bloquea a quien publica (ADR-0051)
 │   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial (ADR-0051)
 │   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052) · el cierre manual, con el alcance del interruptor y rechazado con un turno en vuelo (ADR-0054) · el puntaje de F13, sólo del vendedor y sobre resueltas (ADR-0055)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments e internal_notes (ADR-0056)
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments e internal_notes (ADR-0056) y conversation_labels, y pone las etiquetas en la fila (ADR-0057)
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
@@ -197,7 +199,13 @@ sonia/
 │   │   │   │   └── storage/            PUERTO · base · supabase · disk
 │   │   │   │
 │   │   │   ├── quick_replies/          respuestas rápidas · F09
-│   │   │   ├── reminders/              recordatorios · F28
+│   │   │   ├── reminders/              recordatorios · F28 · DUEÑO de reminders (ADR-0058)
+│   │   │   │   ├── controller.go       instantes RFC 3339 con su zona (C06) · due sólo se prende con true
+│   │   │   │   ├── routes.go           los tres roles: el alcance lo decide contacts/, los cambios el dueño, supervisor y admin
+│   │   │   │   ├── service.go          cuelga del contacto que el caller alcanza (ADR-0002 (c)) · mover la fecha lo vuelve pendiente
+│   │   │   │   ├── poller.go           cada 30 s marca los vencidos con SKIP LOCKED y avisa al vendedor por el hub (ADR-0041, ADR-0051)
+│   │   │   │   ├── repository.go       el destinatario: el vendedor activo de la conversación más reciente, o el dueño
+│   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── reporting/              SÓLO LECTURA · F16, F32, F34–F38
 │   │   │   │   ├── controller.go

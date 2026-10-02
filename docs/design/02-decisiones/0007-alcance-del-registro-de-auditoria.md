@@ -20,13 +20,13 @@ Pero el extremo opuesto tampoco sirve: registrar todas las operaciones de escrit
 
 ## 2. Decisión
 
-Existe un registro de auditoría, **acotado a dos clases de evento**:
+Existe un registro de auditoría, **acotado a ~~dos~~ tres clases de evento** *(la tercera, agregada por [ADR-0062](0062-gestion-de-operadores.md))*:
 
 1. **Modificaciones de configuración de agentes IA** — quién, qué cambió y cuándo.
 2. **Asignaciones y reasignaciones de conversaciones.**
 3. *(agregada por [ADR-0062](0062-gestion-de-operadores.md))* **Cambios de operadores**: alta, edición, rol, `active`, contraseña y baja, sin el hash.
 
-La segunda ya queda cubierta por `conversation_assignments` ([ADR-0004](0004-asignacion-de-conversaciones.md)), que registra origen, destino, autor, motivo y fecha. **No se duplica** en la tabla de auditoría: el registro de auditoría propiamente dicho cubre la primera clase.
+La segunda ya queda cubierta por `conversation_assignments` ([ADR-0004](0004-asignacion-de-conversaciones.md)), que registra origen, destino, autor, motivo y fecha. **No se duplica** en la tabla de auditoría: el registro de auditoría propiamente dicho cubre ~~la primera clase~~ la primera y la tercera *(enmendado por [ADR-0062](0062-gestion-de-operadores.md))*.
 
 ## 3. Justificación
 

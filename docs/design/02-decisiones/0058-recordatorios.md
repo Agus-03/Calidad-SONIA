@@ -7,7 +7,7 @@
 | **Etapa** | Construcción — Fase 11 (resto del CRUD operativo) |
 | **Resuelve** | Cómo se construye F28: quién crea, edita y borra un recordatorio, a quién avisa cuando vence, por qué medio y cuándo deja de marcar la bandeja |
 | **Requisitos afectados** | F28 · F23 · F21 · F32 · Anexo B |
-| **Enmienda** | [ADR-0050](0050-filtros-de-la-bandeja.md) §1 y §4 — *con recordatorio* deja de devolver vacío, y con él los siete filtros de F23 tienen datos · [ADR-0051](0051-bandeja-en-tiempo-real.md) §2.3 — un segundo tipo de evento, `reminder.due`, dirigido a una persona y no a una fila |
+| **Enmienda** | [ADR-0050](0050-filtros-de-la-bandeja.md) §1 y §4 — *con recordatorio* deja de devolver vacío, y con él los siete filtros de F23 tienen datos · [ADR-0051](0051-bandeja-en-tiempo-real.md) §2.3 y regla 11 — un segundo tipo de evento, `reminder.due`, dirigido a una persona y no a una fila, que la regla 11 no filtra · [DER/entidades.md](../DER/entidades.md), **`reminders.operator_id`** — es el dueño del recordatorio, no el operador notificado |
 | **Relacionada con** | [ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md), [ADR-0027](0027-nucleo-de-instancia-unica.md), [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md), [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md), [ADR-0041](0041-temporizador-del-turno-por-poller.md), [ADR-0056](0056-transferencia-entre-operadores.md) |
 
 ---

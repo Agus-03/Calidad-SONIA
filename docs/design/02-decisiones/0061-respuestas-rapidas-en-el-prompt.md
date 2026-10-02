@@ -7,7 +7,7 @@
 | **Etapa** | Construcción — Fase 11 (resto del CRUD operativo) |
 | **Resuelve** | Cómo se construye F07: qué respuestas rápidas lee el cerebro en cada turno, en qué parte del prompt entran, qué se le dice al modelo para que las use y qué significa *"sugerir"* |
 | **Requisitos afectados** | F07 · F09 · F02 · F03 · OE1 |
-| **Enmienda** | [03-capa-prompts.md](../03-capa-prompts.md), **Regla 1** — el `user` pasa de cuatro secciones a cinco: las respuestas rápidas entran entre la base de conocimiento y las intenciones · [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md), **§6, fila F07** — el catálogo lo leen `prompts/repository.py` y `prompts/assembler.py`, no `pipeline/generation.py` |
+| **Enmienda** | [03-capa-prompts.md](../03-capa-prompts.md), **Regla 1** — el `user` pasa de cuatro secciones a cinco: las respuestas rápidas entran entre la base de conocimiento y las intenciones · [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md), **§6, fila F07** — el catálogo lo leen `prompts/repository.py` y `prompts/assembler.py`, no `pipeline/generation.py` · ADR-0017, **§6.1** — el árbol ponía F07 en `pipeline/` |
 | **Relacionada con** | [ADR-0040](0040-previsualizacion-del-prompt.md), [ADR-0046](0046-modo-sugerencia.md), [ADR-0060](0060-respuestas-rapidas.md) |
 
 ---

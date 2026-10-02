@@ -7,7 +7,7 @@
 | **Etapa** | Construcción — Fase 11 (resto del CRUD operativo) |
 | **Resuelve** | Cómo se construye F26, y tres pendientes del README: si el `operator` reasigna lo suyo, qué pasa con las conversaciones de un vendedor ausente y quién escribe las notas internas |
 | **Requisitos afectados** | F26 · F21 · F22 · Anexo B |
-| **Enmienda** | [ADR-0035](0035-reglas-de-la-bandeja-manual.md), reglas 15 y 16 y §4 — ya se reasigna, y el `operator` sigue sin poder · [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) §4, *Lo que queda abierto* — las ausencias se resuelven con el traspaso en bloque · [ADR-0051](0051-bandeja-en-tiempo-real.md), reglas 9 y 13 — el vendedor anterior recibe `conversation.removed`, e `inbox/` publica al reasignar |
+| **Enmienda** | [ADR-0035](0035-reglas-de-la-bandeja-manual.md), reglas 15 y 16 y §4 — ya se reasigna, y el `operator` sigue sin poder · [ADR-0037](0037-toda-conversacion-nace-con-vendedor.md) §4, *Lo que queda abierto* y *Negativas* — las ausencias se resuelven con el traspaso en bloque, y las conversaciones de un vendedor desactivado dejan de quedar trabadas · [ADR-0051](0051-bandeja-en-tiempo-real.md), reglas 9 y 13 — el vendedor anterior recibe `conversation.removed`, e `inbox/` publica al reasignar |
 | **Relacionada con** | [ADR-0004](0004-asignacion-de-conversaciones.md), [ADR-0025](0025-atribucion-por-operador.md), [ADR-0054](0054-cierre-manual-de-la-conversacion.md), [ADR-0055](0055-puntaje-de-la-conversacion.md) |
 
 ---

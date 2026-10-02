@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 y regla 13 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio*, y marcar leída se suma a los que publican · **regla 13 enmendada por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** (2026-10-01): cerrar una conversación también publica · **regla 13 enmendada por [ADR-0055](0055-puntaje-de-la-conversacion.md)** (2026-10-01): calificar una conversación también publica · **reglas 9 y 13 enmendadas por [ADR-0056](0056-transferencia-entre-operadores.md)** (2026-10-01): al reasignar, el vendedor anterior recibe `conversation.removed`, e `inbox/` publica · **regla 13 y §4 enmendados por [ADR-0057](0057-etiquetas-de-la-conversacion.md)** (2026-10-01): etiquetar también publica, y la fila trae las etiquetas, así que el costo de los filtros queda sólo para *con recordatorio* · **§2.3 enmendado por [ADR-0058](0058-recordatorios.md)** (2026-10-02): un segundo evento, `reminder.due`, dirigido a una persona y no a una fila |
+| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 y regla 13 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio*, y marcar leída se suma a los que publican · **regla 13 enmendada por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** (2026-10-01): cerrar una conversación también publica · **regla 13 enmendada por [ADR-0055](0055-puntaje-de-la-conversacion.md)** (2026-10-01): calificar una conversación también publica · **reglas 9 y 13 enmendadas por [ADR-0056](0056-transferencia-entre-operadores.md)** (2026-10-01): al reasignar, el vendedor anterior recibe `conversation.removed`, e `inbox/` publica · **regla 13 y §4 enmendados por [ADR-0057](0057-etiquetas-de-la-conversacion.md)** (2026-10-01): etiquetar también publica, y la fila trae las etiquetas, así que el costo de los filtros queda sólo para *con recordatorio* · **§2.3 y regla 11 enmendados por [ADR-0058](0058-recordatorios.md)** (2026-10-02): un segundo evento, `reminder.due`, dirigido a una persona y no a una fila, y por eso sin el filtro de alcance |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Cómo implementa el núcleo F21: con qué librería, cómo se autentica una conexión que el navegador abre sin header `Authorization`, qué eventos existen, quién los publica y qué pasa cuando algo falla |
@@ -49,14 +49,14 @@ Quedaban cuatro preguntas abiertas:
 | # | Regla |
 |---|---|
 | 8 | **`conversation.updated`**, con **la misma fila que dibuja el listado** (`GET /conversations`): último mensaje, fallidos, vendedor, modo, estrella y los demás campos de F22. No lleva ningún dato sensible, porque la fila del listado no los lleva (ADR-0035, regla 4) · **→ Ampliada por [ADR-0058](0058-recordatorios.md):** existe además `reminder.due`, con un recordatorio que venció, sólo para la persona a la que le llega y sin filtrar por el alcance del listado |
-| 9 | **`conversation.removed`**, sólo con el `id`, **cuando un operador toma una conversación del pool al responderla**. Se manda a los que dejaron de verla, que la tenían en pantalla un instante antes |
+| 9 | **`conversation.removed`**, sólo con el `id`, **cuando un operador toma una conversación del pool al responderla**. Se manda a los que dejaron de verla, que la tenían en pantalla un instante antes · **→ Ampliada por [ADR-0056](0056-transferencia-entre-operadores.md):** también se manda al reasignar, al vendedor anterior, que deja de verla |
 | 10 | **No hay un evento por mensaje.** Si el hilo de esa conversación está abierto, el frontend vuelve a pedir su primera página al recibir el evento; el cursor de ADR-0036 hace que eso sea barato |
 
 ### 2.4 A quién
 
 | # | Regla |
 |---|---|
-| 11 | **Cada evento se filtra por conexión con la regla de alcance del listado** ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), reglas 1 y 3): la cuenta, y además la suya o la del pool para el `operator`, o todas para `supervisor` y `admin`. Un `operator` nunca recibe una conversación que no podría abrir |
+| 11 | **Cada evento se filtra por conexión con la regla de alcance del listado** ([ADR-0035](0035-reglas-de-la-bandeja-manual.md), reglas 1 y 3): la cuenta, y además la suya o la del pool para el `operator`, o todas para `supervisor` y `admin`. Un `operator` nunca recibe una conversación que no podría abrir · **→ Salvo `reminder.due`, por [ADR-0058](0058-recordatorios.md):** va a una sola persona y no se filtra por el alcance del listado (regla 8) |
 | 12 | **Los filtros de F23 no se aplican en el servidor.** El socket manda todo lo que el rol alcanza, y el frontend decide si la fila entra en el filtro que tiene puesto ([ADR-0050](0050-filtros-de-la-bandeja.md)) |
 
 ### 2.5 Quién publica, y cuándo

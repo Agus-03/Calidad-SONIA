@@ -204,6 +204,18 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// The admin's client of the brain, with the short timeout: an administrator is typing and the next keystroke asks again.
 	previews := agents.NewPreviews(agents.PreviewOptions{Repo: agentRepo, Brain: adminBrain, Logger: log})
 
+	// F18: the person and the audit row that says who changed them commit together, through agents/ as whatsapp/ does (ADR-0062).
+	peopleRepo := operators.NewRepository(pool)
+	roster := operators.NewRoster(operators.RosterOptions{
+		Repo: peopleRepo,
+		Tx: func(ctx context.Context, fn func(operators.RosterStore, operators.Auditor) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(peopleRepo.WithExecutor(exec), agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
+	})
+
 	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
 		Repo: channelRepo,
 		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
@@ -226,6 +238,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
+			operators.NewRosterController(roster, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),

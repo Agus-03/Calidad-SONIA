@@ -157,6 +157,8 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Sender:  send,
 		Events:  hub,
 		Logger:  log,
+
+		TurnBudget: cfg.TurnBudget,
 	})
 
 	// A second client of the brain and not the turn's: an administrator is waiting on this one, so it gets the short timeout of

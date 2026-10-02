@@ -236,6 +236,22 @@ type stubAggregate struct {
 	starred  map[uuid.UUID]bool
 	read     []uuid.UUID
 	readErr  error
+
+	resolvedBy    map[uuid.UUID]uuid.UUID
+	resolveErr    error
+	resolveBudget time.Duration
+}
+
+func (a *stubAggregate) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
+	a.resolveBudget = turnBudget
+	if a.resolveErr != nil {
+		return a.resolveErr
+	}
+	if a.resolvedBy == nil {
+		a.resolvedBy = map[uuid.UUID]uuid.UUID{}
+	}
+	a.resolvedBy[conversationID] = operatorID
+	return nil
 }
 
 func (a *stubAggregate) MarkRead(_ context.Context, conversationID uuid.UUID) error {
@@ -359,6 +375,9 @@ type desk struct {
 	service   *Service
 }
 
+// testTurnBudget is any budget that is not zero, so a close that forgot to pass the configured one shows.
+const testTurnBudget = 30 * time.Second
+
 func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
@@ -374,6 +393,8 @@ func newDesk(store *stubStore) *desk {
 		Sender:  d.sender,
 		Events:  d.events,
 		Logger:  slog.New(slog.DiscardHandler),
+
+		TurnBudget: testTurnBudget,
 	})
 	return d
 }

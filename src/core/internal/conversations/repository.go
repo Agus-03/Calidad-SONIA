@@ -326,3 +326,38 @@ func (r *Repository) SetStarred(ctx context.Context, conversationID uuid.UUID, s
 	}
 	return nil
 }
+
+// Only the status and who closed: mode, vendor, unread and last_activity_at stay, and of two closes at once one writes (ADR-0054).
+// busy is a batch open, or closed and neither processed nor failed within the budget: older than that, a crash killed it (ADR-0054).
+const conversationResolve = `
+WITH busy AS (
+    SELECT EXISTS (
+           SELECT 1 FROM message_batches b
+           WHERE  b.conversation_id = $1 AND b.processed_at IS NULL AND b.error_message IS NULL
+             AND  (b.closed_at IS NULL OR b.closed_at > now() - ($4 * interval '1 millisecond'))) AS turn
+), closed AS (
+    UPDATE conversations
+    SET    status = $2, resolved_at = now(), resolved_by_operator_id = $3, updated_at = now()
+    FROM   busy
+    WHERE  id = $1 AND status <> $2 AND deleted_at IS NULL AND NOT busy.turn
+    RETURNING 1
+)
+SELECT (SELECT turn FROM busy), (SELECT count(*) FROM closed)`
+
+// Nothing written and no turn in flight is read as ErrResolved: the caller read the row first, so a close in between is the likely reason.
+func (r *Repository) Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
+	var busy bool
+	var closed int
+	if err := r.exec.QueryRow(ctx, conversationResolve, conversationID, enums.ConversationStatusResolved, operatorID,
+		turnBudget.Milliseconds()).Scan(&busy, &closed); err != nil {
+		return fmt.Errorf("conversations: resolve: %w", err)
+	}
+	switch {
+	case closed > 0:
+		return nil
+	case busy:
+		return ErrTurnInProgress
+	default:
+		return ErrResolved
+	}
+}

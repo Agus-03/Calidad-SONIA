@@ -935,6 +935,87 @@ func TestTheReadHandlerRefusesWithoutAnActor(t *testing.T) {
 	}
 }
 
+func postResolve(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/conversations/"+conversationID+"/resolve", nil)
+	req.Header.Set("Authorization", "Bearer cualquier-cosa")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestEveryRoleClosesWhatItHolds walks the route with the three roles, because a wrong Roles list compiles (ADR-0054).
+func TestEveryRoleClosesWhatItHolds(t *testing.T) {
+	for _, role := range enums.OperatorRoleValues {
+		t.Run(string(role), func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(&testOperator)
+
+			if rec := postResolve(mountDesk(role, d), target.ConversationID.String()); rec.Code != http.StatusNoContent {
+				t.Fatalf("POST as %s: got %d, want 204 - body %s", role, rec.Code, rec.Body)
+			}
+			if len(d.aggregate.resolvedBy) != 1 {
+				t.Fatal("the conversation was not closed")
+			}
+		})
+	}
+}
+
+// TestEachCloseRefusalHasItsOwnCode is what the frontend switches on: the pool is taken first, a closed one says so (ADR-0054).
+func TestEachCloseRefusalHasItsOwnCode(t *testing.T) {
+	someoneElse := id.New()
+	for _, tc := range []struct {
+		name     string
+		role     enums.OperatorRole
+		shape    func(*desk) string
+		wantCode int
+		want     string
+	}{
+		{"the id is not a uuid", enums.OperatorRoleAdmin, func(*desk) string { return "no-es-un-id" }, http.StatusBadRequest, "invalid_conversation_id"},
+		{"the conversation does not exist", enums.OperatorRoleAdmin, func(*desk) string { return id.New().String() }, http.StatusNotFound, "conversation_not_found"},
+		{"an operator on another's conversation", enums.OperatorRoleOperator, func(d *desk) string {
+			return d.open(&someoneElse).ConversationID.String()
+		}, http.StatusNotFound, "conversation_not_found"},
+		{"an operator on one of the pool", enums.OperatorRoleOperator, func(d *desk) string {
+			return d.open(nil).ConversationID.String()
+		}, http.StatusConflict, "conversation_not_assigned"},
+		{"a conversation already closed", enums.OperatorRoleSupervisor, func(d *desk) string {
+			target := d.open(&someoneElse)
+			target.Status = enums.ConversationStatusResolved
+			d.store.targets[target.ConversationID] = target
+			return target.ConversationID.String()
+		}, http.StatusConflict, "conversation_resolved"},
+		{"the bot is still answering", enums.OperatorRoleAdmin, func(d *desk) string {
+			d.aggregate.resolveErr = conversations.ErrTurnInProgress
+			return d.open(&someoneElse).ConversationID.String()
+		}, http.StatusConflict, "turn_in_progress"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			rec := postResolve(mountDesk(tc.role, d), tc.shape(d))
+			if rec.Code != tc.wantCode {
+				t.Fatalf("got %d, want %d - body %s", rec.Code, tc.wantCode, rec.Body)
+			}
+			if got := errorCode(t, rec); got != tc.want {
+				t.Fatalf("code %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheResolveHandlerRefusesWithoutAnActor guards the wiring the same way the other handlers do.
+func TestTheResolveHandlerRefusesWithoutAnActor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPost, "/conversations/x/resolve", nil)
+
+	NewController(newDesk(&stubStore{}).service, nil).resolve(gc)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401 - body %s", rec.Code, rec.Body)
+	}
+}
+
 func getSuggestion(engine http.Handler, conversationID string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/suggestion", nil)
 	req.Header.Set("Authorization", "Bearer cualquier-cosa")

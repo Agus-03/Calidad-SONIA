@@ -580,6 +580,145 @@ func TestAStarMarksTheConversationWithoutMovingItInTheInbox(t *testing.T) {
 	}
 }
 
+// TestAClosedConversationKeepsItsVendorAndIsNeverReopened is ADR-0054 against real DDL, with ADR-0002 (b) for what comes after.
+func TestAClosedConversationKeepsItsVendorAndIsNeverReopened(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	type row struct {
+		status     enums.ConversationStatus
+		mode       enums.AgentMode
+		operatorID *uuid.UUID
+		resolvedBy *uuid.UUID
+		resolvedAt *time.Time
+		unread     int
+		activity   time.Time
+	}
+
+	err := db.InTx(ctx, pool, func(exec db.Executor) error {
+		service := NewService(NewRepository(exec), nil)
+		read := func(conversationID uuid.UUID) row {
+			t.Helper()
+			var r row
+			if err := exec.QueryRow(ctx,
+				`SELECT status, mode, operator_id, resolved_by_operator_id, resolved_at, unread_count, last_activity_at
+				 FROM conversations WHERE id = $1`, conversationID).
+				Scan(&r.status, &r.mode, &r.operatorID, &r.resolvedBy, &r.resolvedAt, &r.unread, &r.activity); err != nil {
+				t.Fatalf("read the conversation: %v", err)
+			}
+			return r
+		}
+
+		vendor, err := insertOperator(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert operator: %v", err)
+		}
+		contact, err := insertContact(ctx, exec, account)
+		if err != nil {
+			t.Fatalf("insert contact: %v", err)
+		}
+		conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen: %v", err)
+		}
+		if err := service.Claim(ctx, conversation.ID, vendor); err != nil {
+			t.Fatalf("Claim: %v", err)
+		}
+		if err := NewRepository(exec).TouchInbound(ctx, conversation.ID, time.Now().UTC()); err != nil {
+			t.Fatalf("TouchInbound: %v", err)
+		}
+		before := read(conversation.ID)
+
+		if err := service.Resolve(ctx, conversation.ID, vendor, time.Minute); err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		after := read(conversation.ID)
+		if after.status != enums.ConversationStatusResolved || after.resolvedAt == nil || after.resolvedBy == nil || *after.resolvedBy != vendor {
+			t.Fatalf("the close wrote status %q, resolved_at %v, resolved_by %v; want resolved, a time and %v",
+				after.status, after.resolvedAt, after.resolvedBy, vendor)
+		}
+		// The vendor stays for the dispatcher of the next one, and the rest is not the close's to touch (ADR-0037 regla 1, ADR-0054).
+		if after.operatorID == nil || *after.operatorID != vendor || after.mode != before.mode || after.unread != before.unread ||
+			!after.activity.Equal(before.activity) {
+			t.Fatalf("the close touched more than the status: before %+v, after %+v", before, after)
+		}
+
+		if err := service.Resolve(ctx, conversation.ID, vendor, time.Minute); !errors.Is(err, ErrResolved) {
+			t.Fatalf("closing it twice: got %v, want ErrResolved", err)
+		}
+		// The partial unique index lets the contact open the next unit of work, which is a new row and not this one (ADR-0002 (b)).
+		next, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("EnsureOpen after the close: %v", err)
+		}
+		if next.ID == conversation.ID {
+			t.Fatal("a message after the close reopened the resolved conversation")
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+	}
+}
+
+// TestATurnInFlightHoldsTheClose is the predicate of ADR-0054 against real DDL: a turn that may still answer holds it, a dead one does not.
+func TestATurnInFlightHoldsTheClose(t *testing.T) {
+	ctx := context.Background()
+	pool := integrationPool(t)
+	account, inbox, agent := seeded(t, pool)
+
+	for _, tc := range []struct {
+		name                    string
+		closed, processed, fail string
+		wantErr                 error
+	}{
+		{"the customer is still writing", "NULL", "NULL", "NULL", ErrTurnInProgress},
+		{"the bot is answering", "now()", "NULL", "NULL", ErrTurnInProgress},
+		{"the turn answered", "now()", "now()", "NULL", nil},
+		{"the turn failed and said so", "now()", "NULL", "'brain down'", nil},
+		{"a crash killed the turn past its budget", "now() - interval '2 hours'", "NULL", "NULL", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, pool, func(exec db.Executor) error {
+				service := NewService(NewRepository(exec), nil)
+				vendor, err := insertOperator(ctx, exec, account)
+				if err != nil {
+					t.Fatalf("insert operator: %v", err)
+				}
+				contact, err := insertContact(ctx, exec, account)
+				if err != nil {
+					t.Fatalf("insert contact: %v", err)
+				}
+				conversation, err := service.EnsureOpen(ctx, contact, inbox, &agent, true, time.Now().UTC())
+				if err != nil {
+					t.Fatalf("EnsureOpen: %v", err)
+				}
+				if _, err := exec.Exec(ctx, `INSERT INTO message_batches
+					(id, conversation_id, turn_number, timer_ms_used, expires_at, closed_at, processed_at, error_message)
+					VALUES ($1, $2, 1, 0, now(), `+tc.closed+`, `+tc.processed+`, `+tc.fail+`)`, id.New(), conversation.ID); err != nil {
+					t.Fatalf("insert batch: %v", err)
+				}
+
+				if err := service.Resolve(ctx, conversation.ID, vendor, time.Minute); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("Resolve: got %v, want %v", err, tc.wantErr)
+				}
+				var status enums.ConversationStatus
+				if err := exec.QueryRow(ctx, `SELECT status FROM conversations WHERE id = $1`, conversation.ID).Scan(&status); err != nil {
+					t.Fatalf("read status: %v", err)
+				}
+				if closed := status == enums.ConversationStatusResolved; closed != (tc.wantErr == nil) {
+					t.Fatalf("status %q after the close, want resolved only when it was allowed", status)
+				}
+				return rollback
+			})
+			if !errors.Is(err, rollback) {
+				t.Fatalf("InTx: got %v, want the rollback sentinel", err)
+			}
+		})
+	}
+}
+
 // TestTheUnreadCountIsTheCustomerMessagesNobodyRead is ADR-0052 against real DDL: each customer message counts one, a redelivery
 // counts nothing, the bot answering clears nothing, and an operator answering or marking read clears it without moving the inbox.
 func TestTheUnreadCountIsTheCustomerMessagesNobodyRead(t *testing.T) {

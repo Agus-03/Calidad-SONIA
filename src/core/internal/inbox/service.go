@@ -59,8 +59,11 @@ var (
 	// before writing, like the closed window (ADR-0035, regla 9).
 	ErrChannelUnavailable = errors.New("inbox: the number of the conversation cannot send")
 
-	// ErrNotHeld is an operator switching the bot of a conversation it can see and does not hold: one of the pool (ADR-0037, regla 4).
+	// ErrNotHeld is an operator switching the bot of, or closing, one it sees and does not hold: the pool (ADR-0037 regla 4, ADR-0054).
 	ErrNotHeld = errors.New("inbox: the conversation is not assigned to the caller")
+
+	// ErrTurnInProgress is a close while the bot still owes an answer: the frontend waits for it, and this is the backstop (ADR-0054).
+	ErrTurnInProgress = errors.New("inbox: the bot is still answering the conversation")
 )
 
 // autoAssignReason is what the system writes where a person would write why: a stable token and not a sentence, so the history of
@@ -94,6 +97,7 @@ type Aggregate interface {
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
+	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
 }
 
 // Reviews is turn/, the one package of the core that writes generations: the review of a draft the Operator sent (ADR-0046, 2.5).
@@ -133,6 +137,9 @@ type Options struct {
 	Sender  whatsapp.Sender
 	Events  Events
 	Logger  *slog.Logger
+
+	// The orchestrator's budget, so a close tells a turn still running from one a crash killed (ADR-0054).
+	TurnBudget time.Duration
 }
 
 type Service struct{ opts Options }
@@ -421,6 +428,36 @@ func (s *Service) MarkRead(ctx context.Context, scope Scope, conversationID uuid
 	}
 	s.opts.Events.Changed(conversationID)
 	return nil
+}
+
+// Resolve closes the conversation by hand (ADR-0002 (d)) with the reach of the switch of the bot: the vendor its own, the two roles above any (ADR-0054).
+func (s *Service) Resolve(ctx context.Context, scope Scope, conversationID uuid.UUID) error {
+	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
+	if err != nil {
+		return err
+	}
+	// The order of SetMode: another vendor's does not exist, a closed one is told so before telling the vendor to take it first.
+	if !mayRead(scope, target) {
+		return ErrNotFound
+	}
+	if target.Status == enums.ConversationStatusResolved {
+		return ErrResolved
+	}
+	if err := maySwitch(scope, target); err != nil {
+		return err
+	}
+
+	switch err := s.opts.Aggregate.Resolve(ctx, conversationID, scope.OperatorID, s.opts.TurnBudget); {
+	case err == nil:
+		s.opts.Events.Changed(conversationID)
+		return nil
+	case errors.Is(err, conversations.ErrResolved):
+		return ErrResolved
+	case errors.Is(err, conversations.ErrTurnInProgress):
+		return ErrTurnInProgress
+	default:
+		return err
+	}
 }
 
 // maySwitch is ADR-0037, regla 4, asked of a conversation the caller already reaches (mayRead): the vendor answers for the bot of

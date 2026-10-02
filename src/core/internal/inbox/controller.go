@@ -369,6 +369,24 @@ func (c *Controller) markRead(gc *gin.Context) {
 	soniahttp.NoContent(gc)
 }
 
+// resolve answers 204 like markRead: the row reaches every inbox by the stream (ADR-0051, ADR-0054).
+func (c *Controller) resolve(gc *gin.Context) {
+	scope, ok := c.scopeFrom(gc)
+	if !ok {
+		return
+	}
+	conversationID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
+		return
+	}
+	if err := c.service.Resolve(gc.Request.Context(), scope, conversationID); err != nil {
+		soniahttp.Fail(gc, c.log, translate(err))
+		return
+	}
+	soniahttp.NoContent(gc)
+}
+
 // A pointer so false is a value and not an absence: the binding refuses a zero bool as missing (F25).
 type starredRequest struct {
 	Starred *bool `json:"starred" binding:"required"`
@@ -429,7 +447,9 @@ func translate(err error) error {
 	case errors.Is(err, ErrAIAgentUnavailable):
 		return soniahttp.Conflict("ai_agent_unavailable", "the agent of the conversation is paused or removed").WithCause(err)
 	case errors.Is(err, ErrNotHeld):
-		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot: answer it first").WithCause(err)
+		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot or closes it: answer it first").WithCause(err)
+	case errors.Is(err, ErrTurnInProgress):
+		return soniahttp.Conflict("turn_in_progress", "the bot is still answering this conversation: close it once the answer arrives").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:

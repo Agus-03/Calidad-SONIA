@@ -621,6 +621,90 @@ func TestTheStarReportsWhatTheAggregateSaid(t *testing.T) {
 	}
 }
 
+// TestWhoMayCloseIsWhoMaySwitchTheBot is ADR-0054 as a table: the vendor closes its own, the roles above any, the pool is taken first.
+func TestWhoMayCloseIsWhoMaySwitchTheBot(t *testing.T) {
+	me, other := id.New(), id.New()
+
+	for _, tc := range []struct {
+		name    string
+		holder  *uuid.UUID
+		role    enums.OperatorRole
+		shape   func(*Target)
+		wantErr error
+	}{
+		{"the vendor closes its own", &me, enums.OperatorRoleOperator, func(*Target) {}, nil},
+		{"a supervisor closes any of the team", &other, enums.OperatorRoleSupervisor, func(*Target) {}, nil},
+		{"an admin closes one of the pool", nil, enums.OperatorRoleAdmin, func(*Target) {}, nil},
+		{"a waiting one is closed too", &me, enums.OperatorRoleOperator, func(t *Target) { t.Status = enums.ConversationStatusWaiting }, nil},
+		{"an operator takes the pool before closing it", nil, enums.OperatorRoleOperator, func(*Target) {}, ErrNotHeld},
+		{"another's does not exist for an operator", &other, enums.OperatorRoleOperator, func(*Target) {}, ErrNotFound},
+		{"a resolved one never reopens, so it is not closed twice (ADR-0002)", &me, enums.OperatorRoleOperator,
+			func(t *Target) { t.Status = enums.ConversationStatusResolved }, ErrResolved},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(tc.holder)
+			tc.shape(&target)
+			d.store.targets[target.ConversationID] = target
+
+			err := d.service.Resolve(context.Background(), scopeOf(me, tc.role), target.ConversationID)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Resolve: got %v, want %v", err, tc.wantErr)
+			}
+			closer, written := d.aggregate.resolvedBy[target.ConversationID]
+			if written != (tc.wantErr == nil) {
+				t.Fatalf("written = %v, want %v", written, tc.wantErr == nil)
+			}
+			if written && closer != me {
+				t.Fatalf("closed by %v, want the caller %v", closer, me)
+			}
+			if written && d.aggregate.resolveBudget != testTurnBudget {
+				t.Fatalf("closed with a budget of %v, want the configured %v", d.aggregate.resolveBudget, testTurnBudget)
+			}
+			if told := len(d.events.told) == 1; told != written {
+				t.Fatalf("told the hub %v, want only after a close", d.events.told)
+			}
+			// Closing is not answering: it never takes the pool, and it leaves the mode alone (ADR-0035 regla 13, ADR-0054).
+			if len(d.aggregate.claimed) != 0 || len(d.store.assignments) != 0 || len(d.aggregate.modes) != 0 {
+				t.Fatal("closing assigned the conversation or switched its bot")
+			}
+		})
+	}
+}
+
+// TestTheCloseReportsWhatTheAggregateSaid covers a close that committed between the read and the write, and a database that did not answer.
+func TestTheCloseReportsWhatTheAggregateSaid(t *testing.T) {
+	boom := errors.New("connection refused")
+
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{"somebody closed it in between", conversations.ErrResolved, ErrResolved},
+		{"the bot is still answering", conversations.ErrTurnInProgress, ErrTurnInProgress},
+		{"the database did not answer", boom, boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			d.aggregate.resolveErr = tc.err
+			target := d.open(nil)
+
+			if err := d.service.Resolve(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), target.ConversationID); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Resolve: got %v, want %v", err, tc.wantErr)
+			}
+			if len(d.events.told) != 0 {
+				t.Fatalf("told the hub %v after a close that did not happen", d.events.told)
+			}
+		})
+	}
+
+	d := newDesk(&stubStore{})
+	if err := d.service.Resolve(context.Background(), scopeOf(id.New(), enums.OperatorRoleAdmin), id.New()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Resolve on a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}
+
 // TestWhoMayClearTheUnreadIsWhoMayAnswer is ADR-0052 as a table: the holder, or anybody for the pool, clears it; a supervisor
 // looking at a vendor's conversation is told it is taken and clears nothing; an operator is told another's does not exist. Nothing
 // unread writes nothing and tells nobody, and a resolved conversation is read like any other.

@@ -37,6 +37,15 @@ type fakeStore struct {
 	starred     map[uuid.UUID]bool
 	read        []uuid.UUID
 	readErr     error
+	resolvedBy  map[uuid.UUID]uuid.UUID
+}
+
+func (f *fakeStore) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, _ time.Duration) error {
+	if f.resolvedBy == nil {
+		f.resolvedBy = map[uuid.UUID]uuid.UUID{}
+	}
+	f.resolvedBy[conversationID] = operatorID
+	return nil
 }
 
 func (f *fakeStore) MarkRead(_ context.Context, conversationID uuid.UUID) error {
@@ -473,6 +482,19 @@ func TestMarkReadReachesTheStore(t *testing.T) {
 	}
 	if len(store.read) != 1 || store.read[0] != conversation {
 		t.Fatalf("the read did not reach the store: %v", store.read)
+	}
+}
+
+// TestResolveReachesTheStore is the passthrough the manual close needs: the status is this aggregate's column (regla 1, ADR-0054).
+func TestResolveReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation, operator := uuid.New(), uuid.New()
+
+	if err := NewService(store, slog.Default()).Resolve(context.Background(), conversation, operator, time.Minute); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if store.resolvedBy[conversation] != operator {
+		t.Fatalf("the close did not reach the store with who closed: %v", store.resolvedBy)
 	}
 }
 

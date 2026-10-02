@@ -137,6 +137,25 @@ func (h *Hub) Reassigned(conversationID, formerHolder uuid.UUID) {
 	h.post(notice{conversationID: conversationID, formerHolder: &formerHolder})
 }
 
+// Remind tells one person a reminder of F28 fell due, on every socket it has open, and nobody else (ADR-0058).
+func (h *Hub) Remind(recipient uuid.UUID, reminder any) {
+	msg, err := json.Marshal(struct {
+		Type     string `json:"type"`
+		Reminder any    `json:"reminder"`
+	}{Type: "reminder.due", Reminder: reminder})
+	if err != nil {
+		h.opts.Logger.Error("reminder event not encoded", slog.String("cause", err.Error()))
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.clients {
+		if c.scope.OperatorID == recipient {
+			c.offer(msg)
+		}
+	}
+}
+
 func (h *Hub) post(n notice) {
 	select {
 	case <-h.stop:

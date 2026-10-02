@@ -484,3 +484,28 @@ func TestAReassignmentTellsOnlyTheFormerVendorToDropTheRow(t *testing.T) {
 		}
 	}
 }
+
+// TestAReminderReachesOnlyItsRecipient is Remind: the person the reminder goes to hears it, a teammate does not (ADR-0058).
+func TestAReminderReachesOnlyItsRecipient(t *testing.T) {
+	l := newLine(t)
+	account := id.New()
+	recipient := l.actor(account, enums.OperatorRoleOperator)
+	teammate := l.actor(account, enums.OperatorRoleSupervisor)
+	pooled := l.rows.put(account, nil)
+
+	conns := map[string]*websocket.Conn{"recipient": l.connect(t, recipient), "teammate": l.connect(t, teammate)}
+
+	l.hub.Remind(recipient, map[string]string{"id": "r1"})
+	l.hub.Changed(pooled)
+
+	for name, want := range map[string][]string{
+		"recipient": {"reminder.due ", "conversation.updated " + pooled.String()},
+		"teammate":  {"conversation.updated " + pooled.String()},
+	} {
+		for _, w := range want {
+			if got := next(t, conns[name]).about(); got != w {
+				t.Fatalf("%s heard %q, want %q", name, got, w)
+			}
+		}
+	}
+}

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§4, *Lo que queda abierto*, enmendado por [ADR-0056](0056-transferencia-entre-operadores.md)** (2026-10-01): las conversaciones de un vendedor ausente se mueven con el traspaso en bloque, y el reparto se sigue cortando desactivándolo |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 5 (bandeja manual mínima), antes del merge |
 | **Resuelve** | Que ninguna conversación quede sin vendedor, a quién se le da cuando el cliente escribe, y quién prende y apaga el bot de una conversación asignada |
@@ -78,7 +78,7 @@ El equipo eligió la **b**, *"para no complicarnos"*, y decidió además cuatro 
 
 | Qué | Por qué no se resuelve acá |
 |---|---|
-| **Ausencias y disponibilidad del vendedor** | Hoy se resuelven desactivándolo. Un mecanismo propio, y la reasignación de lo que quedó trabado, van con F26 en la **Fase 11** |
+| ~~**Ausencias y disponibilidad del vendedor**~~ | ~~Hoy se resuelven desactivándolo. Un mecanismo propio, y la reasignación de lo que quedó trabado, van con F26 en la **Fase 11**~~ → **resuelto por [ADR-0056](0056-transferencia-entre-operadores.md)**: el traspaso en bloque mueve lo trabado, sin un estado *ausente* |
 | **Registrar los cambios de modo** | Explicaría la población de F36 y OE6. Necesita decidir dónde vive ese registro ([ADR-0007](0007-alcance-del-registro-de-auditoria.md) acota la auditoría a la configuración del agente IA) |
 | **Balanceo por carga** | Si el equipo crece y el turno se queda corto. Primero hay que definir qué es "carga" |
 | **Que el vendedor desplace al bot** | Mitigarlo exige decidir qué cuenta como intervención de un vendedor en una conversación del bot, y eso pertenece a la regla de atribución (H-25) y a cómo se mide OE7: **Paso 11** |

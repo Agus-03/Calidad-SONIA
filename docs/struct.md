@@ -153,14 +153,18 @@ sonia/
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja y tiempo real · F05, F13, F21–F27
 │   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
-│   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
+│   │   │   │   ├── routes.go           los tres roles en todas menos reasignar y el traspaso, que son de supervisor y admin (ADR-0056): lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
 │   │   │   │   ├── reasoning_controller.go  GET /conversations/:id/generations/:generation_id/components
+│   │   │   │   ├── handover.go         F26: reasignar una abierta y el traspaso en bloque de un ausente, con historial y motivo · el historial, con el alcance del hilo (ADR-0056)
+│   │   │   │   ├── handover_controller.go  POST /conversations/:id/reassign · POST /inbox/handover · GET /conversations/:id/assignments
+│   │   │   │   ├── notes.go            F26: las notas internas, con el alcance del hilo · sólo su autor las edita o las borra (ADR-0056)
+│   │   │   │   ├── notes_controller.go  GET y POST /conversations/:id/notes · PATCH y DELETE /conversations/:id/notes/:note_id
 │   │   │   │   ├── websocket.go        F21: el hub en memoria (ADR-0027) · tickets de un uso · cada evento con el alcance del listado · nunca bloquea a quien publica (ADR-0051)
 │   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial (ADR-0051)
 │   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052) · el cierre manual, con el alcance del interruptor y rechazado con un turno en vuelo (ADR-0054) · el puntaje de F13, sólo del vendedor y sobre resueltas (ADR-0055)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments e internal_notes (ADR-0056)
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels

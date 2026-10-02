@@ -6,7 +6,7 @@
 # signals and editing it moves all three (ADR-0045, section 2.1).
 version: 2
 
-# The heading the doubled adapter looks for, so the turn runs with no key; tests/test_triage.py keeps the two literals together.
+# The heading the doubled adapter looks for, so the turn runs with no key; tests/triage/test_verdict.py keeps the two literals together.
 marker: "[TRIAGE]"
 
 # The two labels are the outcome domain of DER/entidades.md: a third one is refused when read, and the turn fails.

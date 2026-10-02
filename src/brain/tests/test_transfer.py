@@ -8,7 +8,7 @@ import pytest
 
 from classifiers import transfer
 from infra.enums import TransferSignalType
-from pipeline.repository import TransferPolicy
+from pipeline.repository.signals import TransferPolicy
 from pipeline.triage import Verdict
 
 DEFAULTS = {

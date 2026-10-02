@@ -12,7 +12,7 @@ from uuid import UUID
 from adapters.llm.base import LLMClient, LLMMessage, LLMRefusal, unfenced
 from infra.rules import RulesFileError, load
 from pipeline import guardrail
-from pipeline.repository import Message
+from pipeline.repository.turn import Message
 
 _FILE = "extraction.yaml"
 

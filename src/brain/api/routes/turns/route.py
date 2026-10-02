@@ -5,44 +5,27 @@ import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from time import perf_counter
-from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
-from psycopg import AsyncConnection
 
-from adapters.llm.base import LLMClient, LLMError
+from adapters.llm.base import LLMError
 from adapters.llm.registry import resolve
-from api.schemas.turn import ExtractedDatum, TransferProposal, TurnRequest, TurnResponse
+from api.routes.turns import enrichment, signals
+from api.schemas.turn import ExtractedDatum, TurnRequest, TurnResponse
 from classifiers import extraction, transfer
-from classifiers.intent import Intent, classify
-from infra import ids
 from infra.enums import (
     AgentMode,
     GenerationStatus,
     MessageDirection,
     PipelineStep,
     PromptComponentType,
-    TransferSignalType,
 )
-from pipeline import notices, runner, triage
+from pipeline import notices, runner
 from pipeline.generation import UnpricedModel, generate
-from pipeline.repository import (
-    Context,
-    ContextVersion,
-    CurrentContext,
-    TracedStep,
-    Turn,
-    TurnNotFound,
-    read_context,
-    read_no_resolution_streak,
-    read_transfer_policies,
-    read_turn,
-    write_context_version,
-    write_generation,
-    write_intents,
-    write_signal_evaluation,
-    write_steps,
-)
+from pipeline.repository.turn import Turn, TurnNotFound, read_turn
+from pipeline.repository.context import read_context, write_context_version
+from pipeline.repository.signals import write_signal_evaluation
+from pipeline.repository.evidence import TracedStep, write_generation, write_intents, write_steps
 from pipeline.step import Step
 from prompts import rewriter
 from prompts.assembler import assemble, rules
@@ -100,7 +83,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     if trace.halted and trace.halted_at.step != PipelineStep.TRIAGE:
         # A cut before the triage evaluates no signal: that would send the provider the text the cut refused (ADR-0045, 2.6).
-        trace = _annotated(trace, skipped=transfer.ORDER)
+        trace = signals.annotated(trace, skipped=transfer.ORDER)
         await _write_trace(request, turn, trace.steps)
         return TurnResponse(outcome="blocked", notice_text=_notice(trace.halted_at))
 
@@ -110,10 +93,10 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
 
     # The three signals of this call, written whether they fired or not, before anything else can fail (ADR-0014, ADR-0045).
     async with request.app.state.database.connection() as conn:
-        assessment = await _assess(conn, turn, trace)
+        assessment = await signals.assess(conn, turn, trace)
         for evaluation in assessment.evaluations:
             await write_signal_evaluation(conn, evaluation)
-    trace = _annotated(trace, mode=body.mode, assessment=assessment)
+    trace = signals.annotated(trace, mode=body.mode, assessment=assessment)
 
     if assessment.winner is not None and not trace.halted:
         # Delegates like out_of_domain does: no generation and nothing said to the customer (ADR-0045, section 2.5; O1c).
@@ -125,7 +108,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         return TurnResponse(
             outcome="blocked",
             notice_text=_notice(trace.halted_at),
-            transfer=_proposal(assessment),
+            transfer=signals.proposal(assessment),
             extracted=_extracted(found),
         )
 
@@ -140,13 +123,13 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     # First half of F11, and the rewrite of F04 beside it: neither reads the other, and the customer waits for the slower one and
     # not for both (ADR-0048). Before the assembly, because the answer is given the two (ADR-0041, regla 12; Regla 1).
     intents, rewritten, said = await asyncio.gather(
-        _intents(client, turn, message),
-        _rewrite(client, turn, message, current),
+        enrichment.intents(client, turn, message),
+        enrichment.rewrite(client, turn, message, current),
         # The other half of F31, over the redacted text and only where it gets an answer: a cut turn does not pay a call more.
-        _extract(client, turn, message),
+        enrichment.extract(client, turn, message),
     )
     extracted = _extracted(found + said)
-    dynamic, version, version_id = _dynamic(turn, current, rewritten, intents)
+    dynamic, version, version_id = enrichment.dynamic(turn, current, rewritten, intents)
 
     # Assembled outside the connection: it is text handling and holding a pool connection through it starves the next turn.
     prompt = assemble(
@@ -326,65 +309,6 @@ def _generated(*, position: int, outcome: str, version: int, latency_ms: int, de
 _TRIAGE = next(s for s in runner.INBOUND if s.step == PipelineStep.TRIAGE)
 
 
-# The reads the signals need, on the caller's connection: the policies of the AIAgent and, only when this turn did not resolve,
-# the run it continues (ADR-0045, section 2.2).
-async def _assess(conn: AsyncConnection, turn: Turn, trace: runner.Trace) -> transfer.Assessment:
-    row = next((s for s in trace.steps if s.step == PipelineStep.TRIAGE), None)
-    verdict = triage.verdict_of(row) if row is not None else None
-    version = row.version if row is not None else ""
-    policies = await read_transfer_policies(conn, turn.agent.id) if verdict is not None else {}
-    streak = 0
-    if verdict is not None and verdict.resolved is False:
-        streak = await read_no_resolution_streak(conn, turn, version)
-    return transfer.assess(
-        message_batch_id=turn.message_batch_id,
-        verdict=verdict,
-        classifier_version=version,
-        policies=policies,
-        defaults=triage.rules().thresholds,
-        previous_streak=streak,
-    )
-
-
-# The winner when one fired; otherwise, on a cut of out_of_domain, that evidence with proposed = false, because the core acts on
-# the flag and the id still names what was evaluated (decision O1c).
-def _proposal(assessment: transfer.Assessment) -> TransferProposal | None:
-    if assessment.winner is not None:
-        return TransferProposal(proposed=True, signal_evaluation_id=assessment.winner.id)
-    evaluated = assessment.of(TransferSignalType.OUT_OF_DOMAIN)
-    if evaluated is None:
-        return None
-    return TransferProposal(proposed=False, signal_evaluation_id=evaluated.id)
-
-
-# What the row of the triage (or of the step that cut before it) says about the signals: which were skipped, which one cut, and the
-# mode, which is how OE6 leaves suggestion out of its denominator (ADR-0044 2.3, ADR-0045 2.5, ADR-0046 2.4).
-def _annotated(
-    trace: runner.Trace,
-    *,
-    mode: AgentMode | None = None,
-    assessment: transfer.Assessment | None = None,
-    skipped: tuple[TransferSignalType, ...] = (),
-) -> runner.Trace:
-    if assessment is not None:
-        index = next((i for i, s in enumerate(trace.steps) if s.step == PipelineStep.TRIAGE), None)
-        skipped = assessment.skipped
-    else:
-        index = len(trace.steps) - 1
-    if index is None or index < 0:
-        return trace
-
-    row = trace.steps[index]
-    detail = dict(row.detail or {})
-    detail["skipped_signals"] = [str(signal) for signal in skipped]
-    if mode is not None:
-        detail["mode"] = str(mode)
-    if assessment is not None and assessment.winner is not None:
-        detail["transfer"] = str(assessment.winner.signal_type)
-    steps = trace.steps[:index] + (replace(row, detail=detail),) + trace.steps[index + 1 :]
-    return replace(trace, steps=steps)
-
-
 # What the customer reads when the pipeline refused the turn (O2), or nothing at all when the step that cut was the triage (O1c).
 # Takes the step and not the trace because a leg that did not halt has no cut point, and asking for its text would be a bug here
 # rather than a missing entry in the file.
@@ -406,29 +330,6 @@ def _incoming(turn: Turn) -> str:
     return "\n".join(m.content_text for m in turn.incoming)
 
 
-# Never lets the extraction end the turn: a datum not found is a datum the next batch may still bring, and the customer is owed the
-# answer either way. Off by the toggle, it is never called (ADR-0047, section 2.4).
-async def _extract(client: LLMClient, turn: Turn, message: str) -> tuple[extraction.Extracted, ...]:
-    if not turn.agent.extraction_enabled:
-        return ()
-    try:
-        return await extraction.classify(
-            client=client, model=turn.agent.llm_model, message=message, incoming=turn.incoming
-        )
-    except LLMError as err:
-        logger.warning(
-            "contact data not extracted",
-            extra={
-                "context": {
-                    "conversation_id": str(turn.conversation_id),
-                    "message_batch_id": str(turn.message_batch_id),
-                    "error": str(err),
-                }
-            },
-        )
-        return ()
-
-
 # The contract's shape of what was found. float, because it is a confidence and not money (C08).
 def _extracted(found: Sequence[extraction.Extracted]) -> list[ExtractedDatum]:
     return [
@@ -437,73 +338,3 @@ def _extracted(found: Sequence[extraction.Extracted]) -> list[ExtractedDatum]:
         )
         for e in found
     ]
-
-
-# Never lets the rewrite end the turn, and never asks twice: Regla 3 answers with the context there was, and the core waits ten
-# seconds for all of it (ADR-0048). The gap is logged, and countable as a generation that points at an older turn's version.
-async def _rewrite(
-    client: LLMClient, turn: Turn, message: str, current: CurrentContext | None
-) -> rewriter.Rewrite | None:
-    try:
-        return await rewriter.rewrite(
-            client=client,
-            model=turn.agent.llm_model,
-            previous=current.context if current is not None else None,
-            message=message,
-        )
-    except LLMError as err:
-        logger.warning(
-            "context not rewritten",
-            extra={
-                "context": {
-                    "conversation_id": str(turn.conversation_id),
-                    "message_batch_id": str(turn.message_batch_id),
-                    "error": str(err),
-                }
-            },
-        )
-        return None
-
-
-# This turn's rewrite with the intent F11 read, and the version that records it; or, when it failed, the context there was and
-# the version it came from, which is what the generation points at (03-capa-prompts, Regla 3).
-def _dynamic(
-    turn: Turn,
-    current: CurrentContext | None,
-    rewritten: rewriter.Rewrite | None,
-    intents: Sequence[Intent],
-) -> tuple[Context | None, ContextVersion | None, UUID | None]:
-    if rewritten is None:
-        if current is None:
-            return None, None, None
-        return current.context, None, current.version_id
-
-    context = replace(rewritten.context, primary_intent=rewriter.primary(intents) or rewritten.context.primary_intent)
-    version = ContextVersion(
-        id=ids.new(),
-        conversation_id=turn.conversation_id,
-        turn_number=turn.turn_number,
-        context=context,
-        rewritten_by_model=rewritten.model,
-        latency_ms=rewritten.latency_ms,
-    )
-    return context, version, version.id
-
-
-# Never lets the classifier end the turn: the customer is owed an answer, and a batch whose intents were not read is answered
-# the way every batch was answered until F11 existed. The gap is logged, which is what makes it countable later.
-async def _intents(client: LLMClient, turn: Turn, message: str) -> tuple[Intent, ...]:
-    try:
-        return await classify(client=client, model=turn.agent.llm_model, message=message)
-    except LLMError as err:
-        logger.warning(
-            "intents not classified",
-            extra={
-                "context": {
-                    "conversation_id": str(turn.conversation_id),
-                    "message_batch_id": str(turn.message_batch_id),
-                    "error": str(err),
-                }
-            },
-        )
-        return ()

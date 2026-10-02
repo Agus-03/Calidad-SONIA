@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from adapters.llm.base import LLMClient
 from infra.enums import MessageDirection, PipelineStep
-from pipeline.repository import Turn
+from pipeline.repository.turn import Turn
 from prompts.repository import Component
 
 

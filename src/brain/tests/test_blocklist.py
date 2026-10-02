@@ -15,7 +15,7 @@ from infra import rules as rules_module
 from infra.enums import MessageDirection, SenderType
 from infra.rules import RulesFileError
 from pipeline import blocklist
-from pipeline.repository import Agent, Message, Turn
+from pipeline.repository.turn import Agent, Message, Turn
 from pipeline.step import StepRequest, StepResult
 
 

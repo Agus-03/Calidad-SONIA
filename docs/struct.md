@@ -65,7 +65,8 @@ sonia/
 │   │   │   └── vectorstore/            base · qdrant
 │   │   │
 │   │   ├── api/                        el contrato interno que consume el núcleo
-│   │   │   ├── routes/                 turns · prompts · models · ingest · health
+│   │   │   ├── routes/                 turns/ · prompts · models · ingest · health
+│   │   │   │   └── turns/              route (POST /turns) · signals (F12) · enrichment (F04, F11, F31: nunca cortan el turno)
 │   │   │   └── schemas/                Pydantic = el contrato
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
@@ -80,7 +81,11 @@ sonia/
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
-│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente IA · escribe la generación con lo que ensambló (ADR-0039, regla 10)
+│   │   │   ├── repository/             partido por razón de cambio (regla 2)
+│   │   │   │   ├── turn.py             las lecturas del turno: bloque · conversación · mensajes · agente IA
+│   │   │   │   ├── context.py          el contexto de F04 y sus versiones (ADR-0048)
+│   │   │   │   ├── signals.py          las políticas, la racha y las evaluaciones de F12 (ADR-0045)
+│   │   │   │   └── evidence.py         la generación con lo que ensambló (ADR-0039, regla 10) · las intenciones · el rastro
 │   │   │   ├── notices.py              el texto fijo de cada corte (O2) · no es un paso
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
@@ -105,6 +110,7 @@ sonia/
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py · factories.py
+│   │   │                               turns/ · triage/: tests partidos, con sus dobles en doubles.py (regla 2)
 │   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código
 │   │
 │   ├── core/                           ── DESPLEGABLE 1 · Go · gin ──

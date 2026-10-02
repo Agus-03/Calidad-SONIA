@@ -10,7 +10,8 @@ from time import perf_counter
 from adapters.llm.base import LLMClient, LLMError
 from infra.enums import MessageDirection, PipelineStep
 from pipeline import blocklist, guardrail, triage
-from pipeline.repository import TracedStep, Turn
+from pipeline.repository.turn import Turn
+from pipeline.repository.evidence import TracedStep
 from pipeline.step import Step, StepRequest
 from prompts.repository import Component
 

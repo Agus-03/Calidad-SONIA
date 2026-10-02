@@ -109,7 +109,7 @@ sonia/
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
-│   │   ├── tests/                      unitarios · conftest.py · factories.py
+│   │   ├── tests/                      unitarios · conftest.py
 │   │   │                               turns/ · triage/: tests partidos, con sus dobles en doubles.py (regla 2)
 │   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código
 │   │

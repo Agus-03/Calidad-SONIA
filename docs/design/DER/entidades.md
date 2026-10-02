@@ -574,7 +574,7 @@ Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con un
 | `id` | uuid | PK |
 | `contact_id` | uuid | **Obligatorio** (ADR-0002) — F28 los vincula a contactos |
 | `conversation_id` | uuid | **Nullable** (ADR-0002) — sobrevive al cierre de la conversación |
-| `operator_id` | uuid | Operador notificado |
+| `operator_id` | uuid | ~~Operador notificado~~ *(enmendado por [ADR-0058](../02-decisiones/0058-recordatorios.md), regla 2)*: **el dueño**, quien lo creó. A quién se avisa se decide al vencer (regla 6) |
 | `description` | text | |
 | `due_at` | timestamptz | |
 | `notified` | boolean | Anexo C |
@@ -783,7 +783,7 @@ Una fila **por cada señal evaluada en cada bloque procesado**, haya disparado l
 
 ### `audit_logs`
 
-> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**, que incluyen qué agente IA atiende cada número (ADR-0038, regla 13, `entity_type = inboxes`) y excluyen los componentes del prompt, auditados en `prompt_component_versions` (ADR-0039, regla 5)
+> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**, que incluyen qué agente IA atiende cada número (ADR-0038, regla 13, `entity_type = inboxes`) y excluyen los componentes del prompt, auditados en `prompt_component_versions` (ADR-0039, regla 5) · ampliado por ADR-0062, regla 11: los cambios de operadores (`entity_type = operators`)
 
 | Atributo | Tipo | Notas |
 |---|---|---|

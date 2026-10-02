@@ -24,7 +24,7 @@ var (
 // mount builds the real router, because the paths and the roles only exist in routes.go.
 func mount(role enums.OperatorRole, store *stubStore) http.Handler {
 	return soniahttp.NewRouter(soniahttp.RouterOptions{
-		Controllers:   []soniahttp.Controller{NewController(NewService(store, nil), nil)},
+		Controllers:   []soniahttp.Controller{NewController(NewService(store, store, nil), nil)},
 		TokenVerifier: func(string) (uuid.UUID, error) { return testOperator, nil },
 		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
 			return soniahttp.Actor{OperatorID: testOperator, AccountID: testAccount, Role: role}, nil
@@ -115,7 +115,8 @@ func TestAnotherVendorsSaleIsForbidden(t *testing.T) {
 // TestTheHandlersRefuseWithoutAnActor guards the wiring the same way the other packages do.
 func TestTheHandlersRefuseWithoutAnActor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	c := NewController(NewService(newStore(), nil), nil)
+	store := newStore()
+	c := NewController(NewService(store, store, nil), nil)
 	for _, handler := range []gin.HandlerFunc{c.mark, c.ofConversation, c.update, c.remove} {
 		rec := httptest.NewRecorder()
 		gc, _ := gin.CreateTestContext(rec)

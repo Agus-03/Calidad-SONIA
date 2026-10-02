@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -27,6 +28,15 @@ func (s *stubStore) Conversation(_ context.Context, _, conversationID uuid.UUID)
 		return Conversation{}, ErrConversationNotFound
 	}
 	return c, nil
+}
+
+// Reachable imitates the rule inbox/ owns: the holder or the pool for an operator, any for the roles above (ADR-0035, regla 2).
+func (s *stubStore) Reachable(_ context.Context, scope inbox.Scope, conversationID uuid.UUID) error {
+	c, ok := s.conversations[conversationID]
+	if !ok || (scope.Role == enums.OperatorRoleOperator && c.OperatorID != nil && *c.OperatorID != scope.OperatorID) {
+		return inbox.ErrNotFound
+	}
+	return nil
 }
 
 func (s *stubStore) ByID(_ context.Context, _, saleID uuid.UUID) (Sale, error) {
@@ -97,7 +107,7 @@ func TestTheSaleIsAlwaysTheVendors(t *testing.T) {
 			conversation := Conversation{ID: id.New(), OperatorID: tc.holder, AIAgentID: &agent}
 			store.conversations[conversation.ID] = conversation
 
-			sale, err := NewService(store, nil).Mark(context.Background(), scopeOf(me, tc.role), conversation.ID, "1234.50", "")
+			sale, err := NewService(store, store, nil).Mark(context.Background(), scopeOf(me, tc.role), conversation.ID, "1234.50", "")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Mark: got %v, want %v", err, tc.wantErr)
 			}
@@ -135,7 +145,7 @@ func TestTheAmountAndTheCurrencyAreWhatTheSchemaKeeps(t *testing.T) {
 		store := newStore()
 		conversation := Conversation{ID: id.New(), OperatorID: &me}
 		store.conversations[conversation.ID] = conversation
-		if _, err := NewService(store, nil).Mark(context.Background(), scopeOf(me, enums.OperatorRoleOperator), conversation.ID, tc.amount, tc.currency); !errors.Is(err, tc.wantErr) {
+		if _, err := NewService(store, store, nil).Mark(context.Background(), scopeOf(me, enums.OperatorRoleOperator), conversation.ID, tc.amount, tc.currency); !errors.Is(err, tc.wantErr) {
 			t.Fatalf("Mark %q %q: got %v, want %v", tc.amount, tc.currency, err, tc.wantErr)
 		}
 	}
@@ -161,7 +171,7 @@ func TestOnlyTheVendorCreditedAndTheRolesAboveChangeASale(t *testing.T) {
 			store := newStore()
 			sale := Sale{ID: id.New(), ConversationID: id.New(), OperatorID: vendor, Amount: "100", Currency: "ARS"}
 			store.rows[sale.ID] = sale
-			service := NewService(store, nil)
+			service := NewService(store, store, nil)
 
 			updated, err := service.Update(context.Background(), scopeOf(tc.caller, tc.role), sale.ID, &amount, &currency)
 			if !errors.Is(err, tc.wantErr) {
@@ -180,7 +190,7 @@ func TestOnlyTheVendorCreditedAndTheRolesAboveChangeASale(t *testing.T) {
 	sale := Sale{ID: id.New(), OperatorID: vendor, Amount: "100", Currency: "ARS"}
 	store.rows[sale.ID] = sale
 	bad := "0"
-	if _, err := NewService(store, nil).Update(context.Background(), scopeOf(vendor, enums.OperatorRoleOperator), sale.ID, &bad, nil); !errors.Is(err, ErrInvalidAmount) {
+	if _, err := NewService(store, store, nil).Update(context.Background(), scopeOf(vendor, enums.OperatorRoleOperator), sale.ID, &bad, nil); !errors.Is(err, ErrInvalidAmount) {
 		t.Fatalf("a correction to zero: got %v, want ErrInvalidAmount", err)
 	}
 }
@@ -193,7 +203,7 @@ func TestTheSalesOfAConversationHaveTheReachOfTheThread(t *testing.T) {
 	for _, c := range []Conversation{mine, theirs, pooled} {
 		store.conversations[c.ID] = c
 	}
-	service := NewService(store, nil)
+	service := NewService(store, store, nil)
 	scope := scopeOf(me, enums.OperatorRoleOperator)
 
 	for _, c := range []Conversation{mine, pooled} {

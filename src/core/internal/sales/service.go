@@ -2,12 +2,14 @@ package sales
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
@@ -30,15 +32,16 @@ type store interface {
 }
 
 type Service struct {
-	repo store
-	log  *slog.Logger
+	repo  store
+	reach Reach
+	log   *slog.Logger
 }
 
-func NewService(repo store, log *slog.Logger) *Service {
+func NewService(repo store, reach Reach, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{repo: repo, log: log}
+	return &Service{repo: repo, reach: reach, log: log}
 }
 
 // Mark is F14: the vendor of the conversation marks it, and so do supervisor and admin, and the sale is always the vendor's (ADR-0059).
@@ -100,16 +103,16 @@ func (s *Service) Delete(ctx context.Context, scope Scope, saleID uuid.UUID) err
 	return s.repo.Delete(ctx, saleID)
 }
 
-// reached is the reach of the thread: an operator reaches its own and the pool, and another's does not exist for it (ADR-0035).
+// reached asks inbox/ for the reach of the thread and keeps this package's own answer for a conversation out of it (ADR-0063).
 func (s *Service) reached(ctx context.Context, scope Scope, conversationID uuid.UUID) (Conversation, error) {
-	c, err := s.repo.Conversation(ctx, scope.AccountID, conversationID)
+	err := s.reach.Reachable(ctx, inbox.Scope{AccountID: scope.AccountID, OperatorID: scope.OperatorID, Role: scope.Role}, conversationID)
+	if errors.Is(err, inbox.ErrNotFound) {
+		return Conversation{}, ErrConversationNotFound
+	}
 	if err != nil {
 		return Conversation{}, err
 	}
-	if !scope.seesTheWholeTeam() && c.OperatorID != nil && *c.OperatorID != scope.OperatorID {
-		return Conversation{}, ErrConversationNotFound
-	}
-	return c, nil
+	return s.repo.Conversation(ctx, scope.AccountID, conversationID)
 }
 
 // changeable lets through the vendor credited and the two roles above it (ADR-0059).

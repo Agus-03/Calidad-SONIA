@@ -2,13 +2,20 @@
 package sales
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 )
+
+// Reach is inbox/: a sale hangs from a conversation, so who reaches it is the reach of the thread and not a copy of it (ADR-0063).
+type Reach interface {
+	Reachable(ctx context.Context, scope inbox.Scope, conversationID uuid.UUID) error
+}
 
 var (
 	ErrNotFound = errors.New("sales: sale not found")

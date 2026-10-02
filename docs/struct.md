@@ -135,7 +135,8 @@ sonia/
 │   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
-│   │   │   │   └── controller · routes · service · repository · model · attributes
+│   │   │   │   └── controller · edit_controller · labels_controller · params · routes · service · repository · model · attributes
+│   │   │   │                           edit_controller: alta, edición y los cuatro cifrados · labels_controller: etiquetar · params: id, filtros y página (regla 2)
 │   │   │   │                           attributes: guarda lo que extrae F31 y lo muestra en la ficha (ADR-0047)
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
@@ -152,7 +153,9 @@ sonia/
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja y tiempo real · F05, F13, F21–F27
-│   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
+│   │   │   │   ├── controller.go       DTO, la bandeja, el hilo, el envío y la sugerencia
+│   │   │   │   ├── actions_controller.go  modo, leída, cierre, estrella y puntaje de una conversación
+│   │   │   │   ├── params.go           el tope de limit, los filtros de F23 y el cursor opaco (ADR-0036)
 │   │   │   │   ├── routes.go           los tres roles en todas menos reasignar y el traspaso, que son de supervisor y admin (ADR-0056): lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
 │   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
@@ -165,8 +168,14 @@ sonia/
 │   │   │   │   ├── labels_controller.go  POST /conversations/:id/labels · DELETE /conversations/:id/labels/:label_id
 │   │   │   │   ├── websocket.go        F21: el hub en memoria (ADR-0027) · tickets de un uso · cada evento con el alcance del listado · nunca bloquea a quien publica (ADR-0051)
 │   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial (ADR-0051)
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052) · el cierre manual, con el alcance del interruptor y rechazado con un turno en vuelo (ADR-0054) · el puntaje de F13, sólo del vendedor y sobre resueltas (ADR-0055)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments e internal_notes (ADR-0056) y conversation_labels, y pone las etiquetas en la fila (ADR-0057)
+│   │   │   │   ├── service.go          alcance por rol: quién lee, quién responde y quién maneja el bot · la bandeja y el hilo
+│   │   │   │   ├── send.go             toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · la sugerencia que se copia (ADR-0046)
+│   │   │   │   ├── actions.go          el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052) · el cierre manual, con el alcance del interruptor y rechazado con un turno en vuelo (ADR-0054) · el puntaje de F13, sólo del vendedor y sobre resueltas (ADR-0055)
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · pone las etiquetas en la fila (ADR-0057)
+│   │   │   │   ├── assignments_repository.go  escribe conversation_assignments · el vendedor anterior y el siguiente del reparto · el historial (ADR-0037, ADR-0056)
+│   │   │   │   ├── notes_repository.go  escribe internal_notes (ADR-0056)
+│   │   │   │   ├── labels_repository.go  escribe conversation_labels (ADR-0057)
+│   │   │   │   ├── reasoning_repository.go  la generación y las versiones con que se armó (ADR-0049)
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels

@@ -74,6 +74,8 @@ const (
 	entityAIAgent = "ai_agents"
 	// Which agent answers a number is agent configuration too: it decides against which configuration a conversation is measured (OE2).
 	entityInbox = "inboxes"
+	// Who may log in and with which role decides what every other row of this log is worth, so it is audited too (ADR-0062).
+	entityOperator = "operators"
 )
 
 // AuditEntry is one row of audit_logs. ip_address is left NULL on purpose: behind no trusted proxy the client address is whatever

@@ -25,3 +25,18 @@ func (c *Controller) Routes() []soniahttp.Route {
 		},
 	}
 }
+
+// The supervisor reads the team to reassign (F26), the admin writes it (Anexo B, F18), and all change their own password (ADR-0062).
+func (c *RosterController) Routes() []soniahttp.Route {
+	admin := []enums.OperatorRole{enums.OperatorRoleAdmin}
+	readers := []enums.OperatorRole{enums.OperatorRoleSupervisor, enums.OperatorRoleAdmin}
+
+	return []soniahttp.Route{
+		{Method: http.MethodGet, Path: "/operators", Roles: readers, Handler: c.list},
+		{Method: http.MethodPost, Path: "/operators", Roles: admin, Handler: c.create},
+		{Method: http.MethodPatch, Path: "/operators/:id", Roles: admin, Handler: c.update},
+		{Method: http.MethodDelete, Path: "/operators/:id", Roles: admin, Handler: c.remove},
+		{Method: http.MethodPut, Path: "/operators/:id/password", Roles: admin, Handler: c.resetPassword},
+		{Method: http.MethodPut, Path: "/me/password", Roles: enums.OperatorRoleValues, Handler: c.changePassword},
+	}
+}

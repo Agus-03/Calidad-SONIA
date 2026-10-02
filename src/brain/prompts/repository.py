@@ -1,5 +1,6 @@
 # The read of layer 1 (03-capa-prompts 1): prompt_components belongs to the core, so the brain only reads it (regla 3).
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -7,6 +8,8 @@ from uuid import UUID
 from psycopg import AsyncConnection
 
 from infra.enums import PromptComponentType
+
+logger = logging.getLogger("sonia.prompts.repository")
 
 # Ordered by position because that order is the administrator's (Regla 1); active is F01's ablation switch and deleted_at is C09.
 # The newest version travels with the text so the generation can name what it assembled (OE1). The core writes both in one
@@ -81,3 +84,33 @@ async def read_components(conn: AsyncConnection, ai_agent_id: UUID) -> Assembly:
         ),
         read_at=read_at,
     )
+
+
+# F09's catalogue as the operators see it (ADR-0060, regla 3), asked one row past the ceiling to notice a cut (ADR-0061).
+_QUICK_REPLIES = """
+SELECT q.title, q.content
+FROM   quick_replies q
+JOIN   ai_agents a ON a.account_id = q.account_id
+WHERE  a.id = %(agent)s AND q.active AND q.deleted_at IS NULL
+ORDER  BY lower(q.title)
+LIMIT  %(limit)s
+"""
+
+
+@dataclass(frozen=True)
+class QuickReply:
+    title: str
+    content: str
+
+
+# Ordered by title like the admin's list, so the ones a ceiling leaves out are the same ones every turn (ADR-0061).
+async def read_quick_replies(conn: AsyncConnection, ai_agent_id: UUID, limit: int) -> tuple[QuickReply, ...]:
+    cursor = await conn.execute(_QUICK_REPLIES, {"agent": ai_agent_id, "limit": limit + 1})
+    rows = await cursor.fetchall()
+    if len(rows) > limit:
+        # Logged because nobody else would know: the admin sees the whole catalogue and the model sees the first ones.
+        logger.warning(
+            "quick replies over the ceiling, the rest left out of the prompt",
+            extra={"context": {"ai_agent_id": str(ai_agent_id), "limit": limit}},
+        )
+    return tuple(QuickReply(title=row["title"], content=row["content"]) for row in rows[:limit])

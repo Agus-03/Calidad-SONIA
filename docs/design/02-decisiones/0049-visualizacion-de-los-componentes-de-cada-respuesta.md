@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§2 enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md)** (2026-10-02): F05 vive en `reasoning/`, que pide el alcance del hilo a `inbox/` |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 9 (contexto dinámico y transferencia) |
 | **Resuelve** | Qué significa *"influyeron"* en F05, qué ve cada rol de los componentes de una respuesta, cómo se pide esa lectura, y qué pasa con `generations.reasoning_json` |
@@ -44,7 +44,7 @@ El administrador es quien tiene acceso a la configuración del AIAgent —el Ane
 - **`GET /conversations/:id/generations/:generation_id/components`**, para los tres roles. Una generación que no es de esa conversación responde 404 `generation_not_found`.
 - **Por generación y no por mensaje**, porque una sugerencia en `pending_review` tiene generación y no tiene mensaje ([ADR-0046](0046-modo-sugerencia.md)).
 - **El hilo agrega `generation_id` a cada mensaje** que tiene una generación detrás: la respuesta del AIAgent, y la del Operator que mandó una sugerencia. Los demás lo llevan en `null`. Es lo que le dice al frontend qué puede consultar.
-- **Vive en `inbox/`**, como anticipaba el reparto de [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md): el cerebro escribe y el núcleo sirve.
+- ~~**Vive en `inbox/`**~~ *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md): vive en `reasoning/`, con el alcance del hilo que exporta `inbox/`)*, como anticipaba el reparto de [ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md): el cerebro escribe y el núcleo sirve.
 
 ### 2.4 `reasoning_json` queda sin uso
 

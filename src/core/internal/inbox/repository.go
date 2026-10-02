@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -33,6 +34,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
 SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count,
+       c.quality_score, COALESCE(tags.items, '[]'::json),
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -50,6 +52,12 @@ LEFT   JOIN LATERAL (
        ORDER  BY m.created_at DESC, m.id DESC
        LIMIT  1
 ) latest ON true
+LEFT   JOIN LATERAL (
+       SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) ORDER BY l.name, l.id) AS items
+       FROM   conversation_labels cl
+       JOIN   labels l ON l.id = cl.label_id AND l.deleted_at IS NULL
+       WHERE  cl.conversation_id = c.id
+) tags ON true
 CROSS  JOIN LATERAL (
        SELECT count(*) AS failed_count, max(f.created_at) AS last_failed_at
        FROM   messages f
@@ -236,76 +244,6 @@ func (r *Repository) Thread(ctx context.Context, conversationID uuid.UUID, after
 	return out, nil
 }
 
-const assignmentInsert = `
-INSERT INTO conversation_assignments (id, conversation_id, from_operator_id, to_operator_id, assigned_by_operator_id, reason)
-VALUES ($1, $2, $3, $4, $5, nullif($6, ''))`
-
-// RecordAssignment is only ever an INSERT: the table is the history F26 asks for, and history is not corrected (C09).
-func (r *Repository) RecordAssignment(ctx context.Context, a Assignment) error {
-	if _, err := r.exec.Exec(ctx, assignmentInsert,
-		a.ID, a.ConversationID, a.FromOperatorID, a.ToOperatorID, a.AssignedByOperatorID, a.Reason); err != nil {
-		return fmt.Errorf("inbox: record assignment: %w", err)
-	}
-	return nil
-}
-
-// The vendor of the contact's latest earlier conversation, if it still is one: a person who is active, not taken down and of the
-// operator role (ADR-0037, reglas 1 y 2). An earlier conversation nobody held says nothing, so it is skipped; but the latest vendor
-// being gone means the turn decides, and not a vendor from further back.
-const previousOperatorSelect = `
-SELECT o.id
-FROM   (
-       SELECT c.operator_id
-       FROM   conversations c
-       WHERE  c.contact_id = $1 AND c.id <> $2 AND c.deleted_at IS NULL AND c.operator_id IS NOT NULL
-       ORDER  BY c.created_at DESC, c.id DESC
-       LIMIT  1
-) latest
-JOIN   operators o ON o.id = latest.operator_id
-WHERE  o.account_id = $3 AND o.role = $4 AND o.active AND o.deleted_at IS NULL`
-
-// PreviousOperator answers nil when the contact has no earlier vendor who can still receive it.
-func (r *Repository) PreviousOperator(ctx context.Context, accountID, contactID, conversationID uuid.UUID) (*uuid.UUID, error) {
-	return r.oneOperator(ctx, "previous operator", previousOperatorSelect, contactID, conversationID, accountID, enums.OperatorRoleOperator)
-}
-
-// The vendor who has gone longest without receiving a conversation, and first of all one who never received any. Every assignment
-// counts, whatever its reason: a returning customer or a conversation taken from the pool is work received too (ADR-0037, regla 1).
-//
-// The last assignment is read as a row and not as max(created_at): now() is the start of the transaction, so the assignments of one
-// payload share an instant, and only their v7 id still says which came first. Without it, the lowest operator id would take every
-// conversation of the payload after the first round.
-const nextInTurnSelect = `
-SELECT o.id
-FROM   operators o
-LEFT   JOIN LATERAL (
-       SELECT a.created_at, a.id
-       FROM   conversation_assignments a
-       WHERE  a.to_operator_id = o.id
-       ORDER  BY a.created_at DESC, a.id DESC
-       LIMIT  1
-) last ON true
-WHERE  o.account_id = $1 AND o.role = $2 AND o.active AND o.deleted_at IS NULL
-ORDER  BY last.created_at ASC NULLS FIRST, last.id ASC NULLS FIRST, o.id
-LIMIT  1`
-
-// NextInTurn answers nil when no vendor is active, which leaves the conversation in the pool (ADR-0037, regla 3).
-func (r *Repository) NextInTurn(ctx context.Context, accountID uuid.UUID) (*uuid.UUID, error) {
-	return r.oneOperator(ctx, "next operator in turn", nextInTurnSelect, accountID, enums.OperatorRoleOperator)
-}
-
-func (r *Repository) oneOperator(ctx context.Context, what, query string, args ...any) (*uuid.UUID, error) {
-	var operatorID uuid.UUID
-	err := r.exec.QueryRow(ctx, query, args...).Scan(&operatorID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("inbox: read the %s: %w", what, err)
-	}
-	return &operatorID, nil
-}
-
 // The two LEFT JOINs arrive as nulls, so they are read into locals and moved to the model only when the group is there.
 func scanSummary(row pgx.Row) (Summary, error) {
 	var s Summary
@@ -322,7 +260,8 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount,
+	var tags []byte
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount, &s.QualityScore, &tags,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,
@@ -330,6 +269,9 @@ func scanSummary(row pgx.Row) (Summary, error) {
 		&s.LastInboundAt, &s.WindowExpiresAt, &s.LastActivityAt)
 	if err != nil {
 		return Summary{}, fmt.Errorf("inbox: scan conversation: %w", err)
+	}
+	if err := json.Unmarshal(tags, &s.Labels); err != nil {
+		return Summary{}, fmt.Errorf("inbox: decode the labels of a conversation: %w", err)
 	}
 
 	if operatorID != nil && operatorName != nil && operatorLastname != nil {
@@ -381,54 +323,4 @@ func (r *Repository) PendingSuggestion(ctx context.Context, conversationID uuid.
 		return Suggestion{}, fmt.Errorf("inbox: read suggestion: %w", err)
 	}
 	return s, nil
-}
-
-// The generation by its id and its conversation together, so an id of another conversation is not found rather than read.
-const reasoningGeneration = `
-SELECT g.id, g.status, g.llm_model, g.created_at
-FROM   generations g
-WHERE  g.id = $1 AND g.conversation_id = $2`
-
-// No filter on deleted_at: the version is what was assembled, and removing the component later does not unsay it (C09, ADR-0039).
-const reasoningComponents = `
-SELECT   pc.type, gc.position, v.version_number, v.content
-FROM     generation_components gc
-JOIN     prompt_component_versions v ON v.id = gc.prompt_component_version_id
-JOIN     prompt_components pc ON pc.id = v.prompt_component_id
-WHERE    gc.generation_id = $1
-ORDER BY gc.position`
-
-// Reasoning answers ErrGenerationNotFound when the generation is not one of this conversation. It reads the text of every version,
-// and the service is the one that decides who keeps it.
-func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
-	var out Reasoning
-	err := r.exec.QueryRow(ctx, reasoningGeneration, generationID, conversationID).
-		Scan(&out.GenerationID, &out.Status, &out.LLMModel, &out.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Reasoning{}, ErrGenerationNotFound
-	}
-	if err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation: %w", err)
-	}
-
-	rows, err := r.exec.Query(ctx, reasoningComponents, generationID)
-	if err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
-	}
-	defer rows.Close()
-
-	out.Components = []UsedComponent{}
-	for rows.Next() {
-		var c UsedComponent
-		var content string
-		if err := rows.Scan(&c.Type, &c.Position, &c.VersionNumber, &content); err != nil {
-			return Reasoning{}, fmt.Errorf("inbox: scan generation component: %w", err)
-		}
-		c.Content = &content
-		out.Components = append(out.Components, c)
-	}
-	if err := rows.Err(); err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
-	}
-	return out, nil
 }

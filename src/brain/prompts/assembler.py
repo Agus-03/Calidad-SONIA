@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from infra.enums import PromptComponentType
-from prompts.repository import Component
+from prompts.repository import Component, QuickReply
 
 # Anchored to the package and not to the working directory: the brain runs in a container, where neither is the repository.
 _RULES_FILE = Path(__file__).resolve().parent.parent / "rules" / "generation.yaml"
@@ -16,7 +16,7 @@ _RULES_FILE = Path(__file__).resolve().parent.parent / "rules" / "generation.yam
 # Replaced and not formatted, so a brace typed inside a component can never turn into a template error.
 _AGENT_NAME = "{agent_name}"
 
-_USER_SECTIONS = ("context", "knowledge", "intents", "message")
+_USER_SECTIONS = ("context", "knowledge", "quick_replies", "intents", "message")
 
 
 # Raised while loading and never while answering: a scaffolding that cannot be read is a deployment mistake.
@@ -31,6 +31,8 @@ class Rules:
     headings: dict[PromptComponentType, str]
     closing: str
     user_headings: dict[str, str]
+    # How many quick replies a turn reads at most, which bounds what F07 adds to every prompt (ADR-0061).
+    quick_replies_limit: int
 
 
 @dataclass(frozen=True)
@@ -78,12 +80,18 @@ def _load(path: Path) -> Rules:
     if absent:
         raise RulesError(f"prompts: no heading for the user sections {', '.join(absent)}")
 
+    # bool is an int in Python, so it is refused by name: "true" is not a ceiling anybody meant to write.
+    limit = _mapping(raw, "user").get("quick_replies_limit")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise RulesError("prompts: generation.yaml has no positive quick_replies_limit under user")
+
     return Rules(
         version=version,
         preamble=_text(system, "preamble"),
         headings={t: str(headings[t.value]) for t in PromptComponentType},
         closing=_text(system, "closing"),
         user_headings={name: str(user_headings[name]) for name in _USER_SECTIONS},
+        quick_replies_limit=limit,
     )
 
 
@@ -110,6 +118,7 @@ def assemble(
     message: str,
     context: str | None = None,
     knowledge: Sequence[str] = (),
+    quick_replies: Sequence[QuickReply] = (),
     intents: Sequence[str] = (),
 ) -> Prompt:
     spec = rules()
@@ -127,22 +136,28 @@ def assemble(
 
     return Prompt(
         system="\n\n".join(blocks),
-        user=_envelope(spec, message, context, knowledge, intents),
+        user=_envelope(spec, message, context, knowledge, quick_replies, intents),
         rules_version=spec.version,
         assembled=tuple(assembled),
     )
 
 
-# The order of Regla 1: what I know about this customer, then what my knowledge base says, then what they are asking for in
-# this batch, and last the literal question.
+# The order of Regla 1 as ADR-0061 amends it: context, knowledge base, the company's quick replies, this batch's requests, message.
 def _envelope(
-    spec: Rules, message: str, context: str | None, knowledge: Sequence[str], intents: Sequence[str]
+    spec: Rules,
+    message: str,
+    context: str | None,
+    knowledge: Sequence[str],
+    quick_replies: Sequence[QuickReply],
+    intents: Sequence[str],
 ) -> str:
     sections: list[tuple[str, str]] = []
     if context and context.strip():
         sections.append((spec.user_headings["context"], context.strip()))
     if knowledge:
         sections.append((spec.user_headings["knowledge"], _numbered(knowledge)))
+    if quick_replies:
+        sections.append((spec.user_headings["quick_replies"], _catalogue(quick_replies)))
     # Left out when the classifier found nothing, the same as the other two: an empty list would tell the model the customer
     # asked for nothing, which is the opposite of "we did not manage to read it" (F11).
     if intents:
@@ -156,3 +171,8 @@ def _envelope(
 # customer asked in, which is what detected_intents.position stores.
 def _numbered(fragments: Sequence[str]) -> str:
     return "\n".join(f"{rank}. {text.strip()}" for rank, text in enumerate(fragments, start=1))
+
+
+# The title over its content, so the model reads which case each text is for; the content keeps the line breaks the admin wrote.
+def _catalogue(replies: Sequence[QuickReply]) -> str:
+    return "\n\n".join(f"{rank}. {reply.title.strip()}\n{reply.content.strip()}" for rank, reply in enumerate(replies, start=1))

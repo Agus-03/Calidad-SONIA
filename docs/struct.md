@@ -87,13 +87,13 @@ sonia/
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
 │   │   │   ├── retrieval.py            │  (ADR-0016)
 │   │   │   ├── grounding.py            │
-│   │   │   └── generation.py           ┘ lee quick_replies para F07
+│   │   │   └── generation.py           ┘
 │   │   │                               reranking.py no se crea hasta que exista
 │   │   │
 │   │   ├── prompts/                    F03, F04 · ÚNICA implementación del ensamblador
 │   │   │   ├── assembler.py
 │   │   │   ├── budget.py
-│   │   │   ├── repository.py           los componentes activos con su versión más nueva
+│   │   │   ├── repository.py           los componentes activos con su versión más nueva · las respuestas rápidas activas de la cuenta, hasta el tope (F07, ADR-0061)
 │   │   │   └── rewriter.py
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
@@ -121,7 +121,7 @@ sonia/
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
 │   │   │   │   ├── components.go       un componente por tipo · cada cambio del texto o del interruptor es una versión (ADR-0039)
 │   │   │   │   ├── preview.go          valida los borradores como un guardado y le pide el system al cerebro · no escribe nada (F03, ADR-0040)
-│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
+│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/ y los cambios de operadores para operators/ (ADR-0062)
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
@@ -135,12 +135,14 @@ sonia/
 │   │   │   │   └── contract.go         el turno · los modelos con tarifa · la previsualización (ADR-0040)
 │   │   │   │
 │   │   │   ├── contacts/               contactos y segmentación · F15, F30, F33
-│   │   │   │   └── controller · routes · service · repository · model · attributes
+│   │   │   │   └── controller · edit_controller · labels_controller · params · routes · service · repository · model · attributes
+│   │   │   │                           edit_controller: alta, edición y los cuatro cifrados · labels_controller: etiquetar · params: id, filtros y página (regla 2)
 │   │   │   │                           attributes: guarda lo que extrae F31 y lo muestra en la ficha (ADR-0047)
 │   │   │   │
 │   │   │   ├── conversations/          DUEÑO del agregado compartido
 │   │   │   │   ├── service.go          turn/, inbox/, whatsapp/ y agents/ escriben por acá · nace en off si el agente IA no puede responder (ADR-0038) · cada mensaje del cliente suma a unread_count y la respuesta de un operador lo borra (ADR-0052)
 │   │   │   │   ├── repository.go       recibe el Executor de quien conduce
+│   │   │   │   ├── messages_repository.go  los mensajes: escribirlos, ligarlos al bloque y marcarlos enviados o fallidos (regla 2)
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
 │   │   │   │
@@ -151,16 +153,22 @@ sonia/
 │   │   │   │   ├── repository.go
 │   │   │   │   └── model.go
 │   │   │   │
-│   │   │   ├── inbox/                  bandeja y tiempo real · F05, F13, F21–F27
-│   │   │   │   ├── controller.go       DTO, cursor opaco y el tope de limit (ADR-0036)
-│   │   │   │   ├── routes.go           los tres roles en todas: lo que cada uno alcanza lo decide service.go
+│   │   │   ├── inbox/                  bandeja · F13, F22–F27 · exporta Reachable, CanSee y EventRow (ADR-0063)
+│   │   │   │   ├── controller.go       DTO, la bandeja, el hilo, el envío y la sugerencia
+│   │   │   │   ├── actions_controller.go  modo, leída, cierre, estrella y puntaje de una conversación
+│   │   │   │   ├── params.go           el tope de limit, los filtros de F23 y el cursor opaco (ADR-0036)
+│   │   │   │   ├── routes.go           los tres roles en todas menos reasignar y el traspaso, que son de supervisor y admin (ADR-0056): lo que cada uno alcanza lo decide service.go
 │   │   │   │   ├── dispatch.go         el vendedor de cada conversación, en la transacción del webhook (ADR-0037)
-│   │   │   │   ├── reasoning.go        F05: los componentes de cada respuesta, con el alcance del hilo · el texto, sólo para el admin (ADR-0049)
-│   │   │   │   ├── reasoning_controller.go  GET /conversations/:id/generations/:generation_id/components
-│   │   │   │   ├── websocket.go        F21: el hub en memoria (ADR-0027) · tickets de un uso · cada evento con el alcance del listado · nunca bloquea a quien publica (ADR-0051)
-│   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial (ADR-0051)
-│   │   │   │   ├── service.go          alcance por rol · toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052)
-│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · escribe conversation_assignments
+│   │   │   │   ├── handover.go         F26: reasignar una abierta y el traspaso en bloque de un ausente, con historial y motivo · el historial, con el alcance del hilo (ADR-0056)
+│   │   │   │   ├── handover_controller.go  POST /conversations/:id/reassign · POST /inbox/handover · GET /conversations/:id/assignments
+│   │   │   │   ├── labels.go           F24: etiquetas del catálogo, que pregunta a labels/, con el alcance del hilo · pedir el estado que ya existe no es error (ADR-0057)
+│   │   │   │   ├── labels_controller.go  POST /conversations/:id/labels · DELETE /conversations/:id/labels/:label_id
+│   │   │   │   ├── service.go          alcance por rol: quién lee, quién responde y quién maneja el bot · la bandeja y el hilo
+│   │   │   │   ├── send.go             toma el pool en la transacción del envío · envía una sola vez (ADR-0020) · la sugerencia que se copia (ADR-0046)
+│   │   │   │   ├── actions.go          el modo, el operator sólo de lo suyo (ADR-0037), y prenderlo exige un agente IA que pueda responder (ADR-0038) · la estrella de F25, con el alcance del hilo y sin mover la bandeja (ADR-0053) · la marca de leída, con el alcance de responder (ADR-0052) · el cierre manual, con el alcance del interruptor y rechazado con un turno en vuelo (ADR-0054) · el puntaje de F13, sólo del vendedor y sobre resueltas (ADR-0055)
+│   │   │   │   ├── repository.go       la bandeja con su último mensaje, sus fallidos y si su agente IA puede responder · los filtros de F23, siempre después del alcance (ADR-0050) · pone las etiquetas en la fila (ADR-0057)
+│   │   │   │   ├── assignments_repository.go  escribe conversation_assignments · el vendedor anterior y el siguiente del reparto · el historial (ADR-0037, ADR-0056)
+│   │   │   │   ├── labels_repository.go  escribe conversation_labels (ADR-0057)
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── labels/                 catálogo de etiquetas · F19 · DUEÑO de labels
@@ -172,9 +180,19 @@ sonia/
 │   │   │   │
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
 │   │   │   │
-│   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators
+│   │   │   ├── notes/                  notas internas · F26 · DUEÑO de internal_notes (ADR-0056, ADR-0063)
+│   │   │   │   ├── controller.go       GET y POST /conversations/:id/notes · PATCH y DELETE /conversations/:id/notes/:note_id · los códigos de antes
+│   │   │   │   ├── routes.go           los tres roles: el alcance lo pide a inbox/ (Reachable)
+│   │   │   │   ├── service.go          con el alcance del hilo · sólo su autor las edita o las borra (ADR-0056)
+│   │   │   │   ├── repository.go       escribe internal_notes · borrar es lógico (C09)
+│   │   │   │   └── model.go
+│   │   │   │
+│   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators (ADR-0030, ADR-0062)
 │   │   │   │   ├── controller.go       login (público) y /me (autenticado): dos tipos, dos zonas
-│   │   │   │   ├── routes.go           POST /auth/login fuera de /api/v1: quien se loguea no es actor
+│   │   │   │   ├── routes.go           POST /auth/login fuera de /api/v1: quien se loguea no es actor · el ABM, del admin; la lista, también del supervisor
+│   │   │   │   ├── roster.go           el ABM: nunca sin un admin activo · el admin no se toca a sí mismo · contraseñas · audita por agents/
+│   │   │   │   ├── roster_controller.go  desactivar y borrar responden cuántas conversaciones le quedan (held_conversations)
+│   │   │   │   ├── roster_repository.go  bloquea a los admins antes que la fila · el hash anterior en el predicado de la contraseña
 │   │   │   │   ├── service.go          una sola respuesta para las tres formas de fallar (ADR-0030)
 │   │   │   │   ├── repository.go       normaliza el email: el índice único es sobre la columna cruda
 │   │   │   │   ├── model.go            Operator lleva el hash, así que nunca se serializa
@@ -192,15 +210,44 @@ sonia/
 │   │   │   │   ├── logging/
 │   │   │   │   └── storage/            PUERTO · base · supabase · disk
 │   │   │   │
-│   │   │   ├── quick_replies/          respuestas rápidas · F09
-│   │   │   ├── reminders/              recordatorios · F28
+│   │   │   ├── quick_replies/          respuestas rápidas · F09 · DUEÑO de quick_replies (ADR-0060) · paquete quickreplies
+│   │   │   │   ├── controller.go       q busca por título y contenido · el operador copia el texto en la caja, no hay ruta de envío
+│   │   │   │   ├── routes.go           leen los tres roles, escribe sólo el admin (F09)
+│   │   │   │   ├── service.go          las pausadas sólo las ve el admin · el autor sale del token
+│   │   │   │   ├── repository.go       strpos y no LIKE · el título repetido es el índice único, sin distinguir mayúsculas
+│   │   │   │   └── model.go
+│   │   │   │
+│   │   │   ├── realtime/               F21: el hub en memoria y el socket · sin tablas (ADR-0051, ADR-0063)
+│   │   │   │   ├── hub.go              el fan-out con el alcance del listado (inbox.CanSee) · tickets de un uso · nunca bloquea a quien publica · lo usan inbox/ y reminders/
+│   │   │   │   ├── stream.go           POST /inbox/stream-ticket detrás del bearer · GET /inbox/stream, pública: el ticket es la credencial
+│   │   │   │   └── routes.go
+│   │   │   │
+│   │   │   ├── reasoning/              F05: los componentes de cada respuesta · SÓLO LECTURA (ADR-0049, ADR-0063)
+│   │   │   │   ├── controller.go       GET /conversations/:id/generations/:generation_id/components
+│   │   │   │   ├── routes.go
+│   │   │   │   ├── service.go          con el alcance del hilo (inbox.Reachable) · el texto, sólo para el admin
+│   │   │   │   ├── repository.go       la generación y las versiones con que se armó
+│   │   │   │   └── model.go
+│   │   │   │
+│   │   │   ├── reminders/              recordatorios · F28 · DUEÑO de reminders (ADR-0058)
+│   │   │   │   ├── controller.go       instantes RFC 3339 con su zona (C06) · due sólo se prende con true
+│   │   │   │   ├── routes.go           los tres roles: el alcance lo decide contacts/, los cambios el dueño, supervisor y admin
+│   │   │   │   ├── service.go          cuelga del contacto que el caller alcanza (ADR-0002 (c)) · mover la fecha lo vuelve pendiente
+│   │   │   │   ├── poller.go           cada 30 s marca los vencidos con SKIP LOCKED y avisa al vendedor por el hub (ADR-0041, ADR-0051)
+│   │   │   │   ├── repository.go       el destinatario: el vendedor activo de la conversación más reciente, o el dueño
+│   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── reporting/              SÓLO LECTURA · F16, F32, F34–F38
 │   │   │   │   ├── controller.go
 │   │   │   │   ├── service.go
 │   │   │   │   └── queries.go          no tiene repository: no escribe nada
 │   │   │   │
-│   │   │   ├── sales/                  registro de ventas · F14
+│   │   │   ├── sales/                  registro de ventas · F14 · DUEÑO de sales (ADR-0059)
+│   │   │   │   ├── controller.go       el monto como texto decimal, nunca un número JSON (C08)
+│   │   │   │   ├── routes.go           los tres roles: el vendedor lo suyo, supervisor y admin cualquiera, que decide service.go · el alcance lo pide a inbox/ (Reachable, ADR-0063)
+│   │   │   │   ├── service.go          acredita siempre al vendedor asignado y copia el agente IA · el pool no admite ventas
+│   │   │   │   ├── repository.go       el canal de origen se lee del contacto (F15), no se copia
+│   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── turn/                   orquestador del turno · ABRE LA TRANSACCIÓN
 │   │   │   │   ├── collector.go        agrupa mensajes fragmentados · F10 (ADR-0041)
@@ -251,13 +298,14 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 
 | Paquete | Tablas | Nota |
 |---|---|---|
-| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt (ADR-0007, ADR-0038, ADR-0039) |
+| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt, y a los cambios de operadores (ADR-0007, ADR-0038, ADR-0039, ADR-0062) |
 | `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
 | `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/`, `whatsapp/` y `agents/` escriben por acá |
 | `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |
-| `inbox/` | `conversation_assignments` · `internal_notes` · `conversation_labels` | |
+| `inbox/` | `conversation_assignments` · `conversation_labels` | |
 | `labels/` | `labels` | El catálogo; las dos tablas de unión son de quien etiqueta |
 | `meta_templates/` | `meta_templates` | |
+| `notes/` | `internal_notes` | Salió de `inbox/` (ADR-0063) |
 | `operators/` | `operators` | |
 | `quick_replies/` | `quick_replies` | La lee el cerebro (F07), no la escribe |
 | `reminders/` | `reminders` | |

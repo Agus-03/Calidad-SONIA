@@ -101,6 +101,8 @@ def tables(**overrides: list[dict]) -> dict[str, list[dict]]:
             {"type": "objective", "content": "Ayudar a inquilinos.", "position": 1, "version_id": uuid4(), "read_at": datetime.now(UTC)},
             {"type": "rules", "content": "No tomar pagos por este canal.", "position": 2, "version_id": uuid4(), "read_at": datetime.now(UTC)},
         ],
+        # Empty by default: an account with no catalogue is the common case, and F07 adds nothing to its prompt (ADR-0061).
+        "quick_replies": [],
         # Declared so the fake connection records the INSERTs: these are the only writes the brain makes in a turn.
         "detected_intents": [],
         "pipeline_steps": [],
@@ -957,3 +959,29 @@ def test_an_extractor_that_falls_over_does_not_take_the_answer_with_it(caplog: p
     assert "contact data not extracted" in caplog.text
     # The checkpoint half does not depend on the model, so the DNI still travels.
     assert [e["key"] for e in payload["extracted"]] == ["dni"]
+
+
+# F07 end to end: the catalogue of the agent's account is read on the turn and reaches the model that answers (ADR-0061).
+def test_the_quick_replies_of_the_account_reach_the_model() -> None:
+    connection = FakeConnection(tables(quick_replies=[{"title": "Horarios", "content": "Atendemos de 9 a 18."}]))
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    payload = response.json()
+    assert payload["outcome"] == "generated"
+    asked = next(params for table, params in connection.sent if table == "quick_replies")
+    assert asked["agent"] == AGENT_ID
+    # The double echoes the envelope, so the answer is what proves the catalogue reached the model and not only the read.
+    assert "[RESPUESTAS RÁPIDAS DE LA EMPRESA]" in payload["completion_text"]
+    assert "1. Horarios\nAtendemos de 9 a 18." in payload["completion_text"]
+
+
+# No catalogue, no section: the default tables carry none, and the envelope has to say nothing about it.
+def test_a_turn_with_no_quick_replies_prints_no_heading() -> None:
+    connection = FakeConnection(tables())
+
+    with client(connection, doubled()) as http:
+        response = http.post("/turns", json=body(), headers={"X-Internal-Token": "test-token"})
+
+    assert "[RESPUESTAS RÁPIDAS DE LA EMPRESA]" not in response.json()["completion_text"]

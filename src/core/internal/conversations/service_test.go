@@ -37,6 +37,37 @@ type fakeStore struct {
 	starred     map[uuid.UUID]bool
 	read        []uuid.UUID
 	readErr     error
+	resolvedBy  map[uuid.UUID]uuid.UUID
+	scores      map[uuid.UUID]int
+	reassigned  map[uuid.UUID]uuid.UUID
+}
+
+func (f *fakeStore) Reassign(_ context.Context, conversationID uuid.UUID, _ *uuid.UUID, to uuid.UUID) error {
+	if f.reassigned == nil {
+		f.reassigned = map[uuid.UUID]uuid.UUID{}
+	}
+	f.reassigned[conversationID] = to
+	return nil
+}
+
+func (f *fakeStore) HandOver(_ context.Context, _, to uuid.UUID) ([]uuid.UUID, error) {
+	return []uuid.UUID{to}, nil
+}
+
+func (f *fakeStore) Score(_ context.Context, conversationID, _ uuid.UUID, score int) error {
+	if f.scores == nil {
+		f.scores = map[uuid.UUID]int{}
+	}
+	f.scores[conversationID] = score
+	return nil
+}
+
+func (f *fakeStore) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, _ time.Duration) error {
+	if f.resolvedBy == nil {
+		f.resolvedBy = map[uuid.UUID]uuid.UUID{}
+	}
+	f.resolvedBy[conversationID] = operatorID
+	return nil
 }
 
 func (f *fakeStore) MarkRead(_ context.Context, conversationID uuid.UUID) error {
@@ -476,6 +507,19 @@ func TestMarkReadReachesTheStore(t *testing.T) {
 	}
 }
 
+// TestResolveReachesTheStore is the passthrough the manual close needs: the status is this aggregate's column (regla 1, ADR-0054).
+func TestResolveReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation, operator := uuid.New(), uuid.New()
+
+	if err := NewService(store, slog.Default()).Resolve(context.Background(), conversation, operator, time.Minute); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if store.resolvedBy[conversation] != operator {
+		t.Fatalf("the close did not reach the store with who closed: %v", store.resolvedBy)
+	}
+}
+
 // TestTurningOffAnAIAgentReachesTheStore is the passthrough a pause needs: agents/ never writes the mode column itself (regla 1),
 // and the ids come back because the audit of the pause is the only record of them (ADR-0038).
 func TestTurningOffAnAIAgentReachesTheStore(t *testing.T) {
@@ -497,5 +541,32 @@ func TestWithExecutorLeavesADoubledStoreAlone(t *testing.T) {
 	service := NewService(&fakeStore{}, slog.Default())
 	if service.WithExecutor(nil) != service {
 		t.Fatal("binding a doubled store built a new service")
+	}
+}
+
+// TestScoreReachesTheStore is the passthrough F13 needs: the score is this aggregate's column (regla 1, ADR-0055).
+func TestScoreReachesTheStore(t *testing.T) {
+	store := &fakeStore{}
+	conversation := uuid.New()
+
+	if err := NewService(store, slog.Default()).Score(context.Background(), conversation, uuid.New(), 4); err != nil {
+		t.Fatalf("Score: %v", err)
+	}
+	if store.scores[conversation] != 4 {
+		t.Fatalf("the score did not reach the store: %v", store.scores)
+	}
+}
+
+// TestReassignAndHandOverReachTheStore are the passthroughs F26 needs: operator_id is this aggregate's column (regla 1, ADR-0056).
+func TestReassignAndHandOverReachTheStore(t *testing.T) {
+	store := &fakeStore{}
+	service := NewService(store, slog.Default())
+	conversation, to := uuid.New(), uuid.New()
+
+	if err := service.Reassign(context.Background(), conversation, nil, to); err != nil || store.reassigned[conversation] != to {
+		t.Fatalf("Reassign: %v, the store holds %v", err, store.reassigned)
+	}
+	if moved, err := service.HandOver(context.Background(), uuid.New(), to); err != nil || len(moved) != 1 {
+		t.Fatalf("HandOver: got %v and %v, want what the store moved", moved, err)
 	}
 }

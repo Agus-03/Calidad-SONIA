@@ -145,6 +145,13 @@ func (r *Repository) RecordInboxDefault(ctx context.Context, operatorID, inboxID
 	})
 }
 
+// RecordOperatorChange is how operators/ audits the people it manages, inside its own transaction, as whatsapp/ does (ADR-0062).
+func (r *Repository) RecordOperatorChange(ctx context.Context, actorID, operatorID uuid.UUID, action string, changes []byte) error {
+	return r.RecordAudit(ctx, AuditEntry{
+		ID: id.New(), OperatorID: actorID, Action: action, EntityType: entityOperator, EntityID: operatorID, Changes: changes,
+	})
+}
+
 // The version is read and not stored in the row: prompt_component_versions is the one place it lives, so the two cannot disagree. The
 // agent is joined for its account and its removal: a component of a removed agent is out of reach like the agent (C09).
 const componentSelect = `

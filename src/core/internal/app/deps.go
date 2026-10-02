@@ -14,12 +14,18 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
+	"github.com/mateo-velasquez/sonia/src/core/internal/notes"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	quickreplies "github.com/mateo-velasquez/sonia/src/core/internal/quick_replies"
+	"github.com/mateo-velasquez/sonia/src/core/internal/realtime"
+	"github.com/mateo-velasquez/sonia/src/core/internal/reasoning"
+	"github.com/mateo-velasquez/sonia/src/core/internal/reminders"
+	"github.com/mateo-velasquez/sonia/src/core/internal/sales"
 	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
@@ -38,7 +44,9 @@ type wiring struct {
 	// Held so the shutdown can stop it first: a poller still ticking would keep adding turns to what the deployment waits for.
 	poller *turn.Poller
 	// Held so the shutdown can close the sockets, which the server does not track once they are hijacked (ADR-0051).
-	hub *inbox.Hub
+	hub *realtime.Hub
+	// Held so the shutdown stops it with the turn's poller: an alert marked as the process dies would be told to nobody (ADR-0058).
+	alarms *reminders.Poller
 }
 
 // wire builds the object graph, repository then service then controller: it is the only part that grows with each context.
@@ -56,7 +64,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	channelRepo := whatsapp.NewRepository(pool, cipher)
 
 	// The fan-out of F21, told by every package that writes a conversation once its transaction committed (ADR-0051).
-	hub := inbox.NewHub(inbox.HubOptions{Rows: inbox.NewRepository(pool), Logger: log})
+	hub := realtime.NewHub(realtime.HubOptions{Rows: inbox.NewRepository(pool), Logger: log})
 
 	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
 	// the instance would tie two contexts together for a reason that is not a reason of the domain.
@@ -147,6 +155,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	desk := inbox.NewService(inbox.Options{
 		Repo:      deskRepo,
 		Aggregate: aggregate,
+		Catalogue: labels.NewRepository(pool),
 		// Binds the assignment and the aggregate to one transaction: taking the pool and writing the answer commit together (regla 5).
 		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate, inbox.Reviews) error) error {
 			return db.InTx(ctx, pool, func(exec db.Executor) error {
@@ -157,6 +166,8 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Sender:  send,
 		Events:  hub,
 		Logger:  log,
+
+		TurnBudget: cfg.TurnBudget,
 	})
 
 	// A second client of the brain and not the turn's: an administrator is waiting on this one, so it gets the short timeout of
@@ -196,6 +207,18 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	// The admin's client of the brain, with the short timeout: an administrator is typing and the next keystroke asks again.
 	previews := agents.NewPreviews(agents.PreviewOptions{Repo: agentRepo, Brain: adminBrain, Logger: log})
 
+	// F18: the person and the audit row that says who changed them commit together, through agents/ as whatsapp/ does (ADR-0062).
+	peopleRepo := operators.NewRepository(pool)
+	roster := operators.NewRoster(operators.RosterOptions{
+		Repo: peopleRepo,
+		Tx: func(ctx context.Context, fn func(operators.RosterStore, operators.Auditor) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(peopleRepo.WithExecutor(exec), agentRepo.WithExecutor(exec))
+			})
+		},
+		Logger: log,
+	})
+
 	numbers := whatsapp.NewSettings(whatsapp.SettingsOptions{
 		Repo: channelRepo,
 		// Binds the inbox and the audit to one transaction: the agent a number names and the row that says who named it commit together (regla 5).
@@ -207,21 +230,32 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger: log,
 	})
 
+	// F28: the reminders hang from contacts/, which decides the reach, and go off through the hub when due (ADR-0058).
+	reminderRepo := reminders.NewRepository(pool)
+	alarms := reminders.NewPoller(reminders.PollerOptions{Store: reminderRepo, Alerts: hub, Logger: log})
+
 	// The socket is public for the router because the browser cannot send the bearer on it; its ticket is the credential, and the
 	// operator is read again with the same lookup the bearer uses (ADR-0051).
-	gate := inbox.NewStreamGate(hub, resolveActor(people), log)
+	gate := realtime.NewStreamGate(hub, resolveActor(people), log)
 
 	return wiring{
 		controllers: []soniahttp.Controller{
 			operators.NewController(people, log),
+			operators.NewRosterController(roster, log),
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
-			inbox.NewStreamController(hub, log),
+			// The notes and F05 hang from a conversation, so the inbox's service is their reach (ADR-0063).
+			notes.NewController(notes.NewService(notes.NewRepository(pool), desk), log),
+			reasoning.NewController(reasoning.NewService(reasoning.NewRepository(pool), desk), log),
+			realtime.NewStreamController(hub, log),
 			agents.NewController(identity, log),
 			agents.NewComponentsController(blocks, log),
 			agents.NewPreviewController(previews, log),
 			whatsapp.NewSettingsController(numbers, log),
+			reminders.NewController(reminders.NewService(reminderRepo, book, log), log),
+			sales.NewController(sales.NewService(sales.NewRepository(pool), desk, log), log),
+			quickreplies.NewController(quickreplies.NewService(quickreplies.NewRepository(pool), log), log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),
@@ -229,6 +263,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		turns:             turns,
 		poller:            poller,
 		hub:               hub,
+		alarms:            alarms,
 	}, nil
 }
 

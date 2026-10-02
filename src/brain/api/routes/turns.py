@@ -45,8 +45,8 @@ from pipeline.repository import (
 )
 from pipeline.step import Step
 from prompts import rewriter
-from prompts.assembler import assemble
-from prompts.repository import read_components
+from prompts.assembler import assemble, rules
+from prompts.repository import read_components, read_quick_replies
 
 router = APIRouter(tags=["turns"])
 logger = logging.getLogger("sonia.api.turns")
@@ -72,6 +72,8 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
             ) from err
 
         read = await read_components(conn, body.ai_agent_id)
+        # Read with the components, on every turn and not cached: a reply the admin paused leaves the next prompt (F07, ADR-0061).
+        replies = await read_quick_replies(conn, body.ai_agent_id, rules().quick_replies_limit)
 
     client = resolve(turn.agent.llm_provider, request.app.state.settings)
     message = _incoming(turn)
@@ -152,6 +154,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         components=read.components,
         message=message,
         context=rewriter.render(dynamic) if dynamic is not None else None,
+        quick_replies=replies,
         intents=[i.label for i in intents],
     )
     if prompt.components < len(PromptComponentType):
@@ -175,6 +178,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "prompt_components": prompt.components,
         "prompt_rules_version": prompt.rules_version,
         "detected_intents": len(intents),
+        "quick_replies": len(replies),
         "context_rewritten": version is not None,
         # How many and never which: the values are data of the contact, and a log line is not where they get copied to (ADR-0006).
         "extracted": len(extracted),

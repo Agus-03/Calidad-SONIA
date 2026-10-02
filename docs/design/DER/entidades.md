@@ -103,7 +103,7 @@ Resumen de [00-convenciones.md](../00-convenciones.md), que es la fuente de verd
 | `status` | `ConversationStatus` | |
 | `mode` | `AgentMode` | Modo efectivo de esta conversación (F27) |
 | `starred` | boolean | F25 |
-| `quality_score` | smallint | Nullable. F13 — el operador califica la conversación cerrada. **Renombrado de `score`**: colisionaba con `tone_evaluations.tone_score`, que mide algo distinto (juicio de tono del LLM, no calificación humana) |
+| `quality_score` | smallint | Nullable. F13 — el operador califica la conversación cerrada. **De 1 a 5, con `CHECK`, y sólo el vendedor ([ADR-0055](../02-decisiones/0055-puntaje-de-la-conversacion.md))**. **Renombrado de `score`**: colisionaba con `tone_evaluations.tone_score`, que mide algo distinto (juicio de tono del LLM, no calificación humana) |
 | `scored_by_operator_id` | uuid | Nullable. F13 — falta de autor y fecha señalada en la matriz de trazabilidad |
 | `scored_at` | timestamptz | Nullable |
 | `first_response_at` | timestamptz | Nullable. H-12 — tiempo de respuesta (F34) |
@@ -574,7 +574,7 @@ Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con un
 | `id` | uuid | PK |
 | `contact_id` | uuid | **Obligatorio** (ADR-0002) — F28 los vincula a contactos |
 | `conversation_id` | uuid | **Nullable** (ADR-0002) — sobrevive al cierre de la conversación |
-| `operator_id` | uuid | Operador notificado |
+| `operator_id` | uuid | ~~Operador notificado~~ *(enmendado por [ADR-0058](../02-decisiones/0058-recordatorios.md), regla 2)*: **el dueño**, quien lo creó. A quién se avisa se decide al vencer (regla 6) |
 | `description` | text | |
 | `due_at` | timestamptz | |
 | `notified` | boolean | Anexo C |
@@ -605,10 +605,10 @@ Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con un
 |---|---|---|
 | `id` | uuid | PK |
 | `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
-| `title` | varchar | |
+| `title` | varchar | Único parcial, sin distinguir mayúsculas ([ADR-0060](../02-decisiones/0060-respuestas-rapidas.md)) |
 | `content` | text | |
 | `created_by_operator_id` | uuid | Renombrado de `created_by_admin_id` (C01) |
-| `active` | boolean | |
+| `active` | boolean | `false` la pausa: sólo la ve el `admin` (ADR-0060) |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | |
 
 ---
@@ -783,7 +783,7 @@ Una fila **por cada señal evaluada en cada bloque procesado**, haya disparado l
 
 ### `audit_logs`
 
-> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**, que incluyen qué agente IA atiende cada número (ADR-0038, regla 13, `entity_type = inboxes`) y excluyen los componentes del prompt, auditados en `prompt_component_versions` (ADR-0039, regla 5)
+> **Origen:** ADR-0007 — alcance acotado a **cambios de configuración de agentes IA**, que incluyen qué agente IA atiende cada número (ADR-0038, regla 13, `entity_type = inboxes`) y excluyen los componentes del prompt, auditados en `prompt_component_versions` (ADR-0039, regla 5) · ampliado por ADR-0062, regla 11: los cambios de operadores (`entity_type = operators`)
 
 | Atributo | Tipo | Notas |
 |---|---|---|

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` · **§3, §4, §5 y §6 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md) (2026-09-20)**: el timer de F10 deja de ser *"estado en memoria del proceso"* y pasa a una columna con un poller, así que **deja de valer como argumento para elegir Go** —§3, y el descarte del monolito Python en §5—, deja de ser el motivo por el que el núcleo no escala horizontalmente —§4, donde el techo real pasa a ser el fan-out de WebSockets de F21—, y `turn/` ya no es *"time.Timer + canales"* —§6—. **La decisión no se revierte**: Go sigue por el gateway, F21 y el interés declarado del equipo |
+| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` · **§3, §4, §5 y §6 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md) (2026-09-20)**: el timer de F10 deja de ser *"estado en memoria del proceso"* y pasa a una columna con un poller, así que **deja de valer como argumento para elegir Go** —§3, y el descarte del monolito Python en §5—, deja de ser el motivo por el que el núcleo no escala horizontalmente —§4, donde el techo real pasa a ser el fan-out de WebSockets de F21—, y `turn/` ya no es *"time.Timer + canales"* —§6—. **La decisión no se revierte**: Go sigue por el gateway, F21 y el interés declarado del equipo · **la fila F07 de §6 enmendada por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md) (2026-10-02)**: el catálogo lo lee `prompts/repository.py` y lo ensambla `prompts/assembler.py`, no `pipeline/generation.py` · **las filas F05, F21 y F26 de §6 enmendadas por [ADR-0063](0063-paquetes-por-razon-de-cambio.md) (2026-10-02)**: F05 vive en `reasoning/`, el fan-out de F21 en `realtime/` y las notas de F26 en `notes/` · **el árbol de §6.1 enmendado por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md) y [ADR-0063](0063-paquetes-por-razon-de-cambio.md) (2026-10-02)**: F07 vive en `prompts/`, y `inbox/` deja F05 a `reasoning/` y el fan-out de F21 a `realtime/` |
 | **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) · **firmada 2026-09-05** |
 | **Etapa** | Diseño — antes del Paso 7 (nivel físico) |
 | **Resuelve** | La sección 8.4 deja el lenguaje sin decidir (*"Python o GO"*, *"Go o Python"*) y 8.5 no dice si los módulos son procesos separados |
@@ -280,9 +280,9 @@ Derivado del Anexo A del anteproyecto, requisito por requisito. **Éste es el ma
 | F02 | Tres modos de operación | ABM + estado | Go | `agents/` (defecto) · `inbox/` (por conversación) |
 | F03 | Previsualización del prompt | Render | **Python** | `prompts/` — invocado por el núcleo, ver (h) |
 | F04 | Reescritura adaptativa | Inferencia | **Python** | `prompts/` — rewriter.py |
-| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `pipeline/runner.py` → `inbox/` |
+| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `pipeline/runner.py` → ~~`inbox/`~~ `reasoning/` *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F06 | Pipeline RAG | Inferencia + **lote** | **Python** | `documents/` (ABM, Go) · `knowledge/` + `worker/` (Python) |
-| F07 | Acceso a respuestas rápidas por la IA | Inferencia | **Python** | `pipeline/generation.py` — lee tabla del núcleo |
+| F07 | Acceso a respuestas rápidas por la IA | Inferencia | **Python** | ~~`pipeline/generation.py`~~ `prompts/repository.py` + `prompts/assembler.py` *(enmendado por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md))* — lee tabla del núcleo |
 | F08 | Visualización de plantillas Meta | **Partido** | Go sincroniza · Python sugiere | `meta_templates/` + `pipeline/` |
 | F09 | Respuestas rápidas configurables | ABM | Go | `quick_replies/` |
 | F10 | Timer adaptativo | **Concurrencia con estado** | Go | `turn/` |
@@ -296,12 +296,12 @@ Derivado del Anexo A del anteproyecto, requisito por requisito. **Éste es el ma
 | F18 | Gestión de usuarios y roles | ABM | Go | `operators/` |
 | F19 | Gestión de etiquetas | ABM | Go | `labels/` |
 | F20 | Gestión de webhooks | IO externo | Go | `whatsapp/` |
-| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `whatsapp/` (recepción) · `inbox/` (fan-out) |
+| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `whatsapp/` (recepción) · ~~`inbox/`~~ `realtime/` (fan-out) *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F22 | Vista centralizada de chats | Consulta caliente | Go | `inbox/` |
 | F23 | Filtros de bandeja | Consulta caliente | Go | `inbox/` |
 | F24 | Etiquetas por conversación | ABM | Go | `inbox/` |
 | F25 | Destacar con estrella | ABM | Go | `inbox/` |
-| F26 | Transferencia entre operadores | ABM | Go | `inbox/` |
+| F26 | Transferencia entre operadores | ABM | Go | `inbox/` · `notes/` (las notas internas) *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F27 | Control de modo por conversación | ABM | Go | `inbox/` |
 | F28 | Recordatorios | ABM + disparo | Go | `reminders/` |
 | F29 | Restricción: sin borrado de mensajes | **Documental** | — | — |
@@ -348,7 +348,7 @@ sonia/                              ← un solo repositorio
     │   │   ├── conversations/      DUEÑO de conversations y messages · el agregado de §1.1
     │   │   ├── agents/             F01, F02, F17 · ABM de la identidad del agente
     │   │   ├── documents/          F06 (ABM y carga) · knowledge_bases + documents
-    │   │   ├── inbox/              F21(fan-out), F05(vista), F13, F22–F27
+    │   │   ├── inbox/              F21(fan-out), F05(vista), F13, F22–F27   ← enmendado por ADR-0063, ver nota
     │   │   ├── contacts/           F15, F30, F31(persistencia), F33
     │   │   ├── labels/             F19        ├── sales/     F14
     │   │   ├── reminders/          F28        ├── operators/ F18
@@ -362,7 +362,7 @@ sonia/                              ← un solo repositorio
     │   ├── main.py                 un entrypoint, flag api|worker
     │   ├── pyproject.toml          Poetry · absorbe la config de pytest · poetry.lock se commitea
     │   ├── api/                    FastAPI · contrato interno (OpenAPI)
-    │   ├── pipeline/               un módulo por valor de PipelineStep (ADR-0016) · F05, F07
+    │   ├── pipeline/               un módulo por valor de PipelineStep (ADR-0016) · F05, F07   ← F07 enmendado por ADR-0061, ver nota
     │   ├── prompts/                F03, F04 · EL ENSAMBLADOR, única implementación
     │   ├── classifiers/            F11, F12, F31 — F31 **devuelve**, no escribe
     │   ├── knowledge/              F06 · búsqueda semántica
@@ -378,6 +378,8 @@ sonia/                              ← un solo repositorio
 > **Nota (2026-09-03).** Este árbol reemplaza al de la versión del 22/08, que usaba `channel/`, `operation/`, `cognition/` y `eval/`. El renombre no fue cosmético: al chequearlo contra la tabla del §6 aparecieron **cinco requisitos sin paquete** —F05 (lado Python), F06 (el ABM), F07, F08/F37 y F31—, todos resueltos arriba. Es el mismo patrón del §0: *recorrer requisitos y dibujar árboles contestan preguntas distintas.*
 
 > **Nota (2026-09-05, al firmar).** Se incorporaron al árbol `core/internal/app/` —el arranque, segunda excepción declarada junto a `platform/`: está fuera de `package main` porque `package main` no se puede importar y un test que levante el proceso entero necesita importarlo—, `brain/tests/` y los archivos de raíz que la Fase 0 construye. **El árbol completo, archivo por archivo, y el dueño de cada una de las 37 tablas viven en [`docs/struct.md`](../../struct.md)**, que detalla a éste; ante conflicto entre los dos gana `CLAUDE.md`.
+
+> **Enmienda (2026-10-02).** El árbol de arriba queda como se firmó, y dos de sus líneas dejaron de valer. **`inbox/`** ya no sirve F05 ni hace el fan-out de F21: F05 vive en `reasoning/`, el fan-out en `realtime/` y las notas internas de F26 en `notes/` ([ADR-0063](0063-paquetes-por-razon-de-cambio.md)). **F07** no vive en `pipeline/` sino en `prompts/`, que lee el catálogo y lo ensambla ([ADR-0061](0061-respuestas-rapidas-en-el-prompt.md)). El árbol vigente es el de [`08-structure-rules.md`](../08-structure-rules.md).
 
 **Puertos y adaptadores sólo en cuatro fronteras**, porque son las cuatro donde el reemplazo está a la vista — no es abstracción especulativa:
 

@@ -8,7 +8,7 @@ import pytest
 
 from infra.enums import PromptComponentType
 from prompts.assembler import RulesError, _load, assemble, rules
-from prompts.repository import Component, read_components
+from prompts.repository import Component, QuickReply, read_components, read_quick_replies
 
 AGENT_ID = uuid4()
 
@@ -126,9 +126,11 @@ def test_the_shipped_rules_declare_a_version_and_cover_the_six() -> None:
     assert set(spec.headings) == set(PromptComponentType)
 
 
-# The six headings and the three of the envelope, so each case below breaks exactly one thing and never two.
+# The six headings and the five of the envelope, so each case below breaks exactly one thing and never two.
 _HEADINGS = "".join(f"    {t.value}: '#'\n" for t in PromptComponentType)
-_USER = "user:\n  headings:\n    context: c\n    knowledge: k\n    message: m\n"
+_ENVELOPE = "  headings:\n    context: c\n    knowledge: k\n    quick_replies: q\n    intents: i\n    message: m\n"
+_USER = f"user:\n{_ENVELOPE}  quick_replies_limit: 30\n"
+_SYSTEM = f"version: 1\nsystem:\n  preamble: hola\n  closing: chau\n  headings:\n{_HEADINGS}"
 
 
 # A heading that is missing would drop a component out of the prompt in silence, which is what OE1 measures.
@@ -151,6 +153,9 @@ _USER = "user:\n  headings:\n    context: c\n    knowledge: k\n    message: m\n"
             f"version: 1\nsystem:\n  preamble: ''\n  closing: chau\n  headings:\n{_HEADINGS}{_USER}",
             "an empty preamble",
         ),
+        (f"{_SYSTEM}user:\n{_ENVELOPE}", "no ceiling for the quick replies"),
+        (f"{_SYSTEM}user:\n{_ENVELOPE}  quick_replies_limit: 0\n", "a ceiling of zero"),
+        (f"{_SYSTEM}user:\n{_ENVELOPE}  quick_replies_limit: true\n", "a ceiling that is a boolean"),
     ],
 )
 def test_a_scaffolding_that_cannot_serve_fails_on_load(tmp_path: Path, body: str, reason: str) -> None:
@@ -256,5 +261,101 @@ def test_a_batch_with_no_intents_prints_no_heading() -> None:
 
 
 # regla 9 exists so a measurement can name the version that produced it, and adding a section changed what gets produced.
-def test_the_scaffolding_declares_the_version_that_carries_the_requests() -> None:
-    assert rules().version == 2
+def test_the_scaffolding_declares_the_version_that_carries_the_quick_replies() -> None:
+    assert rules().version == 3
+
+
+# A well-formed file loads, which is what keeps the cases above honest: each of them breaks one thing of this one.
+def test_the_fixture_of_the_cases_above_loads(tmp_path: Path) -> None:
+    good = tmp_path / "generation.yaml"
+    good.write_text(f"{_SYSTEM}{_USER}", encoding="utf-8")
+
+    assert _load(good).quick_replies_limit == 30
+
+
+HOURS = QuickReply("Horarios", "Atendemos de 9 a 18.\nSábados de 9 a 13.")
+PRICES = QuickReply("Precios", "La lista de precios va adjunta.")
+
+
+# F07: the replies the admin loaded reach the model, each under its title and with the line breaks the admin wrote.
+def test_the_quick_replies_reach_the_prompt_under_their_titles() -> None:
+    prompt = build(quick_replies=(HOURS, PRICES))
+    heading = rules().user_headings["quick_replies"]
+
+    assert heading in prompt.user
+    assert "1. Horarios\nAtendemos de 9 a 18.\nSábados de 9 a 13." in prompt.user
+    assert prompt.user.index("1. Horarios") < prompt.user.index("2. Precios")
+
+
+# The order of Regla 1 as ADR-0061 amends it: after the knowledge base and before what this batch asks.
+def test_the_quick_replies_sit_between_the_knowledge_and_the_requests() -> None:
+    prompt = build(knowledge=("Depto 2 ambientes.",), quick_replies=(HOURS,), intents=["consulta_precio"])
+    spec = rules()
+
+    positions = [prompt.user.index(spec.user_headings[name]) for name in ("knowledge", "quick_replies", "intents", "message")]
+    assert positions == sorted(positions), "the quick replies left the place ADR-0061 gives them"
+
+
+# An account with no catalogue prints no heading: an empty one would read as "the company has nothing for this".
+def test_an_empty_catalogue_prints_no_heading() -> None:
+    assert rules().user_headings["quick_replies"] not in build().user
+
+
+# The list alone does not say what to do with it, so the fixed closing tells the model to adapt one and to skip the rest.
+def test_the_closing_tells_the_model_how_to_use_the_quick_replies() -> None:
+    system = build().system
+
+    assert "respuestas rápidas" in system
+    assert "no la nombrás" in system
+
+
+# The system does not change: the replies are in the envelope, and the preview of ADR-0040 shows the system only.
+def test_the_quick_replies_leave_the_system_untouched() -> None:
+    assert build(quick_replies=(HOURS,)).system == build().system
+
+
+# Answers the catalogue query with its rows and keeps what it was asked, so the filters and the ceiling can be asserted.
+class CatalogueConnection:
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self.sql = ""
+        self.params: dict = {}
+
+    async def execute(self, sql: str, params: dict | None = None) -> FakeCursor:
+        self.sql, self.params = sql, params or {}
+        return FakeCursor(self.rows)
+
+
+# The operators' view of the catalogue (ADR-0060, regla 3): the agent's account, active and not deleted, by title.
+async def test_read_quick_replies_asks_for_the_active_ones_of_the_account() -> None:
+    connection = CatalogueConnection([{"title": "Horarios", "content": "De 9 a 18."}])
+
+    replies = await read_quick_replies(connection, AGENT_ID, 30)
+
+    assert replies == (QuickReply("Horarios", "De 9 a 18."),)
+    assert "a.account_id = q.account_id" in connection.sql
+    assert "q.active" in connection.sql
+    assert "q.deleted_at IS NULL" in connection.sql
+    assert "ORDER  BY lower(q.title)" in connection.sql
+    # One more than the ceiling, which is how the read tells a catalogue that fits from one that was cut.
+    assert connection.params == {"agent": AGENT_ID, "limit": 31}
+
+
+# Over the ceiling, the first ones by title enter and the cut is logged, because the admin sees the whole catalogue.
+async def test_read_quick_replies_keeps_the_ceiling_and_says_so(caplog: pytest.LogCaptureFixture) -> None:
+    rows = [{"title": f"R{n}", "content": "texto"} for n in range(3)]
+
+    with caplog.at_level("WARNING", logger="sonia.prompts.repository"):
+        replies = await read_quick_replies(CatalogueConnection(rows), AGENT_ID, 2)
+
+    assert [r.title for r in replies] == ["R0", "R1"]
+    assert "over the ceiling" in caplog.text
+
+
+# A catalogue that fits says nothing: a warning on every turn would bury the one that matters.
+async def test_read_quick_replies_is_quiet_when_the_catalogue_fits(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING", logger="sonia.prompts.repository"):
+        replies = await read_quick_replies(CatalogueConnection([{"title": "R0", "content": "texto"}]), AGENT_ID, 2)
+
+    assert len(replies) == 1
+    assert not caplog.records

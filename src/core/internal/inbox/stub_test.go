@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
@@ -37,12 +38,73 @@ type stubStore struct {
 	threadErr error
 
 	suggestions map[uuid.UUID]Suggestion
-	reasonings  map[uuid.UUID]stubReasoning
 
 	// The two answers of the dispatcher's reads (ADR-0037): nil is "nobody", which is a real answer and not a failure.
 	previous, next           *uuid.UUID
 	previousErr, nextErr     error
 	previousAsked, nextAsked int
+
+	// The people of the account by whether they can take conversations; one missing is of another account (ADR-0056).
+	people  map[uuid.UUID]bool
+	history map[uuid.UUID][]AssignmentEntry
+}
+
+// The links are kept in labels, the same map the filter by label reads, so a tag shows up in the filter as it does in the query.
+func (s *stubStore) AssignLabel(_ context.Context, _, conversationID, labelID, _ uuid.UUID) (bool, error) {
+	for _, l := range s.labels[conversationID] {
+		if l == labelID {
+			return false, nil
+		}
+	}
+	if s.labels == nil {
+		s.labels = map[uuid.UUID][]uuid.UUID{}
+	}
+	s.labels[conversationID] = append(s.labels[conversationID], labelID)
+	return true, nil
+}
+
+func (s *stubStore) UnassignLabel(_ context.Context, conversationID, labelID uuid.UUID) (bool, error) {
+	kept := []uuid.UUID{}
+	for _, l := range s.labels[conversationID] {
+		if l != labelID {
+			kept = append(kept, l)
+		}
+	}
+	removed := len(kept) != len(s.labels[conversationID])
+	if removed {
+		s.labels[conversationID] = kept
+	}
+	return removed, nil
+}
+
+func (s *stubStore) LabelsOf(_ context.Context, conversationID uuid.UUID) ([]Label, error) {
+	out := []Label{}
+	for _, l := range s.labels[conversationID] {
+		out = append(out, Label{ID: l, Name: "etiqueta", Color: "#000000"})
+	}
+	return out, nil
+}
+
+// stubCatalogue is labels/ as the inbox asks it: a label is in the catalogue of the account or it is not.
+type stubCatalogue struct{ known map[uuid.UUID]bool }
+
+func (c *stubCatalogue) ByID(_ context.Context, accountID, labelID uuid.UUID) (labels.Label, error) {
+	if !c.known[labelID] {
+		return labels.Label{}, labels.ErrNotFound
+	}
+	return labels.Label{ID: labelID, AccountID: accountID, Name: "etiqueta", Color: "#000000"}, nil
+}
+
+func (s *stubStore) OperatorState(_ context.Context, _, operatorID uuid.UUID) (bool, error) {
+	available, ok := s.people[operatorID]
+	if !ok {
+		return false, ErrOperatorNotFound
+	}
+	return available, nil
+}
+
+func (s *stubStore) Assignments(_ context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error) {
+	return s.history[conversationID], nil
 }
 
 func (s *stubStore) PreviousOperator(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
@@ -166,21 +228,6 @@ func (s *stubStore) Target(_ context.Context, _, conversationID uuid.UUID) (Targ
 	return t, nil
 }
 
-// stubReasoning is a generation and the conversation it belongs to, which the real read checks in its WHERE.
-type stubReasoning struct {
-	Reasoning
-	conversationID uuid.UUID
-}
-
-// Keyed by generation, and refused when it is of another conversation, which is what the WHERE of the real read does.
-func (s *stubStore) Reasoning(_ context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
-	r, ok := s.reasonings[generationID]
-	if !ok || r.conversationID != conversationID {
-		return Reasoning{}, ErrGenerationNotFound
-	}
-	return r.Reasoning, nil
-}
-
 func (s *stubStore) PendingSuggestion(_ context.Context, conversationID uuid.UUID) (Suggestion, error) {
 	sg, ok := s.suggestions[conversationID]
 	if !ok {
@@ -236,6 +283,64 @@ type stubAggregate struct {
 	starred  map[uuid.UUID]bool
 	read     []uuid.UUID
 	readErr  error
+
+	resolvedBy    map[uuid.UUID]uuid.UUID
+	resolveErr    error
+	resolveBudget time.Duration
+
+	scores   map[uuid.UUID]int
+	scoredBy map[uuid.UUID]uuid.UUID
+	scoreErr error
+
+	reassigned  map[uuid.UUID]uuid.UUID
+	reassignErr error
+	// The store whose targets a handover moves, the way the real UPDATE reads the rows it changes.
+	store *stubStore
+}
+
+func (a *stubAggregate) Reassign(_ context.Context, conversationID uuid.UUID, _ *uuid.UUID, to uuid.UUID) error {
+	if a.reassignErr != nil {
+		return a.reassignErr
+	}
+	if a.reassigned == nil {
+		a.reassigned = map[uuid.UUID]uuid.UUID{}
+	}
+	a.reassigned[conversationID] = to
+	return nil
+}
+
+// HandOver moves what the store holds for from and is still open, the predicate of the real UPDATE.
+func (a *stubAggregate) HandOver(_ context.Context, from, _ uuid.UUID) ([]uuid.UUID, error) {
+	moved := []uuid.UUID{}
+	for conversationID, t := range a.store.targets {
+		if t.OperatorID != nil && *t.OperatorID == from && t.Status != enums.ConversationStatusResolved {
+			moved = append(moved, conversationID)
+		}
+	}
+	return moved, nil
+}
+
+func (a *stubAggregate) Score(_ context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	if a.scoreErr != nil {
+		return a.scoreErr
+	}
+	if a.scores == nil {
+		a.scores, a.scoredBy = map[uuid.UUID]int{}, map[uuid.UUID]uuid.UUID{}
+	}
+	a.scores[conversationID], a.scoredBy[conversationID] = score, operatorID
+	return nil
+}
+
+func (a *stubAggregate) Resolve(_ context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
+	a.resolveBudget = turnBudget
+	if a.resolveErr != nil {
+		return a.resolveErr
+	}
+	if a.resolvedBy == nil {
+		a.resolvedBy = map[uuid.UUID]uuid.UUID{}
+	}
+	a.resolvedBy[conversationID] = operatorID
+	return nil
 }
 
 func (a *stubAggregate) MarkRead(_ context.Context, conversationID uuid.UUID) error {
@@ -349,7 +454,10 @@ type stubEvents struct{ told []string }
 func (e *stubEvents) Changed(uuid.UUID)  { e.told = append(e.told, "changed") }
 func (e *stubEvents) LeftPool(uuid.UUID) { e.told = append(e.told, "left pool") }
 
+func (e *stubEvents) Reassigned(uuid.UUID, uuid.UUID) { e.told = append(e.told, "reassigned") }
+
 type desk struct {
+	catalogue *stubCatalogue
 	events    *stubEvents
 	store     *stubStore
 	aggregate *stubAggregate
@@ -359,14 +467,18 @@ type desk struct {
 	service   *Service
 }
 
+// testTurnBudget is any budget that is not zero, so a close that forgot to pass the configured one shows.
+const testTurnBudget = 30 * time.Second
+
 func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{catalogue: &stubCatalogue{known: map[uuid.UUID]bool{}}, events: &stubEvents{}, store: store, aggregate: &stubAggregate{store: store}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
+		Catalogue: d.catalogue,
 		Tx: func(_ context.Context, fn func(Store, Aggregate, Reviews) error) error {
 			return fn(d.store, d.aggregate, d.reviews)
 		},
@@ -374,6 +486,8 @@ func newDesk(store *stubStore) *desk {
 		Sender:  d.sender,
 		Events:  d.events,
 		Logger:  slog.New(slog.DiscardHandler),
+
+		TurnBudget: testTurnBudget,
 	})
 	return d
 }

@@ -1,17 +1,13 @@
 package inbox
 
 import (
-	"encoding/base64"
 	"errors"
 	"log/slog"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -48,6 +44,8 @@ type summaryResponse struct {
 	AIAgentAvailable bool              `json:"ai_agent_available"`
 	Starred          bool              `json:"starred"`
 	UnreadCount      int               `json:"unread_count"`
+	QualityScore     *int              `json:"quality_score"`
+	Labels           []labelResponse   `json:"labels"`
 	Contact          contactResponse   `json:"contact"`
 	Operator         *operatorResponse `json:"operator"`
 	LastMessage      *messageResponse  `json:"last_message"`
@@ -82,6 +80,9 @@ type messageResponse struct {
 	SentAt      string  `json:"sent_at"`
 }
 
+// EventRow is the row of the listing as realtime/ sends it, so an event and a page never disagree on its shape (ADR-0051, ADR-0063).
+func EventRow(s Summary) any { return present(s) }
+
 func present(s Summary) summaryResponse {
 	out := summaryResponse{
 		ID:     s.ID.String(),
@@ -93,6 +94,8 @@ func present(s Summary) summaryResponse {
 		AIAgentAvailable: s.AIAgentAvailable,
 		Starred:          s.Starred,
 		UnreadCount:      s.UnreadCount,
+		QualityScore:     s.QualityScore,
+		Labels:           presentLabels(s.Labels),
 		FailedCount:      s.FailedCount,
 		LastFailedAt:     rfc3339(s.LastFailedAt),
 		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
@@ -316,102 +319,11 @@ func (c *Controller) suggestion(gc *gin.Context) {
 	})
 }
 
-type modeRequest struct {
-	Mode string `json:"mode" binding:"required"`
-}
-
-type modeResponse struct {
-	ID   string `json:"id"`
-	Mode string `json:"mode"`
-}
-
-// setMode answers the mode the conversation ends with, which is also what a request for the mode it already had gets back.
-func (c *Controller) setMode(gc *gin.Context) {
-	scope, ok := c.scopeFrom(gc)
-	if !ok {
-		return
-	}
-	conversationID, err := uuid.Parse(gc.Param("id"))
-	if err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
-		return
-	}
-
-	var req modeRequest
-	if err := gc.ShouldBindJSON(&req); err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "a mode is required").WithCause(err))
-		return
-	}
-
-	mode, err := c.service.SetMode(gc.Request.Context(), scope, conversationID, enums.AgentMode(req.Mode))
-	if err != nil {
-		soniahttp.Fail(gc, c.log, translate(err))
-		return
-	}
-	soniahttp.OK(gc, modeResponse{ID: conversationID.String(), Mode: string(mode)})
-}
-
-// markRead answers 204: there is nothing to draw back, and the row reaches every inbox by the stream (ADR-0051, ADR-0052).
-func (c *Controller) markRead(gc *gin.Context) {
-	scope, ok := c.scopeFrom(gc)
-	if !ok {
-		return
-	}
-	conversationID, err := uuid.Parse(gc.Param("id"))
-	if err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
-		return
-	}
-	if err := c.service.MarkRead(gc.Request.Context(), scope, conversationID); err != nil {
-		soniahttp.Fail(gc, c.log, translate(err))
-		return
-	}
-	soniahttp.NoContent(gc)
-}
-
-// A pointer so false is a value and not an absence: the binding refuses a zero bool as missing (F25).
-type starredRequest struct {
-	Starred *bool `json:"starred" binding:"required"`
-}
-
-type starredResponse struct {
-	ID      string `json:"id"`
-	Starred bool   `json:"starred"`
-}
-
-// setStarred answers the state the conversation ends with, which is also what a request for the state it already had gets back.
-func (c *Controller) setStarred(gc *gin.Context) {
-	scope, ok := c.scopeFrom(gc)
-	if !ok {
-		return
-	}
-	conversationID, err := uuid.Parse(gc.Param("id"))
-	if err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_conversation_id", "the conversation id is not a uuid").WithCause(err))
-		return
-	}
-
-	var req starredRequest
-	if err := gc.ShouldBindJSON(&req); err != nil {
-		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "starred is required, true or false").WithCause(err))
-		return
-	}
-
-	starred, err := c.service.SetStarred(gc.Request.Context(), scope, conversationID, *req.Starred)
-	if err != nil {
-		soniahttp.Fail(gc, c.log, translate(err))
-		return
-	}
-	soniahttp.OK(gc, starredResponse{ID: conversationID.String(), Starred: starred})
-}
-
 // translate turns what the package knows into what the frontend switches on, and lets anything else fall through as a 500.
 func translate(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
-	case errors.Is(err, ErrGenerationNotFound):
-		return soniahttp.NotFound("generation_not_found", "no such generation in this conversation").WithCause(err)
 	case errors.Is(err, ErrTaken):
 		return soniahttp.Conflict("conversation_taken", "another operator is attending this conversation").WithCause(err)
 	case errors.Is(err, ErrResolved):
@@ -429,7 +341,29 @@ func translate(err error) error {
 	case errors.Is(err, ErrAIAgentUnavailable):
 		return soniahttp.Conflict("ai_agent_unavailable", "the agent of the conversation is paused or removed").WithCause(err)
 	case errors.Is(err, ErrNotHeld):
-		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot: answer it first").WithCause(err)
+		return soniahttp.Conflict("conversation_not_assigned", "only who holds the conversation switches its bot or closes it: answer it first").WithCause(err)
+	case errors.Is(err, ErrTurnInProgress):
+		return soniahttp.Conflict("turn_in_progress", "the bot is still answering this conversation: close it once the answer arrives").WithCause(err)
+	case errors.Is(err, ErrInvalidScore):
+		return soniahttp.BadRequest("invalid_score", "the score is a whole number from 1 to 5").WithCause(err)
+	case errors.Is(err, ErrNotResolved):
+		return soniahttp.Conflict("conversation_not_resolved", "only a resolved conversation is scored").WithCause(err)
+	case errors.Is(err, ErrNotTheVendor):
+		return soniahttp.Conflict("not_the_vendor", "only the vendor of the conversation scores it").WithCause(err)
+	case errors.Is(err, ErrCannotReassign):
+		return soniahttp.Forbidden("cannot_reassign", "only a supervisor or an admin reassigns conversations").WithCause(err)
+	case errors.Is(err, ErrNoReason):
+		return soniahttp.BadRequest("invalid_reason", "a reassignment needs a reason").WithCause(err)
+	case errors.Is(err, ErrAlreadyAssigned):
+		return soniahttp.Conflict("already_assigned", "the conversation is already assigned to that operator").WithCause(err)
+	case errors.Is(err, ErrSameOperator):
+		return soniahttp.BadRequest("same_operator", "the handover names the same operator twice").WithCause(err)
+	case errors.Is(err, ErrOperatorNotFound):
+		return soniahttp.NotFound("operator_not_found", "no such operator in the account").WithCause(err)
+	case errors.Is(err, ErrOperatorUnavailable):
+		return soniahttp.Conflict("operator_unavailable", "the operator is disabled or removed").WithCause(err)
+	case errors.Is(err, ErrLabelNotFound):
+		return soniahttp.NotFound("label_not_found", "no such label in the catalogue").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:
@@ -445,99 +379,4 @@ func (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {
 		return Scope{}, false
 	}
 	return Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true
-}
-
-func limitFrom(gc *gin.Context) (int, error) {
-	raw := gc.Query("limit")
-	if raw == "" {
-		return defaultLimit, nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 1 {
-		return 0, soniahttp.BadRequest("invalid_limit", "limit must be a positive whole number").WithCause(err)
-	}
-	// Clamped and not refused, the same as per_page in contacts/: asking for too many is not a mistake worth failing the page over
-	// (ADR-0036, regla 8).
-	if n > maxLimit {
-		n = maxLimit
-	}
-	return n, nil
-}
-
-// filterFrom reads the filters of F23 from the query. A flag is on only with "true", and any other value is refused and not read as
-// off: a frontend that sent "1" would draw the whole inbox as the filtered one (ADR-0050).
-func filterFrom(gc *gin.Context) (Filter, error) {
-	var f Filter
-	for _, flag := range []struct {
-		name string
-		into *bool
-	}{{"unread", &f.Unread}, {"assigned", &f.Assigned}, {"starred", &f.Starred}, {"reminder", &f.WithReminder}} {
-		switch raw, present := gc.GetQuery(flag.name); {
-		case !present:
-		case raw == "true":
-			*flag.into = true
-		default:
-			return Filter{}, soniahttp.BadRequest("invalid_filter", flag.name+" only takes true: leave it out to not filter by it")
-		}
-	}
-
-	if raw, present := gc.GetQuery("status"); present {
-		status := enums.ConversationStatus(raw)
-		if !status.IsValid() {
-			return Filter{}, soniahttp.BadRequest("invalid_status", "status is not one of active, waiting, resolved")
-		}
-		f.Status = &status
-	}
-	if raw, present := gc.GetQuery("label_id"); present {
-		labelID, err := uuid.Parse(raw)
-		if err != nil {
-			return Filter{}, soniahttp.BadRequest("invalid_label_id", "the label id is not a uuid").WithCause(err)
-		}
-		f.LabelID = &labelID
-	}
-	return f, nil
-}
-
-// cursorFrom reads the token the previous page handed out. An absent one is the first page; a malformed one is refused, because
-// guessing would answer the first page again and the frontend would draw it as the next (ADR-0036, regla 5).
-func cursorFrom(gc *gin.Context) (*Cursor, error) {
-	raw := gc.Query("cursor")
-	if raw == "" {
-		return nil, nil
-	}
-	cursor, err := decodeCursor(raw)
-	if err != nil {
-		return nil, soniahttp.BadRequest("invalid_cursor", "the cursor is not one this listing handed out").WithCause(err)
-	}
-	return &cursor, nil
-}
-
-var errMalformedCursor = errors.New("inbox: malformed cursor")
-
-// The cursor is opaque to the frontend on purpose: what it carries is how the query continues, and a client that learned to build one
-// would break the day the ordering changes (ADR-0036, regla 4). Nanoseconds so the instant survives the round trip exactly and the
-// comparison stays strict.
-func encodeCursor(c Cursor) string {
-	raw := c.At.UTC().Format(time.RFC3339Nano) + "|" + c.ID.String()
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-func decodeCursor(token string) (Cursor, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return Cursor{}, err
-	}
-	rawAt, rawID, found := strings.Cut(string(raw), "|")
-	if !found {
-		return Cursor{}, errMalformedCursor
-	}
-	at, err := time.Parse(time.RFC3339Nano, rawAt)
-	if err != nil {
-		return Cursor{}, err
-	}
-	rowID, err := uuid.Parse(rawID)
-	if err != nil {
-		return Cursor{}, err
-	}
-	return Cursor{At: at, ID: rowID}, nil
 }

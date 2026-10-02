@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 13: las modificaciones de configuración de agentes IA incluyen qué agente IA atiende cada número · §2 acotado por [ADR-0039](0039-componentes-del-prompt-y-su-versionado.md), regla 5: los cambios de los componentes del prompt se auditan en `prompt_component_versions`, no en `audit_logs` |
+| **Estado** | Aceptada · §2 ampliado por [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md), regla 13: las modificaciones de configuración de agentes IA incluyen qué agente IA atiende cada número · §2 acotado por [ADR-0039](0039-componentes-del-prompt-y-su-versionado.md), regla 5: los cambios de los componentes del prompt se auditan en `prompt_component_versions`, no en `audit_logs` · **§2 ampliado por [ADR-0062](0062-gestion-de-operadores.md), regla 11 (2026-10-02)**: los cambios de operadores —alta, edición, rol, `active`, contraseña y baja— también se auditan |
 | **Fecha** | 2026-08-06 |
 | **Etapa** | Diseño — Paso 3 |
 | **Requisitos afectados** | F26, OE2 · secciones 7.3 y Anexo B |
@@ -20,12 +20,13 @@ Pero el extremo opuesto tampoco sirve: registrar todas las operaciones de escrit
 
 ## 2. Decisión
 
-Existe un registro de auditoría, **acotado a dos clases de evento**:
+Existe un registro de auditoría, **acotado a ~~dos~~ tres clases de evento** *(la tercera, agregada por [ADR-0062](0062-gestion-de-operadores.md))*:
 
 1. **Modificaciones de configuración de agentes IA** — quién, qué cambió y cuándo.
 2. **Asignaciones y reasignaciones de conversaciones.**
+3. *(agregada por [ADR-0062](0062-gestion-de-operadores.md))* **Cambios de operadores**: alta, edición, rol, `active`, contraseña y baja, sin el hash.
 
-La segunda ya queda cubierta por `conversation_assignments` ([ADR-0004](0004-asignacion-de-conversaciones.md)), que registra origen, destino, autor, motivo y fecha. **No se duplica** en la tabla de auditoría: el registro de auditoría propiamente dicho cubre la primera clase.
+La segunda ya queda cubierta por `conversation_assignments` ([ADR-0004](0004-asignacion-de-conversaciones.md)), que registra origen, destino, autor, motivo y fecha. **No se duplica** en la tabla de auditoría: el registro de auditoría propiamente dicho cubre ~~la primera clase~~ la primera y la tercera *(enmendado por [ADR-0062](0062-gestion-de-operadores.md))*.
 
 ## 3. Justificación
 

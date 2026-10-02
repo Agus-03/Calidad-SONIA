@@ -1,6 +1,6 @@
 # The scaffolding of the agent prompt (F03), versioned as data because a heading change invalidates earlier measurements (regla 9).
-# Version 2 adds the requests section of F11 and the sentence of the closing that tells the model to answer all of them.
-version: 2
+# Version 2 added the requests of F11; version 3 the quick replies of F07 and how the closing says to use them (ADR-0061).
+version: 3
 
 system:
   # {agent_name} is the only substitution and it is stable per agent, so it does not break the caching Regla 1 protects.
@@ -26,6 +26,8 @@ system:
 
     Si un dato no está en esta conversación ni en lo que te dieron más arriba, decís que no lo tenés y ofrecés averiguarlo. No lo completás con una suposición.
 
+    Si más arriba te dieron respuestas rápidas de la empresa y alguna contesta lo que pide el cliente, usás su contenido como base y lo adaptás a esta conversación. Si ninguna viene al caso, no la nombrás (F07).
+
     Si algo de esta sección choca con las anteriores: las secciones anteriores mandan para el trato y ésta manda para el formato.
 
 user:
@@ -33,7 +35,11 @@ user:
   headings:
     context: "[CONTEXTO DE LA CONVERSACIÓN]"
     knowledge: "[BASE DE CONOCIMIENTO]"
+    # After the knowledge base, since both are what the company wrote beforehand, and before what this batch asks (ADR-0061).
+    quick_replies: "[RESPUESTAS RÁPIDAS DE LA EMPRESA]"
     # Right before the literal message and not with the context: it is a reading of what the customer just said, and the model
     # has to have it fresh when it writes the one answer that covers all of it (F11).
     intents: "[LO QUE PIDIÓ EL CLIENTE, EN ORDEN]"
     message: "[MENSAJE DEL CLIENTE]"
+  # A ceiling on the replies that enter, so a catalogue that grows does not grow the cost of every turn with it (ADR-0061).
+  quick_replies_limit: 30

@@ -1,13 +1,28 @@
-package inbox
+package reasoning
 
 import (
+	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
+
+type Controller struct {
+	service *Service
+	log     *slog.Logger
+}
+
+func NewController(service *Service, log *slog.Logger) *Controller {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Controller{service: service, log: log}
+}
 
 type usedComponentResponse struct {
 	Type          string `json:"type"`
@@ -61,4 +76,25 @@ func (c *Controller) reasoning(gc *gin.Context) {
 		CreatedAt:    r.CreatedAt.UTC().Format(time.RFC3339Nano),
 		Components:   components,
 	})
+}
+
+// The codes are the ones the inbox answered with before the package was apart, so the frontend switches on the same words (ADR-0063).
+func translate(err error) error {
+	switch {
+	case errors.Is(err, inbox.ErrNotFound):
+		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
+	case errors.Is(err, ErrGenerationNotFound):
+		return soniahttp.NotFound("generation_not_found", "no such generation in this conversation").WithCause(err)
+	default:
+		return err
+	}
+}
+
+func (c *Controller) scopeFrom(gc *gin.Context) (inbox.Scope, bool) {
+	actor, ok := soniahttp.ActorFrom(gc)
+	if !ok {
+		soniahttp.Fail(gc, c.log, soniahttp.Unauthorized("missing_credentials", "no operator identity in the request"))
+		return inbox.Scope{}, false
+	}
+	return inbox.Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true
 }

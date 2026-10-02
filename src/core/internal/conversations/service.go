@@ -25,6 +25,12 @@ var (
 	// ErrNoAIAgent refuses to turn on a bot that cannot answer: a conversation born without an agent, or whose agent was paused or
 	// removed, has nobody to answer it. The caller, which read the conversation first, tells the two apart (ADR-0035 regla 12, ADR-0038).
 	ErrNoAIAgent = errors.New("conversations: the conversation has no agent that can answer")
+
+	// ErrResolved is a close that found the conversation already closed: a resolved one never reopens (ADR-0002 (b)).
+	ErrResolved = errors.New("conversations: the conversation is already resolved")
+
+	// ErrTurnInProgress is a close refused while the bot still owes an answer: the end of that turn would reopen it (ADR-0054).
+	ErrTurnInProgress = errors.New("conversations: a turn of the conversation is in flight")
 )
 
 // ServiceWindow is Meta's, not ours: outside it a free form answer is refused and only a template may be sent.
@@ -41,6 +47,10 @@ type store interface {
 	Claim(ctx context.Context, conversationID, operatorID uuid.UUID) error
 	SetMode(ctx context.Context, conversationID uuid.UUID, mode enums.AgentMode) error
 	SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error
+	Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error
+	Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error
+	Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error
+	HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error)
 	MarkRead(ctx context.Context, conversationID uuid.UUID) error
 	TurnOffAIAgent(ctx context.Context, aiAgentID uuid.UUID) ([]uuid.UUID, error)
 	LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error
@@ -219,6 +229,26 @@ func (s *Service) MarkRead(ctx context.Context, conversationID uuid.UUID) error 
 // which conversation is the caller's rule.
 func (s *Service) SetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error {
 	return s.repo.SetStarred(ctx, conversationID, starred)
+}
+
+// Resolve is the manual close of ADR-0002 (d); the status is this aggregate's column, and who may close is the caller's rule (ADR-0054).
+func (s *Service) Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
+	return s.repo.Resolve(ctx, conversationID, operatorID, turnBudget)
+}
+
+// Score is F13 written by its owner: the score is this aggregate's column, and who may score is the caller's rule (ADR-0055).
+func (s *Service) Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	return s.repo.Score(ctx, conversationID, operatorID, score)
+}
+
+// Reassign is F26 written by its owner: operator_id is this aggregate's column, and who may move it is the caller's rule (ADR-0056).
+func (s *Service) Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error {
+	return s.repo.Reassign(ctx, conversationID, from, to)
+}
+
+// HandOver moves every open conversation of one vendor to another, the absence of ADR-0037 settled by ADR-0056.
+func (s *Service) HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error) {
+	return s.repo.HandOver(ctx, from, to)
 }
 
 // TurnOffAIAgent is how agents/ turns off the bots of an agent it paused or removed: the mode is this aggregate's column (regla 1),

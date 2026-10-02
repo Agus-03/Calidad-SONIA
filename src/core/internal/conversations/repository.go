@@ -59,93 +59,6 @@ func (r *Repository) Create(ctx context.Context, c Conversation) error {
 	return nil
 }
 
-// ON CONFLICT for the same reason as conversationInsert: a redelivery is routine, and a rescued unique violation would leave the
-// webhook's transaction aborted, losing the event row and every other message of the payload (SQLSTATE 25P02). A draft has no
-// wamid yet, and NULLs never conflict.
-const messageInsert = `
-INSERT INTO messages (id, conversation_id, message_batch_id, wamid, direction, sender_type,
-                      sender_ai_agent_id, sender_operator_id, content_text, content_type, status, sent_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-ON CONFLICT (wamid) DO NOTHING`
-
-// AppendMessage is the only way into messages: the table admits no update of content and no delete at all (F29, C09).
-func (r *Repository) AppendMessage(ctx context.Context, m Message) error {
-	tag, err := r.exec.Exec(ctx, messageInsert,
-		m.ID, m.ConversationID, m.MessageBatchID, m.WAMID, m.Direction, m.SenderType,
-		m.SenderAIAgentID, m.SenderOperatorID, m.ContentText, m.ContentType, m.Status, m.SentAt)
-	if err != nil {
-		return fmt.Errorf("conversations: insert message: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrDuplicateWAMID
-	}
-	return nil
-}
-
-// LinkToBatch is the one column of messages that is written after the fact: the batch is opened by turn/ once the message exists.
-func (r *Repository) LinkToBatch(ctx context.Context, messageID, batchID uuid.UUID) error {
-	tag, err := r.exec.Exec(ctx, `UPDATE messages SET message_batch_id = $2 WHERE id = $1`, messageID, batchID)
-	if err != nil {
-		return fmt.Errorf("conversations: link message to batch: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// The first send of a conversation is also its first response, and both land in one statement so neither can exist without the
-// other. first_response_at does not tell the agent from the operator on purpose: F34 separates them from messages
-// (05-consultas-de-metricas, F34.b supuesto S1). A failed send is not a response, which is why this is here and not where the row
-// is written: the first response is the first answer the customer received, while taking the pool is the first one sent
-// (ADR-0035, regla 7; F34.b supuesto S3).
-//
-// The one sender that does not count is system: the fixed text of a cut turn answers nothing, so taking it as the first response
-// would report seconds of response time on a conversation nobody attended (ADR-0042, O2). Excluded here and in F34.b alike.
-//
-// It takes the database clock and not the caller's, because F34 subtracts created_at from it and both have to be one clock (C06).
-//
-// Counting sent is what tells a missing message apart; first runs although the SELECT never names it, as every data-modifying WITH does.
-const messageMarkSent = `
-WITH sent AS (
-       UPDATE messages SET wamid = $2, sent_at = $3, status = $4 WHERE id = $1
-       RETURNING conversation_id, sender_type
-), first AS (
-       UPDATE conversations c
-       SET    first_response_at = now(), updated_at = now()
-       FROM   sent
-       WHERE  c.id = sent.conversation_id AND c.first_response_at IS NULL
-         AND  sent.sender_type <> $5
-)
-SELECT count(*) FROM sent`
-
-// MarkSent writes what only Meta knows, which is why the row was written without it (07-secuencia, hallazgo 3).
-func (r *Repository) MarkSent(ctx context.Context, messageID uuid.UUID, wamid string, sentAt time.Time) error {
-	var updated int
-	if err := r.exec.QueryRow(ctx, messageMarkSent, messageID, wamid, sentAt,
-		enums.MessageStatusSent, enums.SenderTypeSystem).Scan(&updated); err != nil {
-		return fmt.Errorf("conversations: mark message sent: %w", err)
-	}
-	if updated == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// MarkFailed leaves the failure visible instead of retrying it: ADR-0020 sends at most once and never twice.
-func (r *Repository) MarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error {
-	tag, err := r.exec.Exec(ctx,
-		`UPDATE messages SET status = $2, error_code = $3 WHERE id = $1`,
-		messageID, enums.MessageStatusFailed, errorCode)
-	if err != nil {
-		return fmt.Errorf("conversations: mark message failed: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // TouchInbound moves the clocks an inbound message resets, so the 24 hour window is never read from a stale row.
 //
 // The window keeps Meta's clock, because Meta is the one that measures it (ADR-0008); the activity takes the database clock, the one
@@ -325,4 +238,101 @@ func (r *Repository) SetStarred(ctx context.Context, conversationID uuid.UUID, s
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Only the status and who closed: mode, vendor, unread and last_activity_at stay, and of two closes at once one writes (ADR-0054).
+// busy is a batch open, or closed and neither processed nor failed within the budget: older than that, a crash killed it (ADR-0054).
+const conversationResolve = `
+WITH busy AS (
+    SELECT EXISTS (
+           SELECT 1 FROM message_batches b
+           WHERE  b.conversation_id = $1 AND b.processed_at IS NULL AND b.error_message IS NULL
+             AND  (b.closed_at IS NULL OR b.closed_at > now() - ($4 * interval '1 millisecond'))) AS turn
+), closed AS (
+    UPDATE conversations
+    SET    status = $2, resolved_at = now(), resolved_by_operator_id = $3, updated_at = now()
+    FROM   busy
+    WHERE  id = $1 AND status <> $2 AND deleted_at IS NULL AND NOT busy.turn
+    RETURNING 1
+)
+SELECT (SELECT turn FROM busy), (SELECT count(*) FROM closed)`
+
+// Nothing written and no turn in flight is read as ErrResolved: the caller read the row first, so a close in between is the likely reason.
+func (r *Repository) Resolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error {
+	var busy bool
+	var closed int
+	if err := r.exec.QueryRow(ctx, conversationResolve, conversationID, enums.ConversationStatusResolved, operatorID,
+		turnBudget.Milliseconds()).Scan(&busy, &closed); err != nil {
+		return fmt.Errorf("conversations: resolve: %w", err)
+	}
+	switch {
+	case closed > 0:
+		return nil
+	case busy:
+		return ErrTurnInProgress
+	default:
+		return ErrResolved
+	}
+}
+
+// The vendor and the status are in the predicate, and a new score overwrites the last with its author and instant (ADR-0055).
+const conversationScore = `
+UPDATE conversations
+SET    quality_score = $2, scored_by_operator_id = $3, scored_at = now(), updated_at = now()
+WHERE  id = $1 AND operator_id = $3 AND status = $4 AND deleted_at IS NULL`
+
+// Nothing matched is read as ErrNotFound: the caller read a resolved conversation of its own first, and a resolved one never reopens.
+func (r *Repository) Score(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error {
+	tag, err := r.exec.Exec(ctx, conversationScore, conversationID, score, operatorID, enums.ConversationStatusResolved)
+	if err != nil {
+		return fmt.Errorf("conversations: score: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// The vendor the caller read is in the predicate, NULL included, so two reassignments at once write one and the other is refused (ADR-0056).
+const conversationReassign = `
+UPDATE conversations
+SET    operator_id = $3, updated_at = now()
+WHERE  id = $1 AND operator_id IS NOT DISTINCT FROM $2 AND status <> $4 AND deleted_at IS NULL`
+
+// Nothing matched is read as ErrTaken: the caller read the vendor first, so another reassignment or the pool taken in between is why.
+func (r *Repository) Reassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, conversationReassign, conversationID, from, to, enums.ConversationStatusResolved)
+	if err != nil {
+		return fmt.Errorf("conversations: reassign: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaken
+	}
+	return nil
+}
+
+// Every open conversation of the vendor and none resolved: those keep who attended them, for the sale and the score (ADR-0056).
+const conversationHandOver = `
+UPDATE conversations
+SET    operator_id = $2, updated_at = now()
+WHERE  operator_id = $1 AND status <> $3 AND deleted_at IS NULL
+RETURNING id`
+
+// HandOver answers the conversations it moved, because each needs its own row of history and its own event.
+func (r *Repository) HandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.exec.Query(ctx, conversationHandOver, from, to, enums.ConversationStatusResolved)
+	if err != nil {
+		return nil, fmt.Errorf("conversations: hand over: %w", err)
+	}
+	defer rows.Close()
+
+	moved := []uuid.UUID{}
+	for rows.Next() {
+		var conversationID uuid.UUID
+		if err := rows.Scan(&conversationID); err != nil {
+			return nil, fmt.Errorf("conversations: scan a conversation handed over: %w", err)
+		}
+		moved = append(moved, conversationID)
+	}
+	return moved, rows.Err()
 }

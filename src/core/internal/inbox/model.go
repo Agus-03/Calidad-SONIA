@@ -38,6 +38,12 @@ type Summary struct {
 	// The customer messages since somebody who could clear it last read the conversation: one count for all, not one per Operator (ADR-0052).
 	UnreadCount int
 
+	// F13: one to five from the vendor, nil until it scores; a new score overwrites the last one (ADR-0055).
+	QualityScore *int
+
+	// F24: the catalogue entries on the conversation, retired ones left out, so the filter by label is decided from the event (ADR-0057).
+	Labels []Label
+
 	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
 	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
 	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.
@@ -169,21 +175,21 @@ type Suggestion struct {
 	CreatedAt    time.Time
 }
 
-// Reasoning is F05: the components a generation was assembled from, in the order they went in, which is what "influyeron" reads
-// as since the DER made generation_components its evidence (ADR-0049).
-type Reasoning struct {
-	GenerationID uuid.UUID
-	Status       enums.GenerationStatus
-	LLMModel     string
-	CreatedAt    time.Time
-	Components   []UsedComponent
+// AssignmentEntry is one row of the history F26 asks for, with the people named so it can be read as it comes (ADR-0056).
+type AssignmentEntry struct {
+	ID uuid.UUID
+	// Nil when the conversation came from the pool.
+	From *Operator
+	To   Operator
+	// Nil when the dispatcher assigned it, because nobody did (ADR-0037, regla 5).
+	AssignedBy *Operator
+	Reason     string
+	CreatedAt  time.Time
 }
 
-// UsedComponent is one version as it was assembled, frozen: a component edited or removed afterwards still shows what was used.
-type UsedComponent struct {
-	Type          enums.PromptComponentType
-	Position      int
-	VersionNumber int
-	// Nil for everyone but the admin, who is the one with access to the configuration it comes from (ADR-0049).
-	Content *string
+// Label is a catalogue entry as a conversation carries it: what the row draws and nothing of who defined it (F24, ADR-0057).
+type Label struct {
+	ID    uuid.UUID
+	Name  string
+	Color string
 }

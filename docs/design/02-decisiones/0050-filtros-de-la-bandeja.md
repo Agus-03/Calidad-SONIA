@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 · **§4 y §5 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): *no leídas* deja de devolver vacío, porque cada mensaje del cliente suma y leer o responder lo borra, y la alternativa de §5 que descartaba escribir `unread_count` en esta fase queda revertida en esa mitad |
+| **Estado** | Aceptada · la opción de construir los siete filtros ahora, aunque cuatro den vacío hasta que algo escriba lo que leen (§2.3), la eligió el grupo el 2026-09-26 · **§4 y §5 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): *no leídas* deja de devolver vacío, porque cada mensaje del cliente suma y leer o responder lo borra, y la alternativa de §5 que descartaba escribir `unread_count` en esta fase queda revertida en esa mitad · **§1 y §4 enmendados por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** (2026-10-01): *resueltas* deja de devolver vacío, porque el cierre manual existe · **§1 y §4 enmendados por [ADR-0057](0057-etiquetas-de-la-conversacion.md)** (2026-10-01): *por etiqueta* deja de devolver vacío, porque F24 existe · **§1 y §4 enmendados por [ADR-0058](0058-recordatorios.md)** (2026-10-02): *con recordatorio* deja de devolver vacío, y los siete filtros tienen datos |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Qué lee cada filtro de F23, cómo se combinan, qué pasa con los que todavía no tienen datos, y el pendiente de [ADR-0036](0036-paginacion-por-cursor-en-la-bandeja.md): cómo convive el cursor con los filtros |
@@ -21,9 +21,9 @@ Al llegar a la Fase 10, el esquema tiene una columna o una tabla para cada filtr
 | Filtro | Qué lee | Quién lo escribe |
 |---|---|---|
 | No leídas | `conversations.unread_count` | Nadie todavía → **desde [ADR-0052](0052-marca-de-leida.md)**, cada mensaje del cliente suma, y leer o responder lo borra |
-| Resueltas | `conversations.status = 'resolved'` | Nadie todavía: el cierre manual de [ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md) (d) no está construido |
-| Por etiqueta | `conversation_labels` | F24, en la **Fase 11** |
-| Con recordatorio | `reminders` | F28, en la **Fase 11** |
+| Resueltas | `conversations.status = 'resolved'` | ~~Nadie todavía: el cierre manual de [ADR-0002](0002-ciclo-de-vida-conversacion-y-recordatorios.md) (d) no está construido~~ → **desde [ADR-0054](0054-cierre-manual-de-la-conversacion.md)**, el cierre manual desde la bandeja |
+| Por etiqueta | `conversation_labels` | ~~F24, en la **Fase 11**~~ → **desde [ADR-0057](0057-etiquetas-de-la-conversacion.md)**, F24 desde la bandeja |
+| Con recordatorio | `reminders` | ~~F28, en la **Fase 11**~~ → **desde [ADR-0058](0058-recordatorios.md)**, F28 desde la ficha del contacto |
 
 Los otros tres sí tienen datos: *asignadas* (`operator_id`, desde la Fase 5), *en espera* (`status = 'waiting'`, que escribe el turno desde la Fase 9) y *destacadas* (`starred`, F25, desde esta fase).
 
@@ -79,7 +79,7 @@ Los otros tres sí tienen datos: *asignadas* (`operator_id`, desde la Fase 5), *
 
 ### Negativas / costos asumidos
 
-- **Cuatro filtros devuelven vacío hasta que algo los alimente.** ~~*No leídas* y *resueltas* no tienen fase asignada: nada escribe `unread_count` ni cierra una conversación.~~ **→ Enmendado por [ADR-0052](0052-marca-de-leida.md):** *no leídas* ya se alimenta, y *resueltas* quedó en la Fase 11, con el cierre manual (pendiente del README). *Por etiqueta* y *con recordatorio* esperan a F24 y F28 (Fase 11). **Una bandeja vacía con el filtro puesto se lee igual que "no hay ninguna"**, y el frontend tiene que saberlo para no presentarlo como un resultado.
+- **Cuatro filtros devuelven vacío hasta que algo los alimente.** ~~*No leídas* y *resueltas* no tienen fase asignada: nada escribe `unread_count` ni cierra una conversación.~~ **→ Enmendado por [ADR-0052](0052-marca-de-leida.md):** *no leídas* ya se alimenta, y *resueltas* quedó en la Fase 11, con el cierre manual (pendiente del README). **→ Enmendado por [ADR-0054](0054-cierre-manual-de-la-conversacion.md):** *resueltas* ya se alimenta. *Por etiqueta* y *con recordatorio* esperan a F24 y F28 (Fase 11). **→ Enmendado por [ADR-0057](0057-etiquetas-de-la-conversacion.md):** *por etiqueta* ya se alimenta; sólo *con recordatorio* espera a F28. **→ Enmendado por [ADR-0058](0058-recordatorios.md):** *con recordatorio* ya se alimenta, así que ningún filtro devuelve vacío por falta de datos. **Una bandeja vacía con el filtro puesto se lee igual que "no hay ninguna"**, y el frontend tiene que saberlo para no presentarlo como un resultado.
 - ***En espera* no se ordena por tiempo de espera.** Se ordena por última actividad, como el resto. Para ver primero la que más espera, el frontend tiene que ordenar la página que recibió, y eso no ordena las páginas siguientes.
 - **Cambiar de filtro vuelve a la primera página.** Un cursor de un listado usado con otro filtro continúa desde una posición que no significa nada en el nuevo, y la API no lo detecta.
 - **Una sola etiqueta por consulta.** Filtrar por *"Ventas o Reclamos"* necesita dos consultas.

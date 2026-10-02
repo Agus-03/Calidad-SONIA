@@ -1,18 +1,28 @@
-package inbox
+package reasoning
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
+
+func mount(role enums.OperatorRole, d *desk) http.Handler {
+	return soniahttp.NewRouter(soniahttp.RouterOptions{
+		Controllers:   []soniahttp.Controller{NewController(d.service, nil)},
+		TokenVerifier: func(string) (uuid.UUID, error) { return testOperator, nil },
+		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
+			return soniahttp.Actor{OperatorID: testOperator, AccountID: testAccount, Role: role}, nil
+		},
+	})
+}
 
 func getReasoning(engine http.Handler, conversationID, generationID string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conversations/"+conversationID+"/generations/"+generationID+"/components", nil)
@@ -21,6 +31,17 @@ func getReasoning(engine http.Handler, conversationID, generationID string) *htt
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
+}
+
+func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		Error struct{ Code string } `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the error is not json: %v - %s", err, rec.Body)
+	}
+	return body.Error.Code
 }
 
 // ADR-0049 in the body: for the operator the key content is absent, not null, so the answer does not even say there is a text.
@@ -33,11 +54,11 @@ func TestTheReasoningHandlerLeavesTheTextOutForTheOperator(t *testing.T) {
 		{enums.OperatorRoleAdmin, true},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {
-			d := newDesk(&stubStore{})
-			target := d.open(&testOperator)
-			generationID := assembled(d, target.ConversationID)
+			d := newDesk()
+			conversationID := d.open(&testOperator)
+			generationID := d.assembled(conversationID)
 
-			rec := getReasoning(mountDesk(tc.role, d), target.ConversationID.String(), generationID.String())
+			rec := getReasoning(mount(tc.role, d), conversationID.String(), generationID.String())
 			if rec.Code != http.StatusOK {
 				t.Fatalf("GET components: got %d - %s, want 200", rec.Code, rec.Body)
 			}
@@ -58,37 +79,25 @@ func TestTheReasoningHandlerLeavesTheTextOutForTheOperator(t *testing.T) {
 	}
 }
 
-// The two ids are parsed before anything is read, and a generation of another conversation is a 404 with a code of its own.
+// The two ids are parsed before anything is read, and each refusal answers the code the inbox answered before (ADR-0063).
 func TestTheReasoningHandlerHasItsOwnRefusals(t *testing.T) {
-	d := newDesk(&stubStore{})
-	target := d.open(&testOperator)
-	engine := mountDesk(enums.OperatorRoleOperator, d)
+	d := newDesk()
+	conversationID := d.open(&testOperator)
+	theirs := d.open(new(uuid.UUID))
+	engine := mount(enums.OperatorRoleOperator, d)
 
 	if rec := getReasoning(engine, "no-es-un-id", id.New().String()); errorCode(t, rec) != "invalid_conversation_id" {
 		t.Fatalf("a bad conversation id: got %d - %s", rec.Code, rec.Body)
 	}
-	if rec := getReasoning(engine, target.ConversationID.String(), "no-es-un-id"); errorCode(t, rec) != "invalid_generation_id" {
+	if rec := getReasoning(engine, conversationID.String(), "no-es-un-id"); errorCode(t, rec) != "invalid_generation_id" {
 		t.Fatalf("a bad generation id: got %d - %s", rec.Code, rec.Body)
 	}
-	rec := getReasoning(engine, target.ConversationID.String(), id.New().String())
+	rec := getReasoning(engine, conversationID.String(), id.New().String())
 	if rec.Code != http.StatusNotFound || errorCode(t, rec) != "generation_not_found" {
 		t.Fatalf("a generation that is not of this conversation: got %d - %s, want 404 generation_not_found", rec.Code, rec.Body)
 	}
-}
-
-// The thread says which messages have a generation behind them, which is how the frontend knows what F05 can be asked about.
-func TestTheThreadNamesTheGenerationBehindAMessage(t *testing.T) {
-	d := newDesk(&stubStore{})
-	target := d.open(&testOperator)
-	generationID := id.New()
-	d.store.threads = map[uuid.UUID][]ThreadMessage{target.ConversationID: {
-		{Message: Message{ID: id.New(), Direction: enums.MessageDirectionOutbound, SenderType: enums.SenderTypeAiAgent}, GenerationID: &generationID},
-		{Message: Message{ID: id.New(), Direction: enums.MessageDirectionInbound, SenderType: enums.SenderTypeContact}},
-	}}
-
-	rec := getThread(mountDesk(enums.OperatorRoleOperator, d), target.ConversationID.String(), url.Values{})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"generation_id":"`+generationID.String()+`"`) ||
-		!strings.Contains(rec.Body.String(), `"generation_id":null`) {
-		t.Fatalf("GET messages: got %d - %s, want the generation of the answer and null for the inbound", rec.Code, rec.Body)
+	rec = getReasoning(engine, theirs.String(), id.New().String())
+	if rec.Code != http.StatusNotFound || errorCode(t, rec) != "conversation_not_found" {
+		t.Fatalf("a conversation out of reach: got %d - %s, want 404 conversation_not_found", rec.Code, rec.Body)
 	}
 }

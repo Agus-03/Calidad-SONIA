@@ -81,6 +81,7 @@ func Run(ctx context.Context) error {
 	pollerCtx, stopPoller := context.WithCancel(context.Background())
 	defer stopPoller()
 	deps.poller.Start(pollerCtx)
+	deps.alarms.Start(pollerCtx)
 
 	select {
 	case err := <-serverErr:
@@ -107,6 +108,9 @@ func Run(ctx context.Context) error {
 	stopPoller()
 	if err := deps.poller.Wait(shutdownCtx); err != nil {
 		log.Warn("shutdown cut the turn poller", slog.String("cause", err.Error()))
+	}
+	if err := deps.alarms.Wait(shutdownCtx); err != nil {
+		log.Warn("shutdown cut the reminder poller", slog.String("cause", err.Error()))
 	}
 
 	// A turn cut in half leaves the customer without an answer, and with the 200 already sent Meta will not send it again.

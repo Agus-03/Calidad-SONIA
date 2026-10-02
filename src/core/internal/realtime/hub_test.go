@@ -1,4 +1,4 @@
-package inbox
+package realtime
 
 import (
 	"context"
@@ -14,9 +14,15 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
+)
+
+var (
+	testAccount  = id.New()
+	testOperator = id.New()
 )
 
 // stubRows is the one read of the hub, answered from memory: the account and the row of each conversation.
@@ -29,18 +35,18 @@ type stubRows struct {
 
 type stubRow struct {
 	account uuid.UUID
-	summary Summary
+	summary inbox.Summary
 }
 
-func (r *stubRows) SummaryOf(_ context.Context, conversationID uuid.UUID) (uuid.UUID, Summary, error) {
+func (r *stubRows) SummaryOf(_ context.Context, conversationID uuid.UUID) (uuid.UUID, inbox.Summary, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.failing[conversationID] {
-		return uuid.Nil, Summary{}, errors.New("connection refused")
+		return uuid.Nil, inbox.Summary{}, errors.New("connection refused")
 	}
 	row, ok := r.rows[conversationID]
 	if !ok {
-		return uuid.Nil, Summary{}, ErrNotFound
+		return uuid.Nil, inbox.Summary{}, inbox.ErrNotFound
 	}
 	return row.account, row.summary, nil
 }
@@ -49,9 +55,9 @@ func (r *stubRows) put(account uuid.UUID, holder *uuid.UUID) uuid.UUID {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	conversationID := id.New()
-	s := Summary{ID: conversationID, Status: enums.ConversationStatusActive, Mode: enums.AgentModeOff}
+	s := inbox.Summary{ID: conversationID, Status: enums.ConversationStatusActive, Mode: enums.AgentModeOff}
 	if holder != nil {
-		s.Operator = &Operator{ID: *holder}
+		s.Operator = &inbox.Operator{ID: *holder}
 	}
 	r.rows[conversationID] = stubRow{account: account, summary: s}
 	return conversationID
@@ -166,9 +172,7 @@ func (r received) about() string {
 	return r.Type + " " + r.ID
 }
 
-// TestEachOperatorHearsWhatItsInboxShows is the reach of ADR-0035 applied to F21: the holder and the roles that see the whole team
-// hear a change, another vendor and another account do not. A change every one of them reaches goes out right after, so a socket
-// that should hear nothing of the first reads the second and the case never waits on a silence.
+// TestEachOperatorHearsWhatItsInboxShows is ADR-0035 on F21; a change all reach goes last, so no case ever waits on a silence.
 func TestEachOperatorHearsWhatItsInboxShows(t *testing.T) {
 	l := newLine(t)
 	account, elsewhere := id.New(), id.New()
@@ -204,8 +208,7 @@ func TestEachOperatorHearsWhatItsInboxShows(t *testing.T) {
 	}
 }
 
-// TestTakingThePoolTellsTheOthersToDropTheRow is LeftPool: the vendor who can no longer see the conversation is told its id and
-// nothing else, which it had on screen a moment ago; a plain change of a conversation it never saw tells it nothing (ADR-0051).
+// TestTakingThePoolTellsTheOthersToDropTheRow: the vendor who lost sight of it gets only its id, and nothing of others (ADR-0051).
 func TestTakingThePoolTellsTheOthersToDropTheRow(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -228,8 +231,7 @@ func TestTakingThePoolTellsTheOthersToDropTheRow(t *testing.T) {
 	}
 }
 
-// TestARowThatCannotBeReadTellsNobody: a contact taken down leaves every inbox, and a failed read sends nothing rather than a
-// half event. The readable one goes last, so it is the first thing the socket hears only if the two before it sent nothing.
+// TestARowThatCannotBeReadTellsNobody: a gone contact or a failed read sends nothing, and the readable one last proves it.
 func TestARowThatCannotBeReadTellsNobody(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -248,8 +250,7 @@ func TestARowThatCannotBeReadTellsNobody(t *testing.T) {
 	}
 }
 
-// TestATicketOpensOneSocketOnce is ADR-0051's credential: unknown, used or expired tickets are refused before the upgrade, with a
-// code the frontend switches on to ask for a new one; an operator disabled after asking is refused too.
+// TestATicketOpensOneSocketOnce: unknown, used, expired tickets and a disabled operator are refused before the upgrade (ADR-0051).
 func TestATicketOpensOneSocketOnce(t *testing.T) {
 	l := newLine(t)
 	account := id.New()
@@ -301,8 +302,7 @@ func TestATicketOpensOneSocketOnce(t *testing.T) {
 	}
 }
 
-// TestTheTicketRouteIsBehindTheBearerForEveryRole walks the authenticated half with the three roles, because a wrong Roles list
-// compiles: a role refused here could never open its inbox in real time.
+// TestTheTicketRouteIsBehindTheBearerForEveryRole, because a wrong Roles list compiles and that role would lose real time.
 func TestTheTicketRouteIsBehindTheBearerForEveryRole(t *testing.T) {
 	hub := NewHub(HubOptions{Rows: &stubRows{rows: map[uuid.UUID]stubRow{}}})
 	t.Cleanup(func() { _ = hub.Close(context.Background()) })
@@ -364,8 +364,7 @@ func TestASlowClientIsCutAndNotWaitedFor(t *testing.T) {
 	}
 }
 
-// TestClosingTheHubSaysGoingAway is what tells the frontend to reconnect after a deployment instead of reading an empty inbox, and
-// a notice after the close is dropped without blocking the caller (ADR-0027, ADR-0051).
+// TestClosingTheHubSaysGoingAway, so the frontend reconnects after a deploy, and a later notice never blocks (ADR-0027, ADR-0051).
 func TestClosingTheHubSaysGoingAway(t *testing.T) {
 	l := newLine(t)
 	conn := l.connect(t, l.actor(id.New(), enums.OperatorRoleAdmin))
@@ -397,59 +396,58 @@ func TestClosingTheHubSaysGoingAway(t *testing.T) {
 	}
 }
 
-// TestTheServiceTellsTheHubAfterEachWrite: the answer that takes the pool says so, the others say changed, and a refused request
-// tells nothing, because nothing was written (ADR-0051).
-func TestTheServiceTellsTheHubAfterEachWrite(t *testing.T) {
-	me := id.New()
-	for _, tc := range []struct {
-		name string
-		do   func(d *desk, target Target) error
-		held bool
-		want []string
-	}{
-		{"answering the pool", func(d *desk, target Target) error {
-			_, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
-			return err
-		}, false, []string{"left pool"}},
-		{"answering its own", func(d *desk, target Target) error {
-			_, err := d.service.Send(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, "hola", nil)
-			return err
-		}, true, []string{"changed"}},
-		{"switching the bot", func(d *desk, target Target) error {
-			_, err := d.service.SetMode(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, enums.AgentModeOff)
-			return err
-		}, true, []string{"changed"}},
-		{"starring", func(d *desk, target Target) error {
-			_, err := d.service.SetStarred(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, true)
-			return err
-		}, true, []string{"changed"}},
-		{"a refused switch tells nothing", func(d *desk, target Target) error {
-			_, err := d.service.SetMode(context.Background(), scopeOf(me, enums.OperatorRoleOperator), target.ConversationID, enums.AgentModeOff)
-			if !errors.Is(err, ErrNotHeld) {
-				return errors.New("want the pool refused")
-			}
-			return nil
-		}, false, nil},
+// TestAReassignmentTellsOnlyTheFormerVendorToDropTheRow: a vendor who never saw it is told nothing (ADR-0035 regla 3, ADR-0056).
+func TestAReassignmentTellsOnlyTheFormerVendorToDropTheRow(t *testing.T) {
+	l := newLine(t)
+	account := id.New()
+	former := l.actor(account, enums.OperatorRoleOperator)
+	bystander := l.actor(account, enums.OperatorRoleOperator)
+	successor := l.actor(account, enums.OperatorRoleOperator)
+	moved := l.rows.put(account, &successor)
+	pooled := l.rows.put(account, nil)
+
+	conns := map[string]*websocket.Conn{}
+	for name, operatorID := range map[string]uuid.UUID{"former": former, "bystander": bystander, "successor": successor} {
+		conns[name] = l.connect(t, operatorID)
+	}
+
+	l.hub.Reassigned(moved, former)
+	l.hub.Changed(pooled)
+
+	for name, want := range map[string][]string{
+		"former":    {"conversation.removed " + moved.String(), "conversation.updated " + pooled.String()},
+		"bystander": {"conversation.updated " + pooled.String()},
+		"successor": {"conversation.updated " + moved.String(), "conversation.updated " + pooled.String()},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			d := newDesk(&stubStore{})
-			var holder *uuid.UUID
-			if tc.held {
-				holder = &me
+		for _, w := range want {
+			if got := next(t, conns[name]).about(); got != w {
+				t.Fatalf("%s heard %q, want %q", name, got, w)
 			}
-			target := d.open(holder)
-			if err := tc.do(d, target); err != nil {
-				t.Fatalf("%v", err)
+		}
+	}
+}
+
+// TestAReminderReachesOnlyItsRecipient is Remind: the person the reminder goes to hears it, a teammate does not (ADR-0058).
+func TestAReminderReachesOnlyItsRecipient(t *testing.T) {
+	l := newLine(t)
+	account := id.New()
+	recipient := l.actor(account, enums.OperatorRoleOperator)
+	teammate := l.actor(account, enums.OperatorRoleSupervisor)
+	pooled := l.rows.put(account, nil)
+
+	conns := map[string]*websocket.Conn{"recipient": l.connect(t, recipient), "teammate": l.connect(t, teammate)}
+
+	l.hub.Remind(recipient, map[string]string{"id": "r1"})
+	l.hub.Changed(pooled)
+
+	for name, want := range map[string][]string{
+		"recipient": {"reminder.due ", "conversation.updated " + pooled.String()},
+		"teammate":  {"conversation.updated " + pooled.String()},
+	} {
+		for _, w := range want {
+			if got := next(t, conns[name]).about(); got != w {
+				t.Fatalf("%s heard %q, want %q", name, got, w)
 			}
-			got := d.events.told
-			if len(got) != len(tc.want) {
-				t.Fatalf("told %v, want %v", got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Fatalf("told %v, want %v", got, tc.want)
-				}
-			}
-		})
+		}
 	}
 }

@@ -41,6 +41,9 @@ type Summary struct {
 	// F13: one to five from the vendor, nil until it scores; a new score overwrites the last one (ADR-0055).
 	QualityScore *int
 
+	// F24: the catalogue entries on the conversation, retired ones left out, so the filter by label is decided from the event (ADR-0057).
+	Labels []Label
+
 	// Whether the bot of this conversation could answer if it were on: its agent exists, is active and was not removed. It is the
 	// state of the bot F22 asks to see without opening the conversation, and what tells the vendor the switch would refuse to turn
 	// on (ADR-0038). The mode alone cannot say it: a paused agent leaves its conversations off, like any the vendor turned off.
@@ -211,4 +214,11 @@ type Note struct {
 	Content        string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+// Label is a catalogue entry as a conversation carries it: what the row draws and nothing of who defined it (F24, ADR-0057).
+type Label struct {
+	ID    uuid.UUID
+	Name  string
+	Color string
 }

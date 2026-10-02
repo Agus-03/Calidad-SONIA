@@ -49,6 +49,7 @@ type summaryResponse struct {
 	Starred          bool              `json:"starred"`
 	UnreadCount      int               `json:"unread_count"`
 	QualityScore     *int              `json:"quality_score"`
+	Labels           []labelResponse   `json:"labels"`
 	Contact          contactResponse   `json:"contact"`
 	Operator         *operatorResponse `json:"operator"`
 	LastMessage      *messageResponse  `json:"last_message"`
@@ -95,6 +96,7 @@ func present(s Summary) summaryResponse {
 		Starred:          s.Starred,
 		UnreadCount:      s.UnreadCount,
 		QualityScore:     s.QualityScore,
+		Labels:           presentLabels(s.Labels),
 		FailedCount:      s.FailedCount,
 		LastFailedAt:     rfc3339(s.LastFailedAt),
 		LastInboundAt:    s.LastInboundAt.UTC().Format(time.RFC3339),
@@ -512,6 +514,8 @@ func translate(err error) error {
 		return soniahttp.NotFound("note_not_found", "no such note in this conversation").WithCause(err)
 	case errors.Is(err, ErrNotTheAuthor):
 		return soniahttp.Forbidden("not_the_author", "only the author edits or deletes a note").WithCause(err)
+	case errors.Is(err, ErrLabelNotFound):
+		return soniahttp.NotFound("label_not_found", "no such label in the catalogue").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):
 		return soniahttp.Conflict("channel_unavailable", "the number of this conversation cannot send: it does not exist or is not connected").WithCause(err)
 	default:

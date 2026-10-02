@@ -147,6 +147,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	desk := inbox.NewService(inbox.Options{
 		Repo:      deskRepo,
 		Aggregate: aggregate,
+		Catalogue: labels.NewRepository(pool),
 		// Binds the assignment and the aggregate to one transaction: taking the pool and writing the answer commit together (regla 5).
 		Tx: func(ctx context.Context, fn func(inbox.Store, inbox.Aggregate, inbox.Reviews) error) error {
 			return db.InTx(ctx, pool, func(exec db.Executor) error {

@@ -7,7 +7,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// Written once so the sixteen routes of one conversation cannot drift apart.
+// Written once so the eighteen routes of one conversation cannot drift apart.
 const routeBase = "/conversations"
 
 // The three roles enter every route, and what each one reaches is decided inside: refusing the listing to an operator would take away
@@ -46,5 +46,8 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPost, Path: routeBase + "/:id/notes", Roles: enums.OperatorRoleValues, Handler: c.addNote},
 		{Method: http.MethodPatch, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.editNote},
 		{Method: http.MethodDelete, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.deleteNote},
+		// F24 with the reach of the thread for the three roles, which the service decides; the catalogue stays the admin's (ADR-0057).
+		{Method: http.MethodPost, Path: routeBase + "/:id/labels", Roles: enums.OperatorRoleValues, Handler: c.assignLabel},
+		{Method: http.MethodDelete, Path: routeBase + "/:id/labels/:label_id", Roles: enums.OperatorRoleValues, Handler: c.unassignLabel},
 	}
 }

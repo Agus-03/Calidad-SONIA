@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -33,7 +34,7 @@ func (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Reposi
 // The agent is joined for the state of the bot, with the same three conditions the turn and the switch read (ADR-0038).
 const summarySelect = `
 SELECT c.id, c.status, c.mode, c.ai_agent_id, COALESCE(a.active AND a.deleted_at IS NULL, false), c.starred, c.unread_count,
-       c.quality_score,
+       c.quality_score, COALESCE(tags.items, '[]'::json),
        ct.id, ct.name, ct.lastname, ct.phone_whatsapp,
        op.id, op.name, op.lastname,
        latest.id, latest.direction, latest.sender_type, latest.content_text, latest.content_type,
@@ -51,6 +52,12 @@ LEFT   JOIN LATERAL (
        ORDER  BY m.created_at DESC, m.id DESC
        LIMIT  1
 ) latest ON true
+LEFT   JOIN LATERAL (
+       SELECT json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) ORDER BY l.name, l.id) AS items
+       FROM   conversation_labels cl
+       JOIN   labels l ON l.id = cl.label_id AND l.deleted_at IS NULL
+       WHERE  cl.conversation_id = c.id
+) tags ON true
 CROSS  JOIN LATERAL (
        SELECT count(*) AS failed_count, max(f.created_at) AS last_failed_at
        FROM   messages f
@@ -323,7 +330,8 @@ func scanSummary(row pgx.Row) (Summary, error) {
 	var errorCode *string
 	var sentAt *time.Time
 
-	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount, &s.QualityScore,
+	var tags []byte
+	err := row.Scan(&s.ID, &s.Status, &s.Mode, &s.AIAgentID, &s.AIAgentAvailable, &s.Starred, &s.UnreadCount, &s.QualityScore, &tags,
 		&s.Contact.ID, &s.Contact.Name, &s.Contact.Lastname, &s.Contact.PhoneWhatsapp,
 		&operatorID, &operatorName, &operatorLastname,
 		&messageID, &direction, &sender, &text, &contentType, &status, &errorCode, &sentAt,
@@ -331,6 +339,9 @@ func scanSummary(row pgx.Row) (Summary, error) {
 		&s.LastInboundAt, &s.WindowExpiresAt, &s.LastActivityAt)
 	if err != nil {
 		return Summary{}, fmt.Errorf("inbox: scan conversation: %w", err)
+	}
+	if err := json.Unmarshal(tags, &s.Labels); err != nil {
+		return Summary{}, fmt.Errorf("inbox: decode the labels of a conversation: %w", err)
 	}
 
 	if operatorID != nil && operatorName != nil && operatorLastname != nil {
@@ -567,4 +578,54 @@ func (r *Repository) noteWrite(ctx context.Context, what, query string, args ...
 		return ErrNoteNotFound
 	}
 	return nil
+}
+
+// ON CONFLICT DO NOTHING and not a refusal: tagging twice is the same request twice, and the row already says what was asked (ADR-0057).
+const conversationLabelInsert = `
+INSERT INTO conversation_labels (id, conversation_id, label_id, assigned_by_operator_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (conversation_id, label_id) DO NOTHING`
+
+// AssignLabel answers whether a link was written, so only a real change is told to the hub.
+func (r *Repository) AssignLabel(ctx context.Context, linkID, conversationID, labelID, operatorID uuid.UUID) (bool, error) {
+	tag, err := r.exec.Exec(ctx, conversationLabelInsert, linkID, conversationID, labelID, operatorID)
+	if err != nil {
+		return false, fmt.Errorf("inbox: assign label: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// A DELETE, the exception to C09 the schema declares for this table: unlabelling is routine and no metric counts it.
+func (r *Repository) UnassignLabel(ctx context.Context, conversationID, labelID uuid.UUID) (bool, error) {
+	tag, err := r.exec.Exec(ctx, `DELETE FROM conversation_labels WHERE conversation_id = $1 AND label_id = $2`, conversationID, labelID)
+	if err != nil {
+		return false, fmt.Errorf("inbox: unassign label: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// The same read as the row of the listing, so the answer of a tag and the event that follows it cannot disagree (ADR-0057).
+const conversationLabelsSelect = `
+SELECT l.id, l.name, l.color
+FROM   conversation_labels cl
+JOIN   labels l ON l.id = cl.label_id AND l.deleted_at IS NULL
+WHERE  cl.conversation_id = $1
+ORDER  BY l.name, l.id`
+
+func (r *Repository) LabelsOf(ctx context.Context, conversationID uuid.UUID) ([]Label, error) {
+	rows, err := r.exec.Query(ctx, conversationLabelsSelect, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("inbox: read the labels: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Label{}
+	for rows.Next() {
+		var l Label
+		if err := rows.Scan(&l.ID, &l.Name, &l.Color); err != nil {
+			return nil, fmt.Errorf("inbox: scan a label: %w", err)
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }

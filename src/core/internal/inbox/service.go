@@ -100,6 +100,10 @@ type store interface {
 	AddNote(ctx context.Context, n Note) error
 	EditNote(ctx context.Context, noteID, operatorID uuid.UUID, content string) error
 	DeleteNote(ctx context.Context, noteID, operatorID uuid.UUID) error
+	// The links of F24 are this package's table too, one statement each (ADR-0057).
+	AssignLabel(ctx context.Context, linkID, conversationID, labelID, operatorID uuid.UUID) (bool, error)
+	UnassignLabel(ctx context.Context, conversationID, labelID uuid.UUID) (bool, error)
+	LabelsOf(ctx context.Context, conversationID uuid.UUID) ([]Label, error)
 }
 
 // Store is what this package writes inside the transaction it conducts. Exported because internal/app/deps.go binds it to that
@@ -157,6 +161,7 @@ type Options struct {
 	// Pool-bound: the reads, and the two writes after the send, which happen outside any transaction.
 	Repo      store
 	Aggregate Aggregate
+	Catalogue Catalogue
 
 	Tx      TxFunc
 	Channel Channel

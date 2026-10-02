@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
@@ -48,6 +49,52 @@ type stubStore struct {
 	people  map[uuid.UUID]bool
 	history map[uuid.UUID][]AssignmentEntry
 	notes   map[uuid.UUID]Note
+}
+
+// The links are kept in labels, the same map the filter by label reads, so a tag shows up in the filter as it does in the query.
+func (s *stubStore) AssignLabel(_ context.Context, _, conversationID, labelID, _ uuid.UUID) (bool, error) {
+	for _, l := range s.labels[conversationID] {
+		if l == labelID {
+			return false, nil
+		}
+	}
+	if s.labels == nil {
+		s.labels = map[uuid.UUID][]uuid.UUID{}
+	}
+	s.labels[conversationID] = append(s.labels[conversationID], labelID)
+	return true, nil
+}
+
+func (s *stubStore) UnassignLabel(_ context.Context, conversationID, labelID uuid.UUID) (bool, error) {
+	kept := []uuid.UUID{}
+	for _, l := range s.labels[conversationID] {
+		if l != labelID {
+			kept = append(kept, l)
+		}
+	}
+	removed := len(kept) != len(s.labels[conversationID])
+	if removed {
+		s.labels[conversationID] = kept
+	}
+	return removed, nil
+}
+
+func (s *stubStore) LabelsOf(_ context.Context, conversationID uuid.UUID) ([]Label, error) {
+	out := []Label{}
+	for _, l := range s.labels[conversationID] {
+		out = append(out, Label{ID: l, Name: "etiqueta", Color: "#000000"})
+	}
+	return out, nil
+}
+
+// stubCatalogue is labels/ as the inbox asks it: a label is in the catalogue of the account or it is not.
+type stubCatalogue struct{ known map[uuid.UUID]bool }
+
+func (c *stubCatalogue) ByID(_ context.Context, accountID, labelID uuid.UUID) (labels.Label, error) {
+	if !c.known[labelID] {
+		return labels.Label{}, labels.ErrNotFound
+	}
+	return labels.Label{ID: labelID, AccountID: accountID, Name: "etiqueta", Color: "#000000"}, nil
 }
 
 func (s *stubStore) OperatorState(_ context.Context, _, operatorID uuid.UUID) (bool, error) {
@@ -474,6 +521,7 @@ func (e *stubEvents) LeftPool(uuid.UUID) { e.told = append(e.told, "left pool") 
 func (e *stubEvents) Reassigned(uuid.UUID, uuid.UUID) { e.told = append(e.told, "reassigned") }
 
 type desk struct {
+	catalogue *stubCatalogue
 	events    *stubEvents
 	store     *stubStore
 	aggregate *stubAggregate
@@ -490,10 +538,11 @@ func newDesk(store *stubStore) *desk {
 	if store.targets == nil {
 		store.targets = map[uuid.UUID]Target{}
 	}
-	d := &desk{events: &stubEvents{}, store: store, aggregate: &stubAggregate{store: store}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
+	d := &desk{catalogue: &stubCatalogue{known: map[uuid.UUID]bool{}}, events: &stubEvents{}, store: store, aggregate: &stubAggregate{store: store}, reviews: &stubReviews{}, channel: &stubChannel{}, sender: &stubSender{wamid: "wamid.double"}}
 	d.service = NewService(Options{
 		Repo:      store,
 		Aggregate: d.aggregate,
+		Catalogue: d.catalogue,
 		Tx: func(_ context.Context, fn func(Store, Aggregate, Reviews) error) error {
 			return fn(d.store, d.aggregate, d.reviews)
 		},

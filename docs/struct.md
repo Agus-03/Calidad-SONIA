@@ -198,7 +198,13 @@ sonia/
 │   │   │   │   ├── logging/
 │   │   │   │   └── storage/            PUERTO · base · supabase · disk
 │   │   │   │
-│   │   │   ├── quick_replies/          respuestas rápidas · F09
+│   │   │   ├── quick_replies/          respuestas rápidas · F09 · DUEÑO de quick_replies (ADR-0060) · paquete quickreplies
+│   │   │   │   ├── controller.go       q busca por título y contenido · el operador copia el texto en la caja, no hay ruta de envío
+│   │   │   │   ├── routes.go           leen los tres roles, escribe sólo el admin (F09)
+│   │   │   │   ├── service.go          las pausadas sólo las ve el admin · el autor sale del token
+│   │   │   │   ├── repository.go       strpos y no LIKE · el título repetido es el índice único, sin distinguir mayúsculas
+│   │   │   │   └── model.go
+│   │   │   │
 │   │   │   ├── reminders/              recordatorios · F28 · DUEÑO de reminders (ADR-0058)
 │   │   │   │   ├── controller.go       instantes RFC 3339 con su zona (C06) · due sólo se prende con true
 │   │   │   │   ├── routes.go           los tres roles: el alcance lo decide contacts/, los cambios el dueño, supervisor y admin

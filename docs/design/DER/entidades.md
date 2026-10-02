@@ -605,10 +605,10 @@ Contenedor organizativo del que cuelgan las seis entidades raíz. **Opera con un
 |---|---|---|
 | `id` | uuid | PK |
 | `account_id` | uuid | FK. Entidad raíz (ADR-0012) |
-| `title` | varchar | |
+| `title` | varchar | Único parcial, sin distinguir mayúsculas ([ADR-0060](../02-decisiones/0060-respuestas-rapidas.md)) |
 | `content` | text | |
 | `created_by_operator_id` | uuid | Renombrado de `created_by_admin_id` (C01) |
-| `active` | boolean | |
+| `active` | boolean | `false` la pausa: sólo la ve el `admin` (ADR-0060) |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | |
 
 ---

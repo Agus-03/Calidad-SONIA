@@ -51,7 +51,7 @@ Una fila por cada requisito funcional (F01–F39) y por cada objetivo específic
 | **F06** | Pipeline RAG | `knowledge_bases` | Documentos (plural), hasta 100 MB por agente, y fragmentos recuperables | ⚠️ La entidad modela **un archivo** (`filename`, `size_bytes`); `embeddings_count` es un entero suelto que no permite referenciar fragmentos. Ver **H-06** |
 | **F07** | Acceso a respuestas rápidas (por la IA) | `quick_replies` | Lectura del catálogo | ✅ |
 | **F08** | Visualización de plantillas Meta | — | Plantilla, estado, motivo de rechazo, sugerencia del LLM | ❌ **No existe entidad de plantilla.** Ver **H-05** |
-| **F09** | Respuestas rápidas configurables | `quick_replies`, `operators` | `title`, `content`, autor | ⚠️ La entidad existe; `created_by_admin_id` apunta a una entidad de usuario que el Anexo C nunca declara. Ver **H-00** |
+| **F09** | Respuestas rápidas configurables | `quick_replies`, `operators` | `title`, `content`, autor | ~~⚠️ La entidad existe; `created_by_admin_id` apunta a una entidad de usuario que el Anexo C nunca declara. Ver **H-00**~~ → ✅ **cubierto**: `created_by_operator_id` apunta a `operators`; carga sólo el `admin`, los tres roles eligen y el título es único por cuenta ([ADR-0060](02-decisiones/0060-respuestas-rapidas.md)) |
 
 ---
 

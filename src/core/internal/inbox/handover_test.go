@@ -276,3 +276,38 @@ func TestTheHistoryRouteNamesThePeople(t *testing.T) {
 		t.Fatalf("got %d - body %s, want the row with its names and a null origin", rec.Code, rec.Body)
 	}
 }
+
+// TestReachableIsTheReachOfTheThreadOnAnyStatus is the contract notes/ and reasoning/ rest on: the holder or the pool for an operator,
+// any conversation for the roles above, a resolved one too, and nothing of another vendor (ADR-0035, regla 2; ADR-0063).
+func TestReachableIsTheReachOfTheThreadOnAnyStatus(t *testing.T) {
+	me, other := id.New(), id.New()
+
+	for _, tc := range []struct {
+		name    string
+		holder  *uuid.UUID
+		role    enums.OperatorRole
+		status  enums.ConversationStatus
+		wantErr error
+	}{
+		{"the vendor reaches its own", &me, enums.OperatorRoleOperator, enums.ConversationStatusActive, nil},
+		{"an operator reaches the pool", nil, enums.OperatorRoleOperator, enums.ConversationStatusActive, nil},
+		{"a supervisor reaches a vendor's", &other, enums.OperatorRoleSupervisor, enums.ConversationStatusActive, nil},
+		{"a resolved one is reached too", &me, enums.OperatorRoleOperator, enums.ConversationStatusResolved, nil},
+		{"another's does not exist for an operator", &other, enums.OperatorRoleOperator, enums.ConversationStatusActive, ErrNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDesk(&stubStore{})
+			target := d.open(tc.holder)
+			target.Status = tc.status
+			d.store.targets[target.ConversationID] = target
+
+			if err := d.service.Reachable(context.Background(), scopeOf(me, tc.role), target.ConversationID); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Reachable: got %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+	d := newDesk(&stubStore{})
+	if err := d.service.Reachable(context.Background(), scopeOf(me, enums.OperatorRoleAdmin), id.New()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a conversation that does not exist: got %v, want ErrNotFound", err)
+	}
+}

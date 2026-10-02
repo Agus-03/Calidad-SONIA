@@ -80,6 +80,9 @@ type messageResponse struct {
 	SentAt      string  `json:"sent_at"`
 }
 
+// EventRow is the row of the listing as realtime/ sends it, so an event and a page never disagree on its shape (ADR-0051, ADR-0063).
+func EventRow(s Summary) any { return present(s) }
+
 func present(s Summary) summaryResponse {
 	out := summaryResponse{
 		ID:     s.ID.String(),
@@ -321,8 +324,6 @@ func translate(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return soniahttp.NotFound("conversation_not_found", "no such conversation").WithCause(err)
-	case errors.Is(err, ErrGenerationNotFound):
-		return soniahttp.NotFound("generation_not_found", "no such generation in this conversation").WithCause(err)
 	case errors.Is(err, ErrTaken):
 		return soniahttp.Conflict("conversation_taken", "another operator is attending this conversation").WithCause(err)
 	case errors.Is(err, ErrResolved):
@@ -361,12 +362,6 @@ func translate(err error) error {
 		return soniahttp.NotFound("operator_not_found", "no such operator in the account").WithCause(err)
 	case errors.Is(err, ErrOperatorUnavailable):
 		return soniahttp.Conflict("operator_unavailable", "the operator is disabled or removed").WithCause(err)
-	case errors.Is(err, ErrEmptyNote):
-		return soniahttp.BadRequest("invalid_content", "the note cannot be empty").WithCause(err)
-	case errors.Is(err, ErrNoteNotFound):
-		return soniahttp.NotFound("note_not_found", "no such note in this conversation").WithCause(err)
-	case errors.Is(err, ErrNotTheAuthor):
-		return soniahttp.Forbidden("not_the_author", "only the author edits or deletes a note").WithCause(err)
 	case errors.Is(err, ErrLabelNotFound):
 		return soniahttp.NotFound("label_not_found", "no such label in the catalogue").WithCause(err)
 	case errors.Is(err, ErrChannelUnavailable):

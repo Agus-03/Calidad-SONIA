@@ -128,7 +128,7 @@ func (s *Service) HandOver(ctx context.Context, scope Scope, from, to uuid.UUID,
 
 // Assignments is the history of F26 with the reach of the thread: who held the conversation, who moved it and why (ADR-0056).
 func (s *Service) Assignments(ctx context.Context, scope Scope, conversationID uuid.UUID) ([]AssignmentEntry, error) {
-	if err := s.reachable(ctx, scope, conversationID); err != nil {
+	if err := s.Reachable(ctx, scope, conversationID); err != nil {
 		return nil, err
 	}
 	return s.opts.Repo.Assignments(ctx, conversationID)
@@ -146,8 +146,8 @@ func (s *Service) receives(ctx context.Context, accountID, operatorID uuid.UUID)
 	return nil
 }
 
-// reachable is the reach of the thread for what hangs from a conversation: what the operator cannot see does not exist (ADR-0035).
-func (s *Service) reachable(ctx context.Context, scope Scope, conversationID uuid.UUID) error {
+// Reachable is the reach of the thread for what hangs from a conversation, exported for notes/ and reasoning/ (ADR-0035, ADR-0063).
+func (s *Service) Reachable(ctx context.Context, scope Scope, conversationID uuid.UUID) error {
 	target, err := s.opts.Repo.Target(ctx, scope.AccountID, conversationID)
 	if err != nil {
 		return err

@@ -1,15 +1,14 @@
-package inbox
+package realtime
 
 import (
 	"errors"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 
-	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -24,13 +23,6 @@ func NewStreamController(hub *Hub, log *slog.Logger) *StreamController {
 		log = slog.Default()
 	}
 	return &StreamController{hub: hub, log: log}
-}
-
-// The three roles, as the listing: each hears what its inbox shows, and the hub decides that per connection (ADR-0035, regla 1).
-func (c *StreamController) Routes() []soniahttp.Route {
-	return []soniahttp.Route{
-		{Method: http.MethodPost, Path: "/inbox/stream-ticket", Roles: enums.OperatorRoleValues, Handler: c.ticket},
-	}
 }
 
 type ticketResponse struct {
@@ -67,13 +59,6 @@ func NewStreamGate(hub *Hub, lookup soniahttp.ActorLookup, log *slog.Logger) *St
 	return &StreamGate{hub: hub, lookup: lookup, log: log}
 }
 
-// Outside /api/v1 because a public route cannot name roles; the reach is still the actor's, read below.
-func (g *StreamGate) Routes() []soniahttp.Route {
-	return []soniahttp.Route{
-		{Method: http.MethodGet, Path: "/inbox/stream", Handler: g.stream},
-	}
-}
-
 func (g *StreamGate) stream(gc *gin.Context) {
 	operatorID, err := g.hub.Redeem(gc.Query("ticket"))
 	if errors.Is(err, ErrInvalidTicket) {
@@ -99,5 +84,5 @@ func (g *StreamGate) stream(gc *gin.Context) {
 		g.log.Warn("inbox stream not opened", slog.String("operator_id", actor.OperatorID.String()), slog.String("cause", err.Error()))
 		return
 	}
-	g.hub.Serve(gc.Request.Context(), conn, Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role})
+	g.hub.Serve(gc.Request.Context(), conn, inbox.Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role})
 }

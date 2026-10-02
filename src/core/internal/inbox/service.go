@@ -19,10 +19,6 @@ var (
 	// to an operator that another's conversation exists, which is what contacts/ already answers too (ADR-0035, regla 3).
 	ErrNotFound = errors.New("inbox: conversation not found")
 
-	// ErrGenerationNotFound is a generation that does not exist or is not of the conversation in the path: F05 reads one answer of
-	// one thread, never an id guessed from another (ADR-0049).
-	ErrGenerationNotFound = errors.New("inbox: generation not found")
-
 	// ErrTaken is somebody else holding the conversation: the pool race lost, or a supervisor answering a chat that is not theirs
 	// (ADR-0035, reglas 6 y 8).
 	ErrTaken = errors.New("inbox: the conversation is assigned to another operator")
@@ -88,16 +84,9 @@ type store interface {
 	Target(ctx context.Context, accountID, conversationID uuid.UUID) (Target, error)
 	Thread(ctx context.Context, conversationID uuid.UUID, after *Cursor, limit int) ([]ThreadMessage, error)
 	PendingSuggestion(ctx context.Context, conversationID uuid.UUID) (Suggestion, error)
-	Reasoning(ctx context.Context, conversationID, generationID uuid.UUID) (Reasoning, error)
 	OperatorState(ctx context.Context, accountID, operatorID uuid.UUID) (bool, error)
 	Assignments(ctx context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error)
-	Notes(ctx context.Context, conversationID uuid.UUID) ([]Note, error)
-	NoteByID(ctx context.Context, conversationID, noteID uuid.UUID) (Note, error)
-	// The notes are this package's own table and one statement each, so they need no transaction either (ADR-0056).
-	AddNote(ctx context.Context, n Note) error
-	EditNote(ctx context.Context, noteID, operatorID uuid.UUID, content string) error
-	DeleteNote(ctx context.Context, noteID, operatorID uuid.UUID) error
-	// The links of F24 are this package's table too, one statement each (ADR-0057).
+	// The links of F24 are this package's table, one statement each, so they need no transaction either (ADR-0057).
 	AssignLabel(ctx context.Context, linkID, conversationID, labelID, operatorID uuid.UUID) (bool, error)
 	UnassignLabel(ctx context.Context, conversationID, labelID uuid.UUID) (bool, error)
 	LabelsOf(ctx context.Context, conversationID uuid.UUID) ([]Label, error)
@@ -237,12 +226,12 @@ func paginate[T any](rows []T, limit int, cursorOf func(T) Cursor) ([]T, *Cursor
 // mayRead is the reach of the listing applied to one conversation: the operator reads its own and the pool, and the two roles above
 // it read the whole team (ADR-0035, reglas 1 y 2).
 func mayRead(scope Scope, t Target) bool {
-	return canSee(scope, t.OperatorID)
+	return CanSee(scope, t.OperatorID)
 }
 
-// canSee is the reach as a function of who holds the conversation, so the hub decides who hears a change with the same rule the
+// CanSee is the reach as a function of who holds the conversation, so the hub decides who hears a change with the same rule the
 // listing and the thread apply (ADR-0035, reglas 1 y 2).
-func canSee(scope Scope, holder *uuid.UUID) bool {
+func CanSee(scope Scope, holder *uuid.UUID) bool {
 	return scope.seesTheWholeTeam() || holder == nil || *holder == scope.OperatorID
 }
 

@@ -9,8 +9,8 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
 
-// TestNotesAndHistoryAgainstRealDDL is ADR-0056 through the repository: who receives, notes kept by their author, a named history.
-func TestNotesAndHistoryAgainstRealDDL(t *testing.T) {
+// TestHistoryAgainstRealDDL is ADR-0056 through the repository: who can receive, and a history read with names and reason.
+func TestHistoryAgainstRealDDL(t *testing.T) {
 	inTx(t, func(ctx context.Context, exec db.Executor) {
 		w := seedWorld(t, ctx, exec)
 		repo := NewRepository(exec)
@@ -26,42 +26,6 @@ func TestNotesAndHistoryAgainstRealDDL(t *testing.T) {
 		}
 		if _, err := repo.OperatorState(ctx, id.New(), w.mine); !errors.Is(err, ErrOperatorNotFound) {
 			t.Fatalf("an operator of another account: got %v, want ErrOperatorNotFound", err)
-		}
-
-		first, second := id.New(), id.New()
-		for _, n := range []Note{
-			{ID: first, ConversationID: w.mineConv, Author: Operator{ID: w.mine}, Content: "primera"},
-			{ID: second, ConversationID: w.mineConv, Author: Operator{ID: w.theirs}, Content: "segunda"},
-		} {
-			if err := repo.AddNote(ctx, n); err != nil {
-				t.Fatalf("AddNote: %v", err)
-			}
-		}
-		notes, err := repo.Notes(ctx, w.mineConv)
-		if err != nil || len(notes) != 2 || notes[0].ID != first || notes[0].Author.Name != "Prueba" {
-			t.Fatalf("Notes: got %+v and %v, want both, oldest first, signed", notes, err)
-		}
-		if err := repo.EditNote(ctx, second, w.mine, "ajena"); !errors.Is(err, ErrNoteNotFound) {
-			t.Fatalf("editing another's note: got %v, want ErrNoteNotFound", err)
-		}
-		if err := repo.EditNote(ctx, first, w.mine, "corregida"); err != nil {
-			t.Fatalf("EditNote: %v", err)
-		}
-		if n, err := repo.NoteByID(ctx, w.mineConv, first); err != nil || n.Content != "corregida" {
-			t.Fatalf("NoteByID after the edit: got %+v and %v", n, err)
-		}
-		if err := repo.DeleteNote(ctx, first, w.mine); err != nil {
-			t.Fatalf("DeleteNote: %v", err)
-		}
-		if _, err := repo.NoteByID(ctx, w.mineConv, first); !errors.Is(err, ErrNoteNotFound) {
-			t.Fatalf("a deleted note: got %v, want ErrNoteNotFound", err)
-		}
-		if _, err := repo.NoteByID(ctx, w.theirsConv, second); !errors.Is(err, ErrNoteNotFound) {
-			t.Fatalf("a note read through another conversation: got %v, want ErrNoteNotFound", err)
-		}
-		var kept int
-		if err := exec.QueryRow(ctx, `SELECT count(*) FROM internal_notes WHERE id = $1`, first).Scan(&kept); err != nil || kept != 1 {
-			t.Fatalf("the deleted note's row: %d and %v, want it kept (C09)", kept, err)
 		}
 
 		for _, a := range []Assignment{

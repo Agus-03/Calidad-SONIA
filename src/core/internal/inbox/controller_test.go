@@ -614,3 +614,20 @@ func TestASendThatNamesASuggestionHasItsOwnRefusals(t *testing.T) {
 		t.Fatal("the answer left although its review was refused")
 	}
 }
+
+// The thread says which messages have a generation behind them, which is how the frontend knows what F05 can be asked about.
+func TestTheThreadNamesTheGenerationBehindAMessage(t *testing.T) {
+	d := newDesk(&stubStore{})
+	target := d.open(&testOperator)
+	generationID := id.New()
+	d.store.threads = map[uuid.UUID][]ThreadMessage{target.ConversationID: {
+		{Message: Message{ID: id.New(), Direction: enums.MessageDirectionOutbound, SenderType: enums.SenderTypeAiAgent}, GenerationID: &generationID},
+		{Message: Message{ID: id.New(), Direction: enums.MessageDirectionInbound, SenderType: enums.SenderTypeContact}},
+	}}
+
+	rec := getThread(mountDesk(enums.OperatorRoleOperator, d), target.ConversationID.String(), url.Values{})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"generation_id":"`+generationID.String()+`"`) ||
+		!strings.Contains(rec.Body.String(), `"generation_id":null`) {
+		t.Fatalf("GET messages: got %d - %s, want the generation of the answer and null for the inbound", rec.Code, rec.Body)
+	}
+}

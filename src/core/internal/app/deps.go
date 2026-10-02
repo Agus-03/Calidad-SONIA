@@ -14,6 +14,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
 	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
+	"github.com/mateo-velasquez/sonia/src/core/internal/notes"
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/auth"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/config"
@@ -21,6 +22,8 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	quickreplies "github.com/mateo-velasquez/sonia/src/core/internal/quick_replies"
+	"github.com/mateo-velasquez/sonia/src/core/internal/realtime"
+	"github.com/mateo-velasquez/sonia/src/core/internal/reasoning"
 	"github.com/mateo-velasquez/sonia/src/core/internal/reminders"
 	"github.com/mateo-velasquez/sonia/src/core/internal/sales"
 	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
@@ -41,7 +44,7 @@ type wiring struct {
 	// Held so the shutdown can stop it first: a poller still ticking would keep adding turns to what the deployment waits for.
 	poller *turn.Poller
 	// Held so the shutdown can close the sockets, which the server does not track once they are hijacked (ADR-0051).
-	hub *inbox.Hub
+	hub *realtime.Hub
 	// Held so the shutdown stops it with the turn's poller: an alert marked as the process dies would be told to nobody (ADR-0058).
 	alarms *reminders.Poller
 }
@@ -61,7 +64,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	channelRepo := whatsapp.NewRepository(pool, cipher)
 
 	// The fan-out of F21, told by every package that writes a conversation once its transaction committed (ADR-0051).
-	hub := inbox.NewHub(inbox.HubOptions{Rows: inbox.NewRepository(pool), Logger: log})
+	hub := realtime.NewHub(realtime.HubOptions{Rows: inbox.NewRepository(pool), Logger: log})
 
 	// A repository of its own and not the one `book` holds below: a repository keeps no state past its executor, and sharing
 	// the instance would tie two contexts together for a reason that is not a reason of the domain.
@@ -233,7 +236,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 
 	// The socket is public for the router because the browser cannot send the bearer on it; its ticket is the credential, and the
 	// operator is read again with the same lookup the bearer uses (ADR-0051).
-	gate := inbox.NewStreamGate(hub, resolveActor(people), log)
+	gate := realtime.NewStreamGate(hub, resolveActor(people), log)
 
 	return wiring{
 		controllers: []soniahttp.Controller{
@@ -242,7 +245,10 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			labels.NewController(catalogue, log),
 			contacts.NewController(book, log),
 			inbox.NewController(desk, log),
-			inbox.NewStreamController(hub, log),
+			// The notes and F05 hang from a conversation, so the inbox's service is their reach (ADR-0063).
+			notes.NewController(notes.NewService(notes.NewRepository(pool), desk), log),
+			reasoning.NewController(reasoning.NewService(reasoning.NewRepository(pool), desk), log),
+			realtime.NewStreamController(hub, log),
 			agents.NewController(identity, log),
 			agents.NewComponentsController(blocks, log),
 			agents.NewPreviewController(previews, log),

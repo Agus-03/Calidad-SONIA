@@ -38,7 +38,6 @@ type stubStore struct {
 	threadErr error
 
 	suggestions map[uuid.UUID]Suggestion
-	reasonings  map[uuid.UUID]stubReasoning
 
 	// The two answers of the dispatcher's reads (ADR-0037): nil is "nobody", which is a real answer and not a failure.
 	previous, next           *uuid.UUID
@@ -48,7 +47,6 @@ type stubStore struct {
 	// The people of the account by whether they can take conversations; one missing is of another account (ADR-0056).
 	people  map[uuid.UUID]bool
 	history map[uuid.UUID][]AssignmentEntry
-	notes   map[uuid.UUID]Note
 }
 
 // The links are kept in labels, the same map the filter by label reads, so a tag shows up in the filter as it does in the query.
@@ -107,53 +105,6 @@ func (s *stubStore) OperatorState(_ context.Context, _, operatorID uuid.UUID) (b
 
 func (s *stubStore) Assignments(_ context.Context, conversationID uuid.UUID) ([]AssignmentEntry, error) {
 	return s.history[conversationID], nil
-}
-
-func (s *stubStore) Notes(_ context.Context, conversationID uuid.UUID) ([]Note, error) {
-	out := []Note{}
-	for _, n := range s.notes {
-		if n.ConversationID == conversationID {
-			out = append(out, n)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i].ID[:], out[j].ID[:]) < 0 })
-	return out, nil
-}
-
-// Refused when it is of another conversation, which is what the WHERE of the real read does.
-func (s *stubStore) NoteByID(_ context.Context, conversationID, noteID uuid.UUID) (Note, error) {
-	n, ok := s.notes[noteID]
-	if !ok || n.ConversationID != conversationID {
-		return Note{}, ErrNoteNotFound
-	}
-	return n, nil
-}
-
-func (s *stubStore) AddNote(_ context.Context, n Note) error {
-	if s.notes == nil {
-		s.notes = map[uuid.UUID]Note{}
-	}
-	s.notes[n.ID] = n
-	return nil
-}
-
-func (s *stubStore) EditNote(_ context.Context, noteID, operatorID uuid.UUID, content string) error {
-	n, ok := s.notes[noteID]
-	if !ok || n.Author.ID != operatorID {
-		return ErrNoteNotFound
-	}
-	n.Content = content
-	s.notes[noteID] = n
-	return nil
-}
-
-func (s *stubStore) DeleteNote(_ context.Context, noteID, operatorID uuid.UUID) error {
-	n, ok := s.notes[noteID]
-	if !ok || n.Author.ID != operatorID {
-		return ErrNoteNotFound
-	}
-	delete(s.notes, noteID)
-	return nil
 }
 
 func (s *stubStore) PreviousOperator(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
@@ -275,21 +226,6 @@ func (s *stubStore) Target(_ context.Context, _, conversationID uuid.UUID) (Targ
 		return Target{}, ErrNotFound
 	}
 	return t, nil
-}
-
-// stubReasoning is a generation and the conversation it belongs to, which the real read checks in its WHERE.
-type stubReasoning struct {
-	Reasoning
-	conversationID uuid.UUID
-}
-
-// Keyed by generation, and refused when it is of another conversation, which is what the WHERE of the real read does.
-func (s *stubStore) Reasoning(_ context.Context, conversationID, generationID uuid.UUID) (Reasoning, error) {
-	r, ok := s.reasonings[generationID]
-	if !ok || r.conversationID != conversationID {
-		return Reasoning{}, ErrGenerationNotFound
-	}
-	return r.Reasoning, nil
 }
 
 func (s *stubStore) PendingSuggestion(_ context.Context, conversationID uuid.UUID) (Suggestion, error) {
@@ -589,11 +525,4 @@ func (d *desk) open(holder *uuid.UUID) Target {
 	}
 	d.store.targets[t.ConversationID] = t
 	return t
-}
-
-// note writes a note of author on the conversation, the way AddNote would.
-func (d *desk) note(conversationID, author uuid.UUID) uuid.UUID {
-	noteID := id.New()
-	_ = d.store.AddNote(context.Background(), Note{ID: noteID, ConversationID: conversationID, Author: Operator{ID: author}, Content: "nota"})
-	return noteID
 }

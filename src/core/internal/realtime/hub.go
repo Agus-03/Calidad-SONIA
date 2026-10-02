@@ -1,4 +1,5 @@
-package inbox
+// Package realtime is F21: the hub in memory that tells each open inbox what changed, with the reach of the listing (ADR-0051).
+package realtime
 
 import (
 	"context"
@@ -12,10 +13,12 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 )
 
 // ErrInvalidTicket covers a ticket never issued, one already used and one expired: telling them apart would only help a guesser.
-var ErrInvalidTicket = errors.New("inbox: the stream ticket is not valid")
+var ErrInvalidTicket = errors.New("realtime: the stream ticket is not valid")
 
 const (
 	// Long enough for the frontend to open the socket right after asking, short enough that a ticket leaked in a log is dead (ADR-0051).
@@ -33,7 +36,7 @@ const (
 
 // rows is the one read the hub makes: the inbox row as the listing draws it, plus the account it belongs to.
 type rows interface {
-	SummaryOf(ctx context.Context, conversationID uuid.UUID) (uuid.UUID, Summary, error)
+	SummaryOf(ctx context.Context, conversationID uuid.UUID) (uuid.UUID, inbox.Summary, error)
 }
 
 type HubOptions struct {
@@ -179,9 +182,9 @@ func (h *Hub) work() {
 }
 
 type conversationEvent struct {
-	Type         string           `json:"type"`
-	Conversation *summaryResponse `json:"conversation,omitempty"`
-	ID           string           `json:"id,omitempty"`
+	Type         string `json:"type"`
+	Conversation any    `json:"conversation,omitempty"`
+	ID           string `json:"id,omitempty"`
 }
 
 // fanOut reads the row once and decides per connection, with the reach of the listing: an operator never receives a conversation
@@ -191,7 +194,7 @@ func (h *Hub) fanOut(n notice) {
 	defer cancel()
 
 	accountID, summary, err := h.opts.Rows.SummaryOf(ctx, n.conversationID)
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, inbox.ErrNotFound) {
 		// A contact taken down takes its conversation out of every inbox, so nobody is told about it (ADR-0035, regla 1).
 		return
 	}
@@ -201,8 +204,8 @@ func (h *Hub) fanOut(n notice) {
 		return
 	}
 
-	row := present(summary)
-	updated, err := json.Marshal(conversationEvent{Type: "conversation.updated", Conversation: &row})
+	row := inbox.EventRow(summary)
+	updated, err := json.Marshal(conversationEvent{Type: "conversation.updated", Conversation: row})
 	if err != nil {
 		h.opts.Logger.Error("inbox event not encoded", slog.String("cause", err.Error()))
 		return
@@ -225,7 +228,7 @@ func (h *Hub) fanOut(n notice) {
 			continue
 		}
 		switch {
-		case canSee(c.scope, holder):
+		case inbox.CanSee(c.scope, holder):
 			c.offer(updated)
 		case n.leftPool:
 			c.offer(removed)
@@ -237,7 +240,7 @@ func (h *Hub) fanOut(n notice) {
 
 // client is one open socket. Its queue is the only thing the hub touches, so a slow browser can never stall the fan-out.
 type client struct {
-	scope Scope
+	scope inbox.Scope
 	send  chan []byte
 
 	once   sync.Once
@@ -263,7 +266,7 @@ func (c *client) end(status websocket.StatusCode, reason string) {
 }
 
 // Serve holds one socket until the browser leaves, the hub closes or the client falls behind, and it is the only writer of it.
-func (h *Hub) Serve(ctx context.Context, conn *websocket.Conn, scope Scope) {
+func (h *Hub) Serve(ctx context.Context, conn *websocket.Conn, scope inbox.Scope) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	c := &client{scope: scope, send: make(chan []byte, clientBuffer), cancel: cancel, status: websocket.StatusNormalClosure}

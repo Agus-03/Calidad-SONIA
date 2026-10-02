@@ -1,4 +1,4 @@
-package inbox
+package reasoning
 
 import (
 	"context"
@@ -7,7 +7,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 )
+
+type Repository struct{ exec db.Executor }
+
+func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
 // The generation by its id and its conversation together, so an id of another conversation is not found rather than read.
 const reasoningGeneration = `
@@ -34,12 +40,12 @@ func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID
 		return Reasoning{}, ErrGenerationNotFound
 	}
 	if err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation: %w", err)
+		return Reasoning{}, fmt.Errorf("reasoning: read generation: %w", err)
 	}
 
 	rows, err := r.exec.Query(ctx, reasoningComponents, generationID)
 	if err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
+		return Reasoning{}, fmt.Errorf("reasoning: read generation components: %w", err)
 	}
 	defer rows.Close()
 
@@ -48,13 +54,13 @@ func (r *Repository) Reasoning(ctx context.Context, conversationID, generationID
 		var c UsedComponent
 		var content string
 		if err := rows.Scan(&c.Type, &c.Position, &c.VersionNumber, &content); err != nil {
-			return Reasoning{}, fmt.Errorf("inbox: scan generation component: %w", err)
+			return Reasoning{}, fmt.Errorf("reasoning: scan generation component: %w", err)
 		}
 		c.Content = &content
 		out.Components = append(out.Components, c)
 	}
 	if err := rows.Err(); err != nil {
-		return Reasoning{}, fmt.Errorf("inbox: read generation components: %w", err)
+		return Reasoning{}, fmt.Errorf("reasoning: read generation components: %w", err)
 	}
 	return out, nil
 }

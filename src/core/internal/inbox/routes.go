@@ -7,7 +7,7 @@ import (
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
-// Written once so the eighteen routes of one conversation cannot drift apart.
+// Written once so the thirteen routes of one conversation cannot drift apart.
 const routeBase = "/conversations"
 
 // The three roles enter every route, and what each one reaches is decided inside: refusing the listing to an operator would take away
@@ -24,8 +24,6 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPost, Path: routeBase + "/:id/messages", Roles: enums.OperatorRoleValues, Handler: c.send},
 		// The draft of suggestion mode, with the reach of the thread: what the Operator cannot read it cannot copy (ADR-0046).
 		{Method: http.MethodGet, Path: routeBase + "/:id/suggestion", Roles: enums.OperatorRoleValues, Handler: c.suggestion},
-		// F05 with the reach of the thread; the text of each component only for the admin, which the service decides (ADR-0049).
-		{Method: http.MethodGet, Path: routeBase + "/:id/generations/:generation_id/components", Roles: enums.OperatorRoleValues, Handler: c.reasoning},
 		// The operator switches the bot of what it holds, as F27 and Anexo B give it; supervisor and admin, of any conversation of the
 		// account. The service tells them apart (ADR-0037, regla 4).
 		{Method: http.MethodPatch, Path: routeBase + "/:id/mode", Roles: enums.OperatorRoleValues, Handler: c.setMode},
@@ -40,12 +38,8 @@ func (c *Controller) Routes() []soniahttp.Route {
 		{Method: http.MethodPost, Path: routeBase + "/:id/reassign", Roles: aboveOperator, Handler: c.reassign},
 		// The absence of a vendor: every open conversation of one goes to another in one request (ADR-0056).
 		{Method: http.MethodPost, Path: "/inbox/handover", Roles: aboveOperator, Handler: c.handOver},
-		// The history and the notes have the reach of the thread, which the service decides for the three roles (ADR-0056).
+		// The history has the reach of the thread, which the service decides for the three roles (ADR-0056).
 		{Method: http.MethodGet, Path: routeBase + "/:id/assignments", Roles: enums.OperatorRoleValues, Handler: c.assignments},
-		{Method: http.MethodGet, Path: routeBase + "/:id/notes", Roles: enums.OperatorRoleValues, Handler: c.notes},
-		{Method: http.MethodPost, Path: routeBase + "/:id/notes", Roles: enums.OperatorRoleValues, Handler: c.addNote},
-		{Method: http.MethodPatch, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.editNote},
-		{Method: http.MethodDelete, Path: routeBase + "/:id/notes/:note_id", Roles: enums.OperatorRoleValues, Handler: c.deleteNote},
 		// F24 with the reach of the thread for the three roles, which the service decides; the catalogue stays the admin's (ADR-0057).
 		{Method: http.MethodPost, Path: routeBase + "/:id/labels", Roles: enums.OperatorRoleValues, Handler: c.assignLabel},
 		{Method: http.MethodDelete, Path: routeBase + "/:id/labels/:label_id", Roles: enums.OperatorRoleValues, Handler: c.unassignLabel},

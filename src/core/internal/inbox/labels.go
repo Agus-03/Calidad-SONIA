@@ -20,7 +20,7 @@ type Catalogue interface {
 
 // AssignLabel is F24 with the reach of the thread, resolved ones included; tagging twice answers the state it asked for (ADR-0057).
 func (s *Service) AssignLabel(ctx context.Context, scope Scope, conversationID, labelID uuid.UUID) ([]Label, error) {
-	if err := s.reachable(ctx, scope, conversationID); err != nil {
+	if err := s.Reachable(ctx, scope, conversationID); err != nil {
 		return nil, err
 	}
 	if _, err := s.opts.Catalogue.ByID(ctx, scope.AccountID, labelID); err != nil {
@@ -39,7 +39,7 @@ func (s *Service) AssignLabel(ctx context.Context, scope Scope, conversationID, 
 
 // UnassignLabel does not ask the catalogue: a label of another account was never on a conversation of this one, so nothing is removed.
 func (s *Service) UnassignLabel(ctx context.Context, scope Scope, conversationID, labelID uuid.UUID) ([]Label, error) {
-	if err := s.reachable(ctx, scope, conversationID); err != nil {
+	if err := s.Reachable(ctx, scope, conversationID); err != nil {
 		return nil, err
 	}
 

@@ -1,4 +1,4 @@
-package inbox
+package notes
 
 import (
 	"context"
@@ -7,7 +7,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 )
+
+type Repository struct{ exec db.Executor }
+
+func NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }
 
 // A deleted note leaves the thread and keeps its row (C09); the author is joined so the note is read with its signature.
 const noteSelect = `
@@ -19,7 +25,7 @@ WHERE  n.deleted_at IS NULL`
 func (r *Repository) Notes(ctx context.Context, conversationID uuid.UUID) ([]Note, error) {
 	rows, err := r.exec.Query(ctx, noteSelect+" AND n.conversation_id = $1 ORDER BY n.created_at, n.id", conversationID)
 	if err != nil {
-		return nil, fmt.Errorf("inbox: read the notes: %w", err)
+		return nil, fmt.Errorf("notes: read the notes: %w", err)
 	}
 	defer rows.Close()
 
@@ -47,7 +53,7 @@ func scanNote(row pgx.Row) (Note, error) {
 	var n Note
 	err := row.Scan(&n.ID, &n.ConversationID, &n.Author.ID, &n.Author.Name, &n.Author.Lastname, &n.Content, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return Note{}, fmt.Errorf("inbox: scan a note: %w", err)
+		return Note{}, fmt.Errorf("notes: scan a note: %w", err)
 	}
 	return n, err
 }
@@ -55,7 +61,7 @@ func scanNote(row pgx.Row) (Note, error) {
 func (r *Repository) AddNote(ctx context.Context, n Note) error {
 	if _, err := r.exec.Exec(ctx, `INSERT INTO internal_notes (id, conversation_id, operator_id, content) VALUES ($1, $2, $3, $4)`,
 		n.ID, n.ConversationID, n.Author.ID, n.Content); err != nil {
-		return fmt.Errorf("inbox: add a note: %w", err)
+		return fmt.Errorf("notes: add a note: %w", err)
 	}
 	return nil
 }
@@ -74,7 +80,7 @@ func (r *Repository) DeleteNote(ctx context.Context, noteID, operatorID uuid.UUI
 func (r *Repository) noteWrite(ctx context.Context, what, query string, args ...any) error {
 	tag, err := r.exec.Exec(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("inbox: %s a note: %w", what, err)
+		return fmt.Errorf("notes: %s a note: %w", what, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNoteNotFound

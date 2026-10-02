@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 y regla 13 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio*, y marcar leída se suma a los que publican · **regla 13 enmendada por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** (2026-10-01): cerrar una conversación también publica |
+| **Estado** | Aceptada · la librería (§2.1) y la autenticación por ticket (§2.2) las eligió el grupo el 2026-09-26 · **§4 y regla 13 enmendados por [ADR-0052](0052-marca-de-leida.md)** (2026-09-26): la fila del evento lleva `unread_count`, así que el costo de los filtros queda sólo para *por etiqueta* y *con recordatorio*, y marcar leída se suma a los que publican · **regla 13 enmendada por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** (2026-10-01): cerrar una conversación también publica · **regla 13 enmendada por [ADR-0055](0055-puntaje-de-la-conversacion.md)** (2026-10-01): calificar una conversación también publica |
 | **Fecha** | 2026-09-26 |
 | **Etapa** | Construcción — Fase 10 (bandeja en tiempo real) |
 | **Resuelve** | Cómo implementa el núcleo F21: con qué librería, cómo se autentica una conexión que el navegador abre sin header `Authorization`, qué eventos existen, quién los publica y qué pasa cuando algo falla |
@@ -66,7 +66,7 @@ Quedaban cuatro preguntas abiertas:
 | 13 | **Se publica después del commit, nunca adentro de la transacción.** Publica el que conduce la escritura: |
 | | · `whatsapp/`, al terminar el webhook, **una vez por conversación** aunque el payload traiga varios mensajes |
 | | · `turn/`, **una vez al terminar el turno**, también si falló, porque cada escritura del turno confirmó por su cuenta |
-| | · `inbox/`, al responder (después del envío, para que la fila ya diga enviado o fallido), al cambiar el modo y al cambiar la estrella ([ADR-0053](0053-estrella-de-seguimiento.md)) · **y al marcar leída, agregado por [ADR-0052](0052-marca-de-leida.md)** · **y al cerrar, agregado por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** |
+| | · `inbox/`, al responder (después del envío, para que la fila ya diga enviado o fallido), al cambiar el modo y al cambiar la estrella ([ADR-0053](0053-estrella-de-seguimiento.md)) · **y al marcar leída, agregado por [ADR-0052](0052-marca-de-leida.md)** · **y al cerrar, agregado por [ADR-0054](0054-cierre-manual-de-la-conversacion.md)** · **y al calificar, agregado por [ADR-0055](0055-puntaje-de-la-conversacion.md)** |
 | | · `agents/`, al pausar o dar de baja un agente IA: una vez por cada conversación cuyo bot apagó. **Esto enmienda ADR-0038 §4** |
 | 14 | **Publicar nunca bloquea a quien publica.** Los avisos entran a una cola de 256; si está llena, el aviso se descarta y queda en el log. El webhook no espera a la bandeja, igual que no espera al turno ([ADR-0029](0029-el-acuse-del-webhook-no-espera-al-turno.md)) |
 | 15 | **Un solo worker lee la fila y reparte.** Hace dos lecturas por aviso: la cuenta de la conversación y su fila del listado |

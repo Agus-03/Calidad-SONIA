@@ -21,6 +21,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 	"github.com/mateo-velasquez/sonia/src/core/internal/reminders"
+	"github.com/mateo-velasquez/sonia/src/core/internal/sales"
 	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
@@ -233,6 +234,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			agents.NewPreviewController(previews, log),
 			whatsapp.NewSettingsController(numbers, log),
 			reminders.NewController(reminders.NewService(reminderRepo, book, log), log),
+			sales.NewController(sales.NewService(sales.NewRepository(pool), log), log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

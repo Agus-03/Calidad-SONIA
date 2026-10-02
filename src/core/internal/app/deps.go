@@ -20,6 +20,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	"github.com/mateo-velasquez/sonia/src/core/internal/reminders"
 	"github.com/mateo-velasquez/sonia/src/core/internal/turn"
 	"github.com/mateo-velasquez/sonia/src/core/internal/whatsapp"
 )
@@ -39,6 +40,8 @@ type wiring struct {
 	poller *turn.Poller
 	// Held so the shutdown can close the sockets, which the server does not track once they are hijacked (ADR-0051).
 	hub *inbox.Hub
+	// Held so the shutdown stops it with the turn's poller: an alert marked as the process dies would be told to nobody (ADR-0058).
+	alarms *reminders.Poller
 }
 
 // wire builds the object graph, repository then service then controller: it is the only part that grows with each context.
@@ -210,6 +213,10 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		Logger: log,
 	})
 
+	// F28: the reminders hang from contacts/, which decides the reach, and go off through the hub when due (ADR-0058).
+	reminderRepo := reminders.NewRepository(pool)
+	alarms := reminders.NewPoller(reminders.PollerOptions{Store: reminderRepo, Alerts: hub, Logger: log})
+
 	// The socket is public for the router because the browser cannot send the bearer on it; its ticket is the credential, and the
 	// operator is read again with the same lookup the bearer uses (ADR-0051).
 	gate := inbox.NewStreamGate(hub, resolveActor(people), log)
@@ -225,6 +232,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			agents.NewComponentsController(blocks, log),
 			agents.NewPreviewController(previews, log),
 			whatsapp.NewSettingsController(numbers, log),
+			reminders.NewController(reminders.NewService(reminderRepo, book, log), log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),
@@ -232,6 +240,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 		turns:             turns,
 		poller:            poller,
 		hub:               hub,
+		alarms:            alarms,
 	}, nil
 }
 

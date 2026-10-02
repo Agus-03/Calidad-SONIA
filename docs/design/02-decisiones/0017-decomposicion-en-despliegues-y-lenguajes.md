@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` · **§3, §4, §5 y §6 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md) (2026-09-20)**: el timer de F10 deja de ser *"estado en memoria del proceso"* y pasa a una columna con un poller, así que **deja de valer como argumento para elegir Go** —§3, y el descarte del monolito Python en §5—, deja de ser el motivo por el que el núcleo no escala horizontalmente —§4, donde el techo real pasa a ser el fan-out de WebSockets de F21—, y `turn/` ya no es *"time.Timer + canales"* —§6—. **La decisión no se revierte**: Go sigue por el gateway, F21 y el interés declarado del equipo · **la fila F07 de §6 enmendada por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md) (2026-10-02)**: el catálogo lo lee `prompts/repository.py` y lo ensambla `prompts/assembler.py`, no `pipeline/generation.py` |
+| **Estado** | **Aceptada** — firmada por los tres autores el 2026-09-05 · (k) acotada por [ADR-0040](0040-previsualizacion-del-prompt.md), regla 5: la previsualización no se registra en `audit_logs` · **§3, §4, §5 y §6 enmendadas por [ADR-0041](0041-temporizador-del-turno-por-poller.md) (2026-09-20)**: el timer de F10 deja de ser *"estado en memoria del proceso"* y pasa a una columna con un poller, así que **deja de valer como argumento para elegir Go** —§3, y el descarte del monolito Python en §5—, deja de ser el motivo por el que el núcleo no escala horizontalmente —§4, donde el techo real pasa a ser el fan-out de WebSockets de F21—, y `turn/` ya no es *"time.Timer + canales"* —§6—. **La decisión no se revierte**: Go sigue por el gateway, F21 y el interés declarado del equipo · **la fila F07 de §6 enmendada por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md) (2026-10-02)**: el catálogo lo lee `prompts/repository.py` y lo ensambla `prompts/assembler.py`, no `pipeline/generation.py` · **las filas F05, F21 y F26 de §6 enmendadas por [ADR-0063](0063-paquetes-por-razon-de-cambio.md) (2026-10-02)**: F05 vive en `reasoning/`, el fan-out de F21 en `realtime/` y las notas de F26 en `notes/` |
 | **Fecha** | 2026-08-16 · **revisada 2026-08-22** (ver §0) · **firmada 2026-09-05** |
 | **Etapa** | Diseño — antes del Paso 7 (nivel físico) |
 | **Resuelve** | La sección 8.4 deja el lenguaje sin decidir (*"Python o GO"*, *"Go o Python"*) y 8.5 no dice si los módulos son procesos separados |
@@ -280,7 +280,7 @@ Derivado del Anexo A del anteproyecto, requisito por requisito. **Éste es el ma
 | F02 | Tres modos de operación | ABM + estado | Go | `agents/` (defecto) · `inbox/` (por conversación) |
 | F03 | Previsualización del prompt | Render | **Python** | `prompts/` — invocado por el núcleo, ver (h) |
 | F04 | Reescritura adaptativa | Inferencia | **Python** | `prompts/` — rewriter.py |
-| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `pipeline/runner.py` → `inbox/` |
+| F05 | Visualización del razonamiento | **Partido** | Python escribe · Go sirve | `pipeline/runner.py` → ~~`inbox/`~~ `reasoning/` *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F06 | Pipeline RAG | Inferencia + **lote** | **Python** | `documents/` (ABM, Go) · `knowledge/` + `worker/` (Python) |
 | F07 | Acceso a respuestas rápidas por la IA | Inferencia | **Python** | ~~`pipeline/generation.py`~~ `prompts/repository.py` + `prompts/assembler.py` *(enmendado por [ADR-0061](0061-respuestas-rapidas-en-el-prompt.md))* — lee tabla del núcleo |
 | F08 | Visualización de plantillas Meta | **Partido** | Go sincroniza · Python sugiere | `meta_templates/` + `pipeline/` |
@@ -296,12 +296,12 @@ Derivado del Anexo A del anteproyecto, requisito por requisito. **Éste es el ma
 | F18 | Gestión de usuarios y roles | ABM | Go | `operators/` |
 | F19 | Gestión de etiquetas | ABM | Go | `labels/` |
 | F20 | Gestión de webhooks | IO externo | Go | `whatsapp/` |
-| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `whatsapp/` (recepción) · `inbox/` (fan-out) |
+| F21 | Backend Go / WebSockets | IO + tiempo real | Go — **nombrado en el requisito** | `whatsapp/` (recepción) · ~~`inbox/`~~ `realtime/` (fan-out) *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F22 | Vista centralizada de chats | Consulta caliente | Go | `inbox/` |
 | F23 | Filtros de bandeja | Consulta caliente | Go | `inbox/` |
 | F24 | Etiquetas por conversación | ABM | Go | `inbox/` |
 | F25 | Destacar con estrella | ABM | Go | `inbox/` |
-| F26 | Transferencia entre operadores | ABM | Go | `inbox/` |
+| F26 | Transferencia entre operadores | ABM | Go | `inbox/` · `notes/` (las notas internas) *(enmendado por [ADR-0063](0063-paquetes-por-razon-de-cambio.md))* |
 | F27 | Control de modo por conversación | ABM | Go | `inbox/` |
 | F28 | Recordatorios | ABM + disparo | Go | `reminders/` |
 | F29 | Restricción: sin borrado de mensajes | **Documental** | — | — |

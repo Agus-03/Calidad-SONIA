@@ -121,7 +121,7 @@ sonia/
 │   │   │   │   ├── service.go          valida el modelo contra el cerebro antes de la transacción · la baja vacía el default de las bandejas · la pausa y la baja apagan el bot de sus conversaciones
 │   │   │   │   ├── components.go       un componente por tipo · cada cambio del texto o del interruptor es una versión (ADR-0039)
 │   │   │   │   ├── preview.go          valida los borradores como un guardado y le pide el system al cerebro · no escribe nada (F03, ADR-0040)
-│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/
+│   │   │   │   ├── repository.go       ai_agents, audit_logs, prompt_components y sus versiones · la baja es deleted_at y active es la pausa · audita el default de una bandeja para whatsapp/ y los cambios de operadores para operators/ (ADR-0062)
 │   │   │   │   └── model.go            Config es lo que se edita y lo que la auditoría compara
 │   │   │   │
 │   │   │   ├── app/                    el arranque · excepción declarada, sin tablas
@@ -178,9 +178,12 @@ sonia/
 │   │   │   │
 │   │   │   ├── meta_templates/         plantillas de Meta · F08, F37
 │   │   │   │
-│   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators
+│   │   │   ├── operators/              usuarios y roles · F18 · DUEÑO de operators (ADR-0030, ADR-0062)
 │   │   │   │   ├── controller.go       login (público) y /me (autenticado): dos tipos, dos zonas
-│   │   │   │   ├── routes.go           POST /auth/login fuera de /api/v1: quien se loguea no es actor
+│   │   │   │   ├── routes.go           POST /auth/login fuera de /api/v1: quien se loguea no es actor · el ABM, del admin; la lista, también del supervisor
+│   │   │   │   ├── roster.go           el ABM: nunca sin un admin activo · el admin no se toca a sí mismo · contraseñas · audita por agents/
+│   │   │   │   ├── roster_controller.go  desactivar y borrar responden cuántas conversaciones le quedan (held_conversations)
+│   │   │   │   ├── roster_repository.go  bloquea a los admins antes que la fila · el hash anterior en el predicado de la contraseña
 │   │   │   │   ├── service.go          una sola respuesta para las tres formas de fallar (ADR-0030)
 │   │   │   │   ├── repository.go       normaliza el email: el índice único es sobre la columna cruda
 │   │   │   │   ├── model.go            Operator lleva el hash, así que nunca se serializa
@@ -274,7 +277,7 @@ Las 37 tablas de `0001_initial_schema.sql`, agrupadas por el paquete que las esc
 
 | Paquete | Tablas | Nota |
 |---|---|---|
-| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt (ADR-0007, ADR-0038, ADR-0039) |
+| `agents/` | `ai_agents` · `prompt_components` · `prompt_component_versions` · `audit_logs` | `audit_logs` está acotada a cambios de configuración del agente IA, con qué agente IA atiende cada número y sin los componentes del prompt, y a los cambios de operadores (ADR-0007, ADR-0038, ADR-0039, ADR-0062) |
 | `contacts/` | `contacts` · `contact_attributes` · `contact_labels` | `contact_attributes` la infiere el cerebro y **la persiste el núcleo** (F31) |
 | `conversations/` | `conversations` · `messages` | El **agregado compartido**: `turn/`, `inbox/`, `whatsapp/` y `agents/` escriben por acá |
 | `documents/` | `knowledge_bases` · `documents` | Los *chunks* no: los escribe el cerebro |

@@ -74,7 +74,7 @@ Una fila por cada requisito funcional (F01–F39) y por cada objetivo específic
 | ID | Requisito | Entidades | Atributos que exige | Estado |
 |---|---|---|---|---|
 | **F17** | Gestión de agentes IA | `ai_agents` | ABM completo | ✅ |
-| **F18** | **Gestión de usuarios y roles** | — | Usuario, rol (`operator`/`supervisor`/`admin`) | ❌ **El Anexo C no declara ninguna entidad de usuario**, pese a que cuatro entidades la referencian por FK. Ver **H-00** |
+| **F18** | **Gestión de usuarios y roles** | — | Usuario, rol (`operator`/`supervisor`/`admin`) | ~~❌ **El Anexo C no declara ninguna entidad de usuario**, pese a que cuatro entidades la referencian por FK. Ver **H-00**~~ → ✅ **cubierto**: `operators` con los tres roles; la gestiona el `admin`, el `supervisor` la lee para reasignar y cada cambio se audita ([ADR-0062](02-decisiones/0062-gestion-de-operadores.md)) |
 | **F19** | Gestión de etiquetas | `labels` | Catálogo con nombre y color | ✅ |
 | **F20** | Gestión de webhooks | — | Endpoint, credenciales de canal, firma, reintentos, **log de eventos** | ❌ No hay entidad de configuración de canal ni de evento recibido. Ver **H-08** |
 | **F21** | Backend / WebSockets | `messages`, `conversations` | Distribución en tiempo real | ✅ a nivel de datos — es transporte. Pero la idempotencia ante reintentos exige el identificador de mensaje de Meta, que no existe. Ver **H-08** · Construido en la Fase 10: el núcleo empuja cada cambio de la bandeja por WebSocket, con el alcance del listado ([ADR-0051](02-decisiones/0051-bandeja-en-tiempo-real.md)) |

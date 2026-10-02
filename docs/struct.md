@@ -212,7 +212,12 @@ sonia/
 │   │   │   │   ├── service.go
 │   │   │   │   └── queries.go          no tiene repository: no escribe nada
 │   │   │   │
-│   │   │   ├── sales/                  registro de ventas · F14
+│   │   │   ├── sales/                  registro de ventas · F14 · DUEÑO de sales (ADR-0059)
+│   │   │   │   ├── controller.go       el monto como texto decimal, nunca un número JSON (C08)
+│   │   │   │   ├── routes.go           los tres roles: el vendedor lo suyo, supervisor y admin cualquiera, que decide service.go
+│   │   │   │   ├── service.go          acredita siempre al vendedor asignado y copia el agente IA · el pool no admite ventas
+│   │   │   │   ├── repository.go       el canal de origen se lee del contacto (F15), no se copia
+│   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── turn/                   orquestador del turno · ABRE LA TRANSACCIÓN
 │   │   │   │   ├── collector.go        agrupa mensajes fragmentados · F10 (ADR-0041)

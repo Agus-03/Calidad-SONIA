@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **§4, *Lo que queda abierto*, enmendado por [ADR-0056](0056-transferencia-entre-operadores.md)** (2026-10-01): las conversaciones de un vendedor ausente se mueven con el traspaso en bloque, y el reparto se sigue cortando desactivándolo |
+| **Estado** | Aceptada · **§4, *Lo que queda abierto*, enmendado por [ADR-0056](0056-transferencia-entre-operadores.md)** (2026-10-01): las conversaciones de un vendedor ausente se mueven con el traspaso en bloque, y el reparto se sigue cortando desactivándolo · **§4, *Lo que queda abierto*, enmendado por [ADR-0059](0059-registro-de-ventas.md)** (2026-10-02): F14 acredita la venta al vendedor asignado, y el numerador de F35 se decide al construir F35 |
 | **Fecha** | 2026-09-13 |
 | **Etapa** | Construcción — Fase 5 (bandeja manual mínima), antes del merge |
 | **Resuelve** | Que ninguna conversación quede sin vendedor, a quién se le da cuando el cliente escribe, y quién prende y apaga el bot de una conversación asignada |
@@ -82,7 +82,7 @@ El equipo eligió la **b**, *"para no complicarnos"*, y decidió además cuatro 
 | **Registrar los cambios de modo** | Explicaría la población de F36 y OE6. Necesita decidir dónde vive ese registro ([ADR-0007](0007-alcance-del-registro-de-auditoria.md) acota la auditoría a la configuración del agente IA) |
 | **Balanceo por carga** | Si el equipo crece y el turno se queda corto. Primero hay que definir qué es "carga" |
 | **Que el vendedor desplace al bot** | Mitigarlo exige decidir qué cuenta como intervención de un vendedor en una conversación del bot, y eso pertenece a la regla de atribución (H-25) y a cómo se mide OE7: **Paso 11** |
-| **El numerador de F35 cuando la venta la marca el vendedor asignado** | Se decide al construir F14 y F35, junto con H-25 |
+| **El numerador de F35 cuando la venta la marca el vendedor asignado** | ~~Se decide al construir F14 y F35, junto con H-25~~ → **F14 construido por [ADR-0059](0059-registro-de-ventas.md)**: la venta se acredita siempre al vendedor asignado. La tasa se decide al construir F35, junto con H-25 |
 
 ## 5. Alternativas descartadas
 

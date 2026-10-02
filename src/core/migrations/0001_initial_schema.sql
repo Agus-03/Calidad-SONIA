@@ -479,6 +479,9 @@ CREATE TABLE quick_replies (
     deleted_at             timestamptz
 );
 
+-- One title per account in any casing, so the operator never picks between two "Horarios" (ADR-0060); deleting frees it (C09).
+CREATE UNIQUE INDEX uq_quick_replies_account_id_title ON quick_replies (account_id, lower(title)) WHERE deleted_at IS NULL;
+
 -- F20 - the event log; status and retries mutate while reprocessing and never after, so there is no updated_at.
 CREATE TABLE webhook_events (
     id              uuid        PRIMARY KEY,

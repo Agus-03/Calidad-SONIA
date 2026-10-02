@@ -86,6 +86,7 @@ Dos reglas que conviene sostener:
 | [0058](0058-recordatorios.md) | Los recordatorios: a quién avisan, cómo y quién los cambia | Fase 11 · F28 · enmienda ADR-0050 §1 y §4, y ADR-0051 §2.3 | Aceptada · avisar al vendedor asignado, por el socket y con una lista, y quién edita y borra, elegidos por el grupo el 2026-10-02 |
 | [0059](0059-registro-de-ventas.md) | El registro de ventas: a quién se acredita, quién la marca y cómo se guarda el monto | Fase 11 · F14 · enmienda ADR-0037 §4 | Aceptada · acreditar al vendedor asignado, quién marca, el agente IA como *"el agente que la gestionó"*, varias ventas en cualquier estado y la tasa para F35, elegidos por el grupo el 2026-10-02 |
 | [0060](0060-respuestas-rapidas.md) | Las respuestas rápidas: quién las carga, quién las ve y cómo llegan al chat | Fase 11 · F09 | Aceptada · copiar la respuesta en la caja en vez de enviarla y el título único por cuenta, elegidos por el grupo el 2026-10-02 |
+| [0061](0061-respuestas-rapidas-en-el-prompt.md) | Las respuestas rápidas en el prompt: cuáles llegan al modelo, dónde y cómo las usa | Fase 11 · F07 · enmienda la Regla 1 de `03-capa-prompts` | Aceptada · todas las activas hasta un tope, y *"sugerir"* como el borrador del modo sugerencia, elegidos por el grupo el 2026-10-02 |
 
 Con las primeras once queda cerrado el **Paso 3** de la etapa de diseño. Los hallazgos restantes de la [matriz de trazabilidad](../01-trazabilidad.md) no requieren decisión: se resuelven modelando, en los Pasos 4 y 5.
 

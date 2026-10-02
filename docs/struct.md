@@ -87,13 +87,13 @@ sonia/
 │   │   │   ├── triage.py               ├ en el orden en que se ejecutan
 │   │   │   ├── retrieval.py            │  (ADR-0016)
 │   │   │   ├── grounding.py            │
-│   │   │   └── generation.py           ┘ lee quick_replies para F07
+│   │   │   └── generation.py           ┘
 │   │   │                               reranking.py no se crea hasta que exista
 │   │   │
 │   │   ├── prompts/                    F03, F04 · ÚNICA implementación del ensamblador
 │   │   │   ├── assembler.py
 │   │   │   ├── budget.py
-│   │   │   ├── repository.py           los componentes activos con su versión más nueva
+│   │   │   ├── repository.py           los componentes activos con su versión más nueva · las respuestas rápidas activas de la cuenta, hasta el tope (F07, ADR-0061)
 │   │   │   └── rewriter.py
 │   │   │
 │   │   ├── rules/                      datos versionados, no código

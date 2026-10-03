@@ -863,8 +863,11 @@ FROM   pipeline_steps ps_triage
 JOIN   message_batches mb          ON mb.id = ps_triage.message_batch_id
 JOIN   pipeline_steps ps_grounding ON ps_grounding.message_batch_id = mb.id
                                   AND ps_grounding.step = 'grounding'
-LEFT   JOIN generations g          ON g.message_batch_id = mb.id
-LEFT   JOIN retrieval_logs rl      ON rl.generation_id = g.id
+-- ADR-0068: retrieval_logs cuelga del paso `retrieval`, así que los bloques que
+-- cortaron por `not_grounded` también traen su similitud.
+LEFT   JOIN pipeline_steps ps_retrieval ON ps_retrieval.message_batch_id = mb.id
+                                       AND ps_retrieval.step = 'retrieval'
+LEFT   JOIN retrieval_logs rl      ON rl.pipeline_step_id = ps_retrieval.id
 WHERE  ps_triage.step = 'triage' AND ps_triage.outcome = 'in_domain'
 GROUP  BY ps_grounding.outcome;
 

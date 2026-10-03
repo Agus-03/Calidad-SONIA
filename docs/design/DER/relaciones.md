@@ -76,7 +76,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 >
 > **La FK vive únicamente en `generations.message_id`**, por orden temporal: la generación existe antes que el mensaje —se produce, se revisa y recién entonces se envía—, así que es la que puede aprender el vínculo. Para responder *"¿qué razonamiento produjo este mensaje?"* se consulta `generations` por `message_id`, que va indexado.
 
-> **Cómo se lee la trazabilidad completa de una respuesta.** Dado un `message`, su `generation` da el prompt renderizado, el costo y la latencia; `generation_components` da **qué componentes, en qué versión** se ensamblaron; `conversation_context_version_id` da **el estado exacto del contexto dinámico** de ese turno; y `retrieval_logs` da **qué fragmentos** recuperó el RAG. Esa cadena de cuatro saltos es lo que hace reproducible a OE2.
+> **Cómo se lee la trazabilidad completa de una respuesta.** Dado un `message`, su `generation` da el prompt renderizado, el costo y la latencia; `generation_components` da **qué componentes, en qué versión** se ensamblaron; `conversation_context_version_id` da **el estado exacto del contexto dinámico** de ese turno; y `retrieval_logs`, por el bloque y la fila del paso `retrieval`, da **qué fragmentos** recuperó el RAG. Esa cadena —de cinco saltos desde [ADR-0068](../02-decisiones/0068-recuperacion-y-grounding.md), que colgó `retrieval_logs` del paso y no de la generación— es lo que hace reproducible a OE2.
 
 ---
 
@@ -88,7 +88,7 @@ Cada relación indica **dónde vive la clave foránea**, porque esa es la decisi
 | `knowledge_bases` | 1 — 0..* | `documents` | `documents.knowledge_base_id` | **La corrección central de H-06**: F06 habla de documentos en plural |
 | `documents` | 1 — 0..* | `document_chunks` | `document_chunks.document_id` | `0..*` porque un documento recién subido aún no está fragmentado (`status = pending`) |
 | `operators` | 1 — 0..* | `documents` | `documents.uploaded_by_operator_id` | |
-| `generations` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.generation_id` | `0..*`: una generación puede no haber consultado el RAG |
+| `pipeline_steps` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.pipeline_step_id` | Sólo filas con `step = 'retrieval'` (regla de aplicación). **No cuelga de `generations`**: un turno que corta por `not_grounded` recuperó y no generó ([ADR-0068](../02-decisiones/0068-recuperacion-y-grounding.md)). `0..*`: la búsqueda puede volver vacía |
 | `document_chunks` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.document_chunk_id` | Qué fragmento se recuperó y con qué score — **OE6** |
 
 ---

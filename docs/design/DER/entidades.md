@@ -462,7 +462,7 @@ Una fila por respuesta generada por la IA.
 | Atributo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
-| `generation_id` | uuid | FK |
+| `pipeline_step_id` | uuid | FK a la fila del paso `retrieval` en `pipeline_steps`. **No cuelga de `generations`**: un turno que recupera y corta por `not_grounded` no genera, y lo recuperado es la evidencia de ese corte ([ADR-0068](../02-decisiones/0068-recuperacion-y-grounding.md), regla 6) |
 | `document_chunk_id` | uuid | FK |
 | `similarity_score` | numeric | |
 | `rank` | smallint | Posición en el resultado |

@@ -245,7 +245,7 @@ y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil.
 
 - `generations`: `conversation_context_version_id` → la de `turn_number = 5` · `prompt_rendered` = el bloque 4.7 (ya redactado) · `completion_text` = *"¡Hola! Sí, el departamento de 2 ambientes en zona centro de Jesús María está disponible, a $320.000 + expensas — dentro de tu presupuesto. Para alquilarlo se necesita recibo de sueldo y garantía propietaria o seguro de caución, más un depósito de un mes. ¿Querés que coordine una visita?"* · `status = auto_sent` (modo autónomo).
 - `generation_components`: 6 filas, una por cada `prompt_component_version_id` vigente (la **v2** de `tone`, no la v1), con su `position` 1–6.
-- `retrieval_logs`: las 2 filas de 4.6, con `generation_id` de esta generación.
+- `retrieval_logs`: las 2 filas de 4.6, con ~~`generation_id` de esta generación~~ `pipeline_step_id` de la fila del paso `retrieval` de este bloque *(enmendado por [ADR-0068](02-decisiones/0068-recuperacion-y-grounding.md), regla 6)*.
 
 Esto es lo que el criterio de cierre del Paso 4 pedía poder señalar: el mensaje de Lucía se generó con estos seis componentes, en estas versiones, con este contexto y estos fragmentos — cuatro saltos completos, sin ningún hueco.
 

@@ -442,6 +442,9 @@ Una fila por respuesta generada por la IA.
 | `chunk_index` | integer | |
 | `content` | text | |
 | `token_count` | integer | |
+| `chunking_version` | smallint | `version` de `rules/chunking.yaml` con la que se fragmentó (ADR-0065, regla 9). Vive en el trozo y no en el documento porque el trozo no cambia: una reindexación crea trozos nuevos |
+| `description_prompt_version` | smallint | Versión del prompt que describió las imágenes del documento (ADR-0067, regla 7 · ADR-0065, regla 9) |
+| `embedding_model` | varchar | Modelo que vectorizó el trozo, p. ej. `voyage-4` (ADR-0067 · ADR-0065, regla 9) |
 | `vector_id` | varchar | **Nullable.** Identificador del punto en Qdrant (ADR-0010). Vale lo mismo que el `id` del chunk: Qdrant no genera ids (ADR-0064, regla 5). Se pone en nulo cuando el punto se elimina de la colección: registra que el vector ya no existe, aunque la fila sí |
 | `created_at` | timestamptz | |
 | `deleted_at` | timestamptz | **Nullable.** Fuera del índice activo — por borrado del documento o por reindexado. Ver la nota de abajo |

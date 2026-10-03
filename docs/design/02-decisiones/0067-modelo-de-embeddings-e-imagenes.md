@@ -93,7 +93,7 @@ Voyage da además 200 millones de tokens gratis por cuenta.
 
 | Qué | Estado |
 |---|---|
-| **Qué se registra por documento**: la versión de `chunking.yaml`, la del prompt de descripción y el modelo de embeddings con que se procesó. Sin eso, una medición de OE6 no sabe con qué se indexó cada documento | Se decide junto con el pendiente de [ADR-0065](0065-fragmentacion-de-documentos.md); es una o más columnas en `documents` |
+| ~~**Qué se registra por documento**: la versión de `chunking.yaml`, la del prompt de descripción y el modelo de embeddings con que se procesó. Sin eso, una medición de OE6 no sabe con qué se indexó cada documento~~ | ~~Se decide junto con el pendiente de [ADR-0065](0065-fragmentacion-de-documentos.md); es una o más columnas en `documents`~~ *(Cerrado por [ADR-0065](0065-fragmentacion-de-documentos.md), regla 9: las tres van en cada fila de `document_chunks`, no en `documents`.)* |
 | **El tamaño mínimo de una imagen para describirla** | Se fija al construir el `worker` (T7), en `rules/` |
 
 ## 5. Alternativas descartadas

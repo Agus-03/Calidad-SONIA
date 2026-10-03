@@ -407,7 +407,7 @@ Una fila por respuesta generada por la IA.
 |---|---|---|
 | `id` | uuid | PK |
 | `ai_agent_id` | uuid | FK. Única dirección de la relación (ADR-0005) |
-| `collection_name` | varchar | Colección de Qdrant asociada (ADR-0010) |
+| `collection_name` | varchar | Colección de Qdrant asociada (ADR-0010). `kb_<ai_agent_id>`, escrita por el núcleo al crear la base (ADR-0064, regla 5) |
 | `size_bytes_total` | bigint | Control del límite de 100 MB **por agente** (F06) |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | Borrado lógico por C09 |
 
@@ -422,7 +422,7 @@ Una fila por respuesta generada por la IA.
 | `filename` | varchar | |
 | `mime_type` | varchar | |
 | `size_bytes` | bigint | |
-| `checksum` | varchar | Detección de duplicados ⚙ |
+| `checksum` | varchar | Detección de duplicados ⚙. SHA-256 del PDF **en claro**: el del archivo cifrado cambia con cada nonce (ADR-0064, regla 4) |
 | `object_key` | varchar | Clave de los bytes en el almacén de objetos (H-31, ADR-0017 · ADR-0019). Los bytes no van en la fila: un archivo de 100 MB en `bytea` infla backups y WAL |
 | `status` | `DocumentStatus` | Pipeline de ingesta |
 | `locked_at` | timestamptz | **Nullable.** Marca de toma del documento por el `worker` de ingesta (ADR-0017 (g)). Es la única columna, junto a `status` y `error_message`, que escribe el cerebro sobre esta tabla |
@@ -441,7 +441,7 @@ Una fila por respuesta generada por la IA.
 | `chunk_index` | integer | |
 | `content` | text | |
 | `token_count` | integer | |
-| `vector_id` | varchar | **Nullable.** Identificador del punto en Qdrant (ADR-0010). Se pone en nulo cuando el punto se elimina de la colección: registra que el vector ya no existe, aunque la fila sí |
+| `vector_id` | varchar | **Nullable.** Identificador del punto en Qdrant (ADR-0010). Vale lo mismo que el `id` del chunk: Qdrant no genera ids (ADR-0064, regla 5). Se pone en nulo cuando el punto se elimina de la colección: registra que el vector ya no existe, aunque la fila sí |
 | `created_at` | timestamptz | |
 | `deleted_at` | timestamptz | **Nullable.** Fuera del índice activo — por borrado del documento o por reindexado. Ver la nota de abajo |
 

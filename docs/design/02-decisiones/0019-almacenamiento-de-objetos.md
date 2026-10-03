@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§4 enmendada por [ADR-0064](0064-ingesta-de-documentos.md)** el 2026-10-03: el orden de escritura y el cifrado de los documentos dejan de estar abiertos |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 7 (nivel físico) |
 | **Resuelve** | **H-31** — `documents` registra que existe un archivo de hasta 100 MB y no dónde está |
@@ -44,8 +44,8 @@ El Paso 8 dejó tres salidas evaluadas: almacenamiento de objetos, volumen compa
 ### Negativas / costos asumidos
 
 - **Una dependencia externa más**, con su cuenta, sus credenciales y su modo de falla. Si Supabase no responde, la **ingesta** se detiene — el turno conversacional no, porque no toca el almacén.
-- **La consistencia entre la fila y el objeto es eventual.** Hay que definir el orden de escritura y qué se hace con los objetos huérfanos si el `INSERT` falla después de subir. **Queda abierto.**
-- **Los documentos del cooperante salen de nuestra infraestructura.** El Paso 12 (Ley 25.326, diagrama de flujo de datos) tiene que incluirlo, y **el cifrado de los documentos sigue sin decidirse** — era el pendiente vecino de H-31 y este ADR no lo cierra.
+- **La consistencia entre la fila y el objeto es eventual.** Hay que definir el orden de escritura y qué se hace con los objetos huérfanos si el `INSERT` falla después de subir. ~~**Queda abierto.**~~ *(Cerrado por [ADR-0064](0064-ingesta-de-documentos.md), regla 6: el objeto primero y la fila después; si la transacción falla se intenta borrar el objeto, y un huérfano que sobreviva queda en el log, sin barrido.)*
+- **Los documentos del cooperante salen de nuestra infraestructura.** El Paso 12 (Ley 25.326, diagrama de flujo de datos) tiene que incluirlo, y **el cifrado de los documentos sigue sin decidirse** — era el pendiente vecino de H-31 y este ADR no lo cierra. *(Cerrado por [ADR-0064](0064-ingesta-de-documentos.md), reglas 1 a 3: AES-256-GCM en la aplicación, con una llave propia de documentos que tienen el núcleo y el `worker`.)*
 - Dos atributos nuevos en el catálogo, condicionados a la firma de ADR-0017.
 
 ## 5. Alternativas descartadas

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada |
+| **Estado** | Aceptada · **§2 y §5 enmendadas por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md)** el 2026-10-03: el modelo de embeddings es `embed-multilingual-v3.0` a 1024 dimensiones, fijado antes de evaluarlo porque con la dimensión fija revertir cuesta una reindexación |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — decisiones heredadas de la sección 8.4 |
 | **Resuelve** | Pendiente *"proveedor de LLM primario y de respaldo"* y *"modelo de embeddings"* de la sección 8.4 |
@@ -24,7 +24,7 @@ ADR-0017 ya declaró al proveedor de LLM como una de las cuatro fronteras con pu
 - **Proveedor primario: Cohere.**
 - **Proveedor de respaldo: Anthropic.**
 - **Embeddings: un modelo de Cohere.**
-- **Queda abierto el modelo exacto de embeddings y su dimensión.** Hay que fijarlo **antes de crear la colección de Qdrant**, y escribirlo junto a esta decisión.
+- ~~**Queda abierto el modelo exacto de embeddings y su dimensión.** Hay que fijarlo **antes de crear la colección de Qdrant**, y escribirlo junto a esta decisión.~~ *(Cerrado por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md): `embed-multilingual-v3.0`, 1024 dimensiones, a comparar con `voyage-4` y `text-embedding-3-small` en la evaluación de recuperación.)*
 
 El respaldo se resuelve por el puerto ya previsto: es un adaptador y una variable de configuración, no un refactor.
 
@@ -57,4 +57,4 @@ El respaldo se resuelve por el puerto ya previsto: es un adaptador y una variabl
 |---|---|
 | **Un único proveedor sin respaldo** | OE7 mide producción real: una caída del proveedor deja al sistema sin ninguna respuesta, y la salida es una variable de entorno si el puerto existe. |
 | **Embeddings de otro proveedor** | Agrega una cuenta, un SDK y un modo de falla más sin beneficio identificado. Se revisa si la calidad multilingüe en español no alcanza. |
-| **Fijar el modelo exacto ahora, sin evaluarlo** | La dimensión es lo más caro de revertir del modelo: conviene elegirlo con una prueba de recuperación en español encima, no de memoria. |
+| **Fijar el modelo exacto ahora, sin evaluarlo** | La dimensión es lo más caro de revertir del modelo: conviene elegirlo con una prueba de recuperación en español encima, no de memoria. *(Adoptada por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md) con otro argumento: la dimensión se fija en 1024, que dan todos los candidatos, así que cambiar de modelo cuesta una reindexación. La prueba en español se corre después.)* |

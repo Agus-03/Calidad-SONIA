@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · el cifrado en la aplicación con una llave propia de documentos, los dos órdenes de escritura, sólo PDF y reindexar volviendo a `pending`, elegidos por el grupo el 2026-10-03 · **el modelo de embeddings, la estrategia de chunking y los datos personales dentro de un documento no se deciden acá**: quedan para un ADR propio, después de discutirlos |
+| **Estado** | Aceptada · el cifrado en la aplicación con una llave propia de documentos, los dos órdenes de escritura, sólo PDF y reindexar volviendo a `pending`, elegidos por el grupo el 2026-10-03 · **el modelo de embeddings, la estrategia de chunking y los datos personales dentro de un documento no se deciden acá**: quedan para un ADR propio, después de discutirlos · ***Lo que queda abierto* enmendado**: el chunking pasó a [ADR-0065](0065-fragmentacion-de-documentos.md) y los datos personales los cierra [ADR-0066](0066-datos-personales-en-los-documentos.md) (2026-10-03) · **regla 10 y *Lo que queda abierto* enmendadas por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md)**: el modelo de embeddings queda fijado y las imágenes se describen al ingerir |
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Los dos pendientes que dejó [ADR-0019](0019-almacenamiento-de-objetos.md) —el cifrado de los documentos y el orden de escritura ante objetos huérfanos—, el orden entre metadatos y vectores que [ADR-0005](0005-base-de-conocimiento.md) y [ADR-0010](0010-qdrant-como-base-vectorial.md) piden decidir, y la decisión O8 de [ADR-0042](0042-pipeline-de-decision-del-turno.md) |
@@ -43,7 +43,7 @@ Dos hechos condicionan el cifrado y conviene tenerlos delante:
 | 7 | **En el `worker`, PostgreSQL antes que Qdrant, y lo viejo antes que lo nuevo.** Toma el documento con `FOR UPDATE SKIP LOCKED` y lo pasa a `processing` con `locked_at`. Fuera de toda transacción, baja, descifra, extrae el texto, fragmenta y vectoriza. Después: **(i)** borra de Qdrant los puntos previos del documento, por `document_id`; **(ii)** en una transacción, marca los chunks previos con `vector_id = NULL` y `deleted_at`, e inserta los nuevos; **(iii)** sube los puntos nuevos; **(iv)** marca el documento `indexed` y limpia `locked_at` y `error_message`. Cualquier falla lo deja en `failed`, con el motivo en `error_message` y `locked_at` limpio. El orden de (i) y (ii) es el que [DER/entidades.md](../DER/entidades.md) ya fija para dar de baja un chunk |
 | 8 | **Un documento colgado vuelve solo.** El `worker` devuelve a `pending` todo documento en `processing` cuyo `locked_at` sea más viejo que un timeout de la configuración |
 | 9 | **Dar de baja un documento es lógico (C09).** El núcleo pone `documents.deleted_at` y resta su tamaño de `size_bytes_total`. El `worker`, en el mismo barrido de la regla 8, borra de Qdrant los puntos de los documentos dados de baja que todavía tienen chunks vivos, y después marca esos chunks con el orden de la regla 7. El objeto se queda en el almacén |
-| 10 | **Sólo se admite PDF.** El núcleo rechaza todo lo que no declare `application/pdf` o no empiece con la firma `%PDF-`. **Sin OCR:** un PDF sin texto extraíble termina en `failed` con ese motivo. Qué se hace con las imágenes dentro de un PDF se decide junto con el modelo de embeddings |
+| 10 | **Sólo se admite PDF.** El núcleo rechaza todo lo que no declare `application/pdf` o no empiece con la firma `%PDF-`. **Sin OCR:** un PDF sin texto extraíble termina en `failed` con ese motivo. ~~Qué se hace con las imágenes dentro de un PDF se decide junto con el modelo de embeddings~~ *(Enmendada por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md): cada imagen se describe al ingerir y la descripción entra al texto de su página.)* |
 | 11 | **Reindexar no es un job: es volver a `pending`** los documentos vivos de una base, y el `worker` los reprocesa con la regla 7. No tiene pantalla: es una operación de despliegue, que se hace cuando cambia el modelo de embeddings. Si el modelo nuevo tiene otra dimensión, la colección se recrea antes, porque la regla 7 no la recrea sola |
 
 ## 3. Justificación
@@ -84,9 +84,9 @@ Dos hechos condicionan el cifrado y conviene tenerlos delante:
 
 | Qué | Dónde se decide |
 |---|---|
-| **El modelo de embeddings** y su dimensión, y qué se hace con las imágenes de un PDF. [ADR-0018](0018-proveedor-de-llm-y-embeddings.md) lo dejó abierto, y la colección de Qdrant no se puede crear sin él | Un ADR propio de esta fase, después de discutirlo |
-| **La estrategia de chunking**: unidad, tamaño, solapamiento y dónde se versionan los parámetros | Ídem |
-| **Los datos personales dentro de un documento**, que llegan al proveedor de embeddings y al prompt, y que el guardrail de salida rechaza (D3 de [ADR-0042](0042-pipeline-de-decision-del-turno.md)) | Ídem |
+| ~~**El modelo de embeddings** y su dimensión, y qué se hace con las imágenes de un PDF. [ADR-0018](0018-proveedor-de-llm-y-embeddings.md) lo dejó abierto, y la colección de Qdrant no se puede crear sin él~~ | ~~Un ADR propio de esta fase, después de discutirlo~~ *(Cerrado por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md).)* |
+| **La estrategia de chunking**: unidad, tamaño, solapamiento y dónde se versionan los parámetros | ~~Ídem~~ [ADR-0065](0065-fragmentacion-de-documentos.md), en *Propuesta* |
+| ~~**Los datos personales dentro de un documento**, que llegan al proveedor de embeddings y al prompt, y que el guardrail de salida rechaza (D3 de [ADR-0042](0042-pipeline-de-decision-del-turno.md))~~ | ~~Ídem~~ *(Cerrado por [ADR-0066](0066-datos-personales-en-los-documentos.md): se avisa y se acepta al subir, y no se redactan.)* |
 | **Qué pasa con la colección de un agente IA dado de baja.** [ADR-0010](0010-qdrant-como-base-vectorial.md) dice que *"dar de baja un agente es borrar su colección"*, y la baja de [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) es lógica | Sin fecha |
 
 ## 5. Alternativas descartadas

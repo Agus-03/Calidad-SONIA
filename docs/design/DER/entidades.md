@@ -428,6 +428,7 @@ Una fila por respuesta generada por la IA.
 | `locked_at` | timestamptz | **Nullable.** Marca de toma del documento por el `worker` de ingesta (ADR-0017 (g)). Es la única columna, junto a `status` y `error_message`, que escribe el cerebro sobre esta tabla |
 | `error_message` | text | Nullable |
 | `uploaded_by_operator_id` | uuid | |
+| `personal_data_terms_version` | smallint | Versión del aviso de datos personales que aceptó quien subió el documento (ADR-0066). Quién y cuándo son `uploaded_by_operator_id` y `created_at`: se acepta en el mismo pedido que sube |
 | `created_at` / `updated_at` / `deleted_at` | timestamptz | |
 
 ### `document_chunks`

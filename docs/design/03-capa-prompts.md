@@ -94,6 +94,8 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 ### Regla 4 — Punto exacto de redacción de PII
 
+> **Acotada el 2026-10-03** por [ADR-0066](02-decisiones/0066-datos-personales-en-los-documentos.md). La regla redacta lo que escribió la clienta. Los fragmentos que recupera el RAG no pasan por el *checkpoint*: entran al prompt tal como vienen en el documento, así que la promesa de la justificación —*"ninguna llamada a un modelo (…) ve el dato crudo"*— vale para el texto de la conversación y no para el de los documentos.
+
 **Decisión.** Un único checkpoint, inmediatamente después de que el `message_batch` cierra:
 
 1. Se extrae el dato personal del texto crudo del bloque (F31). **El *checkpoint* no lo persiste**: viaja en la respuesta del turno y el núcleo lo cifra y lo escribe en `contact_attributes` (con `source_message_id`) en la transacción que cierra el turno, **sólo si el contacto tiene consentimiento vigente** ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md) §2.6).

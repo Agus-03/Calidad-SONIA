@@ -105,11 +105,11 @@ sonia/
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
 │   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
-│   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
+│   │   │   ├── guardrails.yaml  ·   triage.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
 │   │   │   ├── extraction.yaml · frustration.yaml · intent.yaml
 │   │   │   ├── chunking.yaml · image_description.yaml   los dos de la ingesta (ADR-0065, ADR-0067)
-│   │   │   └── retrieval.yaml          top_k de la búsqueda (ADR-0068, regla 5; ADR-0073)
+│   │   │   └── retrieval.yaml          top_k de la búsqueda y umbral del grounding (ADR-0068, regla 5; ADR-0073)
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │

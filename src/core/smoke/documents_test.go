@@ -54,6 +54,11 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 	}
 	adminID, agentID := id.New(), id.New()
 	email := "documents-" + adminID.String() + "@coop.test"
+	collection := "kb_" + agentID.String()
+
+	// The collection the worker created for the agent: the sweep empties it but never drops it, and the smoke's Qdrant is the
+	// development one (ADR-0072), so a run that left it would leave an empty collection behind for every agent it created.
+	t.Cleanup(func() { dropCollection(t, qdrant, collection) })
 
 	// Children first: the documents point at the base, the base at the agent, the documents at the admin.
 	t.Cleanup(func() {
@@ -126,7 +131,6 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 		t.Fatalf("the document key does not open the object back into the PDF: %v", err)
 	}
 
-	collection := "kb_" + agentID.String()
 	t.Run("el worker lo fragmenta, lo vectoriza y lo deja indexed", func(t *testing.T) {
 		awaitStatus(ctx, t, pool, documentID, "indexed")
 		var chunks, versioned int
@@ -228,6 +232,26 @@ func countPoints(t *testing.T, qdrant, collection, documentID string) int {
 		t.Fatalf("counting the points: got %d", res.StatusCode)
 	}
 	return answer.Result.Count
+}
+
+// dropCollection removes the agent's collection from Qdrant. A collection that is not there is fine: the worker creates it with
+// the first document it indexes, and a case that failed before that never had one.
+func dropCollection(t *testing.T, qdrant, collection string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, qdrant+"/collections/"+collection, nil)
+	if err != nil {
+		t.Errorf("dropping the collection: %v", err)
+		return
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Errorf("dropping the collection: %v", err)
+		return
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNotFound {
+		t.Errorf("dropping the collection: got %d", res.StatusCode)
+	}
 }
 
 // textPDF builds the smallest PDF whose text an extractor reads as it would from a real one: one page, one line, Helvetica.

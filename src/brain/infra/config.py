@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
-    # Under the 10 s the core waits for the whole turn (BRAIN_TIMEOUT_MS), with room left for the reads around it.
+    # Under the 15 s the core waits for the whole turn (BRAIN_TIMEOUT_MS), with room left for the reads around it.
     llm_timeout_seconds: float = Field(default=8.0, gt=0)
 
     # Development and CI answer with the doubled adapter because there is no key; production must never be able to.
@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(default=5.0, gt=0)
     # ADR-0064, regla 8: longer than the slowest ingestion of a 100 MB document, so a live worker is never taken for a dead one.
     worker_lock_timeout_seconds: float = Field(default=900.0, gt=0)
+    # What the turn waits for Voyage and for Qdrant when it searches (ADR-0074): each call, inside BRAIN_TIMEOUT_MS. Shorter than
+    # the worker's two, because a customer is waiting on this one and nobody waits on an ingestion.
+    retrieval_timeout_seconds: float = Field(default=5.0, gt=0)
+
+    # Whether the api can search the knowledge base: Qdrant named, and a way to embed the question. Without it the api still
+    # answers, as an agent without a base does (ADR-0068, regla 10), and says so at boot (ADR-0074).
+    def knowledge_ready(self) -> bool:
+        return bool(self.qdrant_url) and (bool(self.voyage_api_key) or self.embeddings_use_double)
 
     @model_validator(mode="after")
     def _double_stays_out_of_production(self) -> "Settings":

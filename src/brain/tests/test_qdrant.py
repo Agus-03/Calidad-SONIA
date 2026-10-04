@@ -1,5 +1,6 @@
 # ADR-0010, ADR-0064 regla 3, ADR-0067 regla 2: one collection per agent at 1024 and cosine, and only document_id in a point.
 
+import asyncio
 import json
 from uuid import uuid4
 
@@ -44,6 +45,16 @@ async def test_an_existing_collection_with_its_index_is_left_as_it_is() -> None:
     store, seen = store_with(lambda request: httpx.Response(200, json=answer))
     await store.ensure_collection("kb_agente")
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize(("size", "distance"), [(768, "Cosine"), (1024, "Dot")])
+async def test_an_existing_collection_of_another_shape_fails_before_anything_is_written(size: int, distance: str) -> None:
+    answer = {"result": {"config": {"params": {"vectors": {"size": size, "distance": distance}}}, "payload_schema": {}}}
+    store, seen = store_with(lambda request: httpx.Response(200, json=answer))
+
+    with pytest.raises(VectorStoreError, match="ADR-0067"):
+        await store.ensure_collection("kb_agente")
+    assert len(seen) == 1, "nothing else is asked of a collection that cannot hold the vectors"
 
 
 async def test_an_existing_collection_made_before_the_index_gets_it() -> None:
@@ -116,6 +127,18 @@ async def test_a_missing_collection_with_indexed_documents_is_an_error_and_not_a
     store, _ = store_with(lambda request: httpx.Response(404, json={"status": {"error": "Not found"}}))
     with pytest.raises(VectorStoreError, match="404"):
         await store.search("kb_perdida", [1.0], limit=3, document_ids=[uuid4()])
+
+
+# ADR-0074, regla 3: the timeout is the whole call and not a phase of it, and running out of it is Qdrant's failure.
+async def test_a_qdrant_that_does_not_answer_in_time_is_its_own_error() -> None:
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return httpx.Response(200, json={})
+
+    store = QdrantStore("http://qdrant:6333", "", 0.01, transport=httpx.MockTransport(slow))
+    with pytest.raises(VectorStoreError, match="no answer"):
+        await store.search("kb", [1.0], limit=3, document_ids=[uuid4()])
+    await store.close()
 
 
 async def test_deleting_from_a_collection_that_does_not_exist_is_nothing_to_do() -> None:

@@ -60,11 +60,16 @@ services:
       # Emptied over what the env_file brings: the brain in api mode does not receive the document key (ADR-0064, regla 2).
       # The worker gets it on its own service.
       DOCUMENT_ENCRYPTION_KEY: ""
+      # The turn searches the same Qdrant the worker writes to (ADR-0072, ADR-0074).
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      # Started and not healthy, for the reason the worker gives below; a turn before Qdrant answers fails its search.
+      qdrant:
+        condition: service_started
     # slim carries no curl, and urllib is already installed.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

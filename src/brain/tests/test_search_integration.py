@@ -14,7 +14,8 @@ from adapters.embeddings.double import DoubleEmbedder
 from adapters.vectorstore.qdrant import Point, QdrantStore, VectorStoreError
 from infra import ids
 from infra.db import Database
-from knowledge.search import Searcher, SearchRules
+from knowledge import search
+from knowledge.search import Searcher
 
 _DSN = os.getenv("SONIA_TEST_DATABASE_URL", "")
 _QDRANT = os.getenv("SONIA_TEST_QDRANT_URL", "")
@@ -115,7 +116,7 @@ async def test_only_the_live_chunks_of_indexed_documents_of_the_same_model_are_f
             )
 
             searcher = Searcher(
-                embedder=embedder, vectors=vectors, connection=same_transaction, rules=SearchRules(version=1, top_k=3)
+                embedder=embedder, vectors=vectors, connection=same_transaction, rules=search.rules()
             )
             result = await searcher.search(agent, "¿Cuanto sale el alquiler del depto en Jesus Maria?")
 

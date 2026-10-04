@@ -5,6 +5,7 @@
 import logging
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,7 +15,7 @@ from infra.rules import RulesFile, RulesFileError
 from knowledge import repository, search
 from knowledge.search import Found, Searcher, SearchResult, SearchRules
 
-RULES = SearchRules(version=1, top_k=3)
+RULES = SearchRules(version=1, top_k=3, threshold=Decimal("0.5"), max_query_chars=4000)
 
 
 class SpyEmbedder:
@@ -69,17 +70,25 @@ def with_base(
     return asked
 
 
-def test_the_rules_start_at_the_top_k_the_group_chose() -> None:
+def test_the_rules_start_at_the_top_k_and_the_threshold_the_group_chose() -> None:
     search.rules.cache_clear()
-    assert search.rules() == SearchRules(version=1, top_k=3)
+    assert search.rules() == SearchRules(version=1, top_k=3, threshold=Decimal("0.5"), max_query_chars=4000)
 
 
-def test_a_top_k_retrieval_logs_could_not_rank_stops_the_brain(monkeypatch: pytest.MonkeyPatch) -> None:
-    raw = {"top_k": search.MAX_TOP_K + 1}
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ({"top_k": search.MAX_TOP_K + 1, "threshold": 0.5, "max_query_chars": 10}, "at most"),
+        ({"top_k": 3, "threshold": 1.5, "max_query_chars": 10}, "between 0 and 1"),
+        ({"top_k": 3, "threshold": True, "max_query_chars": 10}, "between 0 and 1"),
+        ({"top_k": 3, "threshold": 0.5, "max_query_chars": 0}, "max_query_chars"),
+    ],
+)
+def test_a_file_the_search_could_not_honour_stops_the_brain(monkeypatch: pytest.MonkeyPatch, raw: dict, message: str) -> None:
     monkeypatch.setattr(search.rules_file, "load", lambda name: RulesFile(name=name, version=1, raw=raw))
     search.rules.cache_clear()
     try:
-        with pytest.raises(RulesFileError, match="at most"):
+        with pytest.raises(RulesFileError, match=message):
             search.rules()
     finally:
         search.rules.cache_clear()

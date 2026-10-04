@@ -9,12 +9,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from adapters.embeddings import registry as embeddings
+from adapters.vectorstore.qdrant import QdrantStore
 from api.routes import health, models, prompts
 from api.routes.turns import route as turns
 from api.security import require_internal_token
 from infra import logging as sonia_logging
 from infra.config import ConfigError, Settings, get_settings
 from infra.db import Database
+from knowledge import search
+from knowledge.search import Searcher
 
 logger = logging.getLogger("sonia.main")
 
@@ -30,10 +34,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     await database.open()
     app.state.database = database
+    vectors = _knowledge(app, settings, database)
     try:
         yield
     finally:
+        if vectors is not None:
+            await vectors.close()
         await database.close()
+
+
+# The search of F06 for the turn (ADR-0068, ADR-0074), with the turn's timeout on both calls. A brain that cannot search still
+# answers, as an agent without a base does, and says so at boot: refusing to start would take down every agent for the sake of
+# the ones that have documents.
+def _knowledge(app: FastAPI, settings: Settings, database: Database) -> QdrantStore | None:
+    if not settings.knowledge_ready():
+        logger.warning("knowledge search disabled: QDRANT_URL, or VOYAGE_API_KEY or EMBEDDINGS_USE_DOUBLE, is missing")
+        return None
+    vectors = QdrantStore(settings.qdrant_url, settings.qdrant_api_key, settings.retrieval_timeout_seconds)
+    app.state.searcher = Searcher(
+        embedder=embeddings.resolve(settings, timeout=settings.retrieval_timeout_seconds),
+        vectors=vectors,
+        connection=database.connection,
+        rules=search.rules(),
+    )
+    return vectors
 
 
 # Builds the internal API, where /health stays outside authentication so the container healthcheck needs no secret.
@@ -48,6 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # None until the lifespan builds it, and for good when the brain cannot search: the turn then retrieves nothing.
+    app.state.searcher = None
 
     app.include_router(health.router)
 

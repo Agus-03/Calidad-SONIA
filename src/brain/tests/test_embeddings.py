@@ -1,5 +1,6 @@
 # ADR-0067: voyage-4 at 1024 dimensions, and a double that runs the worker with no key.
 
+import asyncio
 import math
 from types import SimpleNamespace
 
@@ -64,6 +65,29 @@ async def test_a_provider_that_answers_short_is_an_error(monkeypatch: pytest.Mon
     monkeypatch.setattr(voyage.voyageai, "AsyncClient", Short)
     with pytest.raises(EmbeddingError, match="0 vectors for 1 texts"):
         await voyage.VoyageEmbedder("k", 30).embed(["x"], input_type="document")
+
+
+# ADR-0074, regla 3: the turn waits for the whole call, whatever the SDK's own timeout does per phase.
+async def test_a_provider_that_does_not_answer_in_time_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Slow(FakeVoyage):
+        async def embed(self, texts: list[str], **kwargs: object) -> SimpleNamespace:
+            await asyncio.sleep(1)
+            return SimpleNamespace(embeddings=[[0.5] * DIMENSION for _ in texts])
+
+    monkeypatch.setattr(voyage.voyageai, "AsyncClient", Slow)
+    with pytest.raises(EmbeddingError, match="TimeoutError"):
+        await voyage.VoyageEmbedder("k", 0.01).embed(["x"], input_type="query")
+
+
+# The api asks with the turn's timeout, and the worker with its own.
+def test_the_registry_takes_the_turns_timeout_when_it_is_given(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(voyage.voyageai, "AsyncClient", FakeVoyage)
+    registry._voyage.cache_clear()
+    try:
+        registry.resolve(settings.model_copy(update={"voyage_api_key": "k"}), timeout=5.0)
+        assert FakeVoyage.last.built_with["timeout"] == 5.0
+    finally:
+        registry._voyage.cache_clear()
 
 
 def test_the_registry_chooses_the_double_only_when_settings_says_so(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:

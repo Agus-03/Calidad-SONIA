@@ -15,6 +15,10 @@ services:
     environment:
       ENVIRONMENT: test
       LLM_USE_DOUBLE: "true"
+      # The turn searches with the same doubled embeddings the worker indexed with, or the two would not be comparable (ADR-0073).
+      EMBEDDINGS_USE_DOUBLE: "true"
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ""
 
   # The worker on the same doubles, plus the embeddings one, so the smoke indexes without a key and no document leaves for Voyage
   # (ADR-0071). It reads from the fake store below and writes to the compose's own Qdrant, whatever the .env names.

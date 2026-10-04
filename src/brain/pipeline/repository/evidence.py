@@ -135,6 +135,15 @@ async def write_intents(
 # the pipeline cut has these rows and no generation at all, which is why it hangs from message_batches and not from generations.
 
 
+# One chunk the retrieval step found, as retrieval_logs keeps it: every one, with no threshold, so the threshold can be swept later
+# with what is already in the table (ADR-0068, regla 3; H-23).
+@dataclass(frozen=True)
+class RetrievedChunk:
+    document_chunk_id: UUID
+    similarity: Decimal
+    rank: int
+
+
 # One step as it ran. It restates the fields of StepResult instead of holding one, because pipeline/step.py needs Turn from this
 # package and importing it back from here would close the cycle. The runner is what maps one to the other.
 @dataclass(frozen=True)
@@ -154,9 +163,25 @@ class TracedStep:
     # Only the steps that produce one: triage and grounding.
     score: Decimal | None = None
     detail: dict | None = None
+    # Only the retrieval step has any: its rows of retrieval_logs, which hang from this row and not from the generation, so a turn
+    # the grounding cut keeps what it retrieved (ADR-0068, regla 6).
+    retrieved: tuple[RetrievedChunk, ...] = ()
 
 
-_STEPS_OF_BATCH = "DELETE FROM pipeline_steps WHERE message_batch_id = %(message_batch_id)s"
+# The logs go with the steps they hang from, in the same statement: a second run of the batch could not delete its trace with
+# them still pointing at it. The foreign key is checked at the end of the statement, when both are gone.
+_STEPS_OF_BATCH = """
+WITH logs AS (
+    DELETE FROM retrieval_logs
+     WHERE pipeline_step_id IN (SELECT id FROM pipeline_steps WHERE message_batch_id = %(message_batch_id)s)
+)
+DELETE FROM pipeline_steps WHERE message_batch_id = %(message_batch_id)s
+"""
+
+_LOG = """
+INSERT INTO retrieval_logs (id, pipeline_step_id, document_chunk_id, similarity_score, rank)
+VALUES (%(id)s, %(pipeline_step_id)s, %(document_chunk_id)s, %(similarity_score)s, %(rank)s)
+"""
 
 _STEP = """
 INSERT INTO pipeline_steps (
@@ -178,12 +203,13 @@ async def write_steps(
         return
 
     await conn.execute(_STEPS_OF_BATCH, {"message_batch_id": message_batch_id})
-    # One statement per row and not executemany: they are nine at most, and the order of the rows is the order of the turn.
+    # One statement per row and not executemany: they are eleven at most, and the order of the rows is the order of the turn.
     for step in steps:
+        step_id = ids.new()
         await conn.execute(
             _STEP,
             {
-                "id": ids.new(),
+                "id": step_id,
                 "message_batch_id": message_batch_id,
                 "step": step.step,
                 "direction": step.direction,
@@ -197,3 +223,15 @@ async def write_steps(
                 "detail_json": Jsonb(step.detail) if step.detail is not None else None,
             },
         )
+        # top_k at most, three today: one statement each, in the order of their rank.
+        for chunk in step.retrieved:
+            await conn.execute(
+                _LOG,
+                {
+                    "id": ids.new(),
+                    "pipeline_step_id": step_id,
+                    "document_chunk_id": chunk.document_chunk_id,
+                    "similarity_score": chunk.similarity,
+                    "rank": chunk.rank,
+                },
+            )

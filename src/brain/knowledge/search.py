@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from decimal import Decimal
 from functools import lru_cache
 from typing import Protocol
 from uuid import UUID
@@ -28,12 +29,30 @@ class SearchRules:
     # What pipeline_steps.version of the retrieval and grounding steps writes (ADR-0068, regla 5).
     version: int
     top_k: int
+    # What the grounding compares the best similarity against (ADR-0068, regla 4). Decimal because it reaches numeric columns.
+    threshold: Decimal
+    # The longest question sent to the provider, in characters (ADR-0074).
+    max_query_chars: int
 
 
 @lru_cache(maxsize=1)
 def rules() -> SearchRules:
     loaded = rules_file.load("retrieval.yaml")
-    return SearchRules(version=loaded.version, top_k=loaded.integer("top_k", minimum=1, maximum=MAX_TOP_K))
+    return SearchRules(
+        version=loaded.version,
+        top_k=loaded.integer("top_k", minimum=1, maximum=MAX_TOP_K),
+        threshold=_similarity(loaded, "threshold"),
+        max_query_chars=loaded.integer("max_query_chars", minimum=1),
+    )
+
+
+# A cosine similarity is between -1 and 1, and a threshold outside 0 and 1 either grounds everything or nothing: a typo, refused at
+# boot. Through str(), because a YAML float is already binary and the column it reaches is numeric (C08).
+def _similarity(loaded: rules_file.RulesFile, key: str) -> Decimal:
+    value = loaded.raw.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
+        raise rules_file.RulesFileError(f"rules: {loaded.name} needs {key} as a similarity between 0 and 1")
+    return Decimal(str(value))
 
 
 @dataclass(frozen=True)

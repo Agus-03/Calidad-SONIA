@@ -18,8 +18,8 @@ from prompts.repository import Component
 logger = logging.getLogger("sonia.pipeline.runner")
 
 # The inbound leg, in the order of ADR-0016. A tuple because the order of the turn is data: adding a step is adding an entry, and
-# one row maps to one module (regla 6). retrieval and grounding are missing until Fase 12, which is a gap and not a step that
-# let something through (decision D2 of ADR-0042).
+# one row maps to one module (regla 6). retrieval and grounding come right after it but are not entries here: the route runs
+# them once the signals are judged, because they need the searcher and an agent without a base writes no row (ADR-0074).
 INBOUND: tuple[Step, ...] = (
     # First because it is the cheapest of the seven: a message with a forbidden term must not pay for a model to be refused.
     Step(step=PipelineStep.BLOCKLIST, direction=MessageDirection.INBOUND, run=blocklist.run),

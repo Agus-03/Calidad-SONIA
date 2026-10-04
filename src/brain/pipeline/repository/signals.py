@@ -92,6 +92,7 @@ _SIGNALS_OF_BATCH = """
 DELETE FROM signal_evaluations
  WHERE message_batch_id = %(message_batch_id)s
    AND signal_type = %(signal_type)s
+   AND classifier_version = %(classifier_version)s
 """
 
 _SIGNAL = """
@@ -104,12 +105,18 @@ INSERT INTO signal_evaluations (
 
 
 # Deleted first like the steps and the intents: the core asks again on a 5xx (ADR-0020) and one turn leaves one evaluation per
-# signal. By signal_type, because the other three of F12 belong to their own classifiers. A row transfer_events points at cannot
-# be deleted, and that FK is doing its job: this turn fails loudly instead of duplicating evidence.
+# signal and classifier. By signal_type, because the other three of F12 belong to their own classifiers, and by
+# classifier_version, because out_of_domain has two writers in the same batch, the triage and the grounding (ADR-0068, regla 7),
+# and the second must not delete the first. A row transfer_events points at cannot be deleted, and that FK is doing its job: this
+# turn fails loudly instead of duplicating evidence.
 async def write_signal_evaluation(conn: AsyncConnection, evaluation: SignalEvaluation) -> None:
     await conn.execute(
         _SIGNALS_OF_BATCH,
-        {"message_batch_id": evaluation.message_batch_id, "signal_type": evaluation.signal_type},
+        {
+            "message_batch_id": evaluation.message_batch_id,
+            "signal_type": evaluation.signal_type,
+            "classifier_version": evaluation.classifier_version,
+        },
     )
     await conn.execute(
         _SIGNAL,

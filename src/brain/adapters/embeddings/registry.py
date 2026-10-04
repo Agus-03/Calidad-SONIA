@@ -7,10 +7,12 @@ from adapters.embeddings.base import Embedder
 from infra.config import Settings
 
 
-def resolve(settings: Settings) -> Embedder:
+# timeout is the turn's when the api searches (ADR-0074), and the worker's own when it is left out: a customer waits on one and
+# nobody on the other.
+def resolve(settings: Settings, *, timeout: float | None = None) -> Embedder:
     if settings.embeddings_use_double:
         return double.DoubleEmbedder()
-    return _voyage(settings.voyage_api_key, settings.voyage_timeout_seconds)
+    return _voyage(settings.voyage_api_key, timeout if timeout is not None else settings.voyage_timeout_seconds)
 
 
 # One client per process: it holds an HTTP session.

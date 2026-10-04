@@ -5,7 +5,8 @@ import base64
 import pytest
 
 from infra.config import Settings, get_settings
-from main import main, run_worker
+from infra.db import Database
+from main import _knowledge, create_app, main, run_worker
 
 
 def test_a_broken_configuration_returns_a_failing_exit_code(clean_env, monkeypatch, capsys) -> None:
@@ -52,3 +53,28 @@ def test_a_configured_worker_runs_its_loop(settings: Settings, monkeypatch: pyte
 def test_an_unknown_mode_is_rejected_before_anything_starts() -> None:
     with pytest.raises(SystemExit):
         main(["cerebro"])
+
+
+# ADR-0074: a brain that cannot search still answers, as an agent without a base does, and says so at boot.
+def test_an_api_that_cannot_search_answers_without_the_knowledge_base(settings: Settings, caplog) -> None:
+    app = create_app(settings)
+
+    assert _knowledge(app, settings, Database(dsn=str(settings.database_url))) is None
+    assert app.state.searcher is None
+    assert "knowledge search disabled" in caplog.text
+
+
+# With Qdrant named and a way to embed, the turn gets a searcher with its own timeout and the rules of retrieval.yaml.
+async def test_an_api_that_can_search_builds_the_searcher_with_the_turns_timeout(settings: Settings) -> None:
+    ready = settings.model_copy(
+        update={"qdrant_url": "http://qdrant:6333", "embeddings_use_double": True, "environment": "test", "retrieval_timeout_seconds": 5.0}
+    )
+    app = create_app(ready)
+
+    vectors = _knowledge(app, ready, Database(dsn=str(ready.database_url)))
+
+    try:
+        assert vectors is not None and vectors._http.timeout.read == 5.0
+        assert app.state.searcher.rules.top_k == 3
+    finally:
+        await vectors.close()

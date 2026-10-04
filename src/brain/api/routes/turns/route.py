@@ -8,10 +8,12 @@ from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from adapters.embeddings.base import EmbeddingError
 from adapters.llm.base import LLMError
 from adapters.llm.registry import resolve
+from adapters.vectorstore.qdrant import VectorStoreError
 from api.routes.turns import enrichment, signals
-from api.schemas.turn import ExtractedDatum, TurnRequest, TurnResponse
+from api.schemas.turn import ExtractedDatum, TransferProposal, TurnRequest, TurnResponse
 from classifiers import extraction, transfer
 from infra.enums import (
     AgentMode,
@@ -19,12 +21,14 @@ from infra.enums import (
     MessageDirection,
     PipelineStep,
     PromptComponentType,
+    TransferSignalType,
 )
-from pipeline import notices, runner
+from knowledge.search import SearchRules
+from pipeline import grounding, notices, retrieval, runner, triage
 from pipeline.generation import UnpricedModel, generate
 from pipeline.repository.turn import Turn, TurnNotFound, read_turn
 from pipeline.repository.context import read_context, write_context_version
-from pipeline.repository.signals import write_signal_evaluation
+from pipeline.repository.signals import read_transfer_policies, write_signal_evaluation
 from pipeline.repository.evidence import TracedStep, write_generation, write_intents, write_steps
 from pipeline.step import Step
 from prompts import rewriter
@@ -116,9 +120,38 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     # a step, and generations.prompt_rendered has to carry the redacted text and never the original.
     message = trace.text
 
-    # Only a turn that reaches generation rewrites the context: a cut one has nothing to give it to (ADR-0048).
+    # Read before the retrieval, which searches with its summary (ADR-0068, regla 2). Only a turn that reaches generation
+    # rewrites it: a cut one has nothing to give it to (ADR-0048).
     async with request.app.state.database.connection() as conn:
         current = await read_context(conn, turn.conversation_id)
+
+    # The fourth and fifth steps of the turn, after the signals and not inside the inbound leg: a turn the triage already
+    # delegated does not pay a search it will never use, and the trace still reads triage, retrieval, grounding (ADR-0074).
+    knowledge: tuple[str, ...] = ()
+    searcher = request.app.state.searcher
+    if searcher is not None and not _greeting(trace):
+        summary = current.context.summary if current is not None else None
+        try:
+            retrieved = await retrieval.run(
+                searcher, agent_id=turn.agent.id, summary=summary, block=message, position=trace.next_position
+            )
+        except (EmbeddingError, VectorStoreError) as err:
+            # The step fails, as the triage does when its provider fails (ADR-0074, regla 2): answering without the documents
+            # could invent, and transferring would count against OE6 what is a failure of ours.
+            logger.error(
+                "turn not retrieved",
+                extra={"context": {"conversation_id": str(turn.conversation_id), "error": str(err)}},
+            )
+            await _write_trace(request, turn, trace.steps)
+            return TurnResponse(outcome="failed")
+        if retrieved is not None:
+            grounded = grounding.run(retrieved, rules=searcher.rules, position=trace.next_position + 1)
+            trace = replace(
+                trace, steps=trace.steps + (retrieved.row, grounded.row), next_position=trace.next_position + 2
+            )
+            if not grounded.grounded:
+                return await _not_grounded(request, body, turn, trace, grounded, searcher.rules, found)
+            knowledge = grounded.knowledge
 
     # First half of F11, and the rewrite of F04 beside it: neither reads the other, and the customer waits for the slower one and
     # not for both (ADR-0048). Before the assembly, because the answer is given the two (ADR-0041, regla 12; Regla 1).
@@ -137,6 +170,7 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         components=read.components,
         message=message,
         context=rewriter.render(dynamic) if dynamic is not None else None,
+        knowledge=knowledge,
         quick_replies=replies,
         intents=[i.label for i in intents],
     )
@@ -162,6 +196,8 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
         "prompt_rules_version": prompt.rules_version,
         "detected_intents": len(intents),
         "quick_replies": len(replies),
+        # How many chunks of the knowledge base went in, and never their text: it is in retrieval_logs (ADR-0068, regla 6).
+        "knowledge_chunks": len(knowledge),
         "context_rewritten": version is not None,
         # How many and never which: the values are data of the contact, and a log line is not where they get copied to (ADR-0006).
         "extracted": len(extracted),
@@ -307,6 +343,61 @@ def _generated(*, position: int, outcome: str, version: int, latency_ms: int, de
 
 # The step the transfer cuts at, looked up and not rebuilt: the inbound leg is data (ADR-0016).
 _TRIAGE = next(s for s in runner.INBOUND if s.step == PipelineStep.TRIAGE)
+
+
+# ADR-0068, regla 9: a greeting has nothing to search, and would come out not_grounded and land on a seller's tray.
+def _greeting(trace: runner.Trace) -> bool:
+    row = next((s for s in trace.steps if s.step == PipelineStep.TRIAGE), None)
+    verdict = triage.verdict_of(row) if row is not None else None
+    return verdict is not None and verdict.greeting
+
+
+# The cut of the grounding (ADR-0068, reglas 7 and 8): the out_of_domain signal under the retrieval's own classifier_version, the
+# fixed text, and a transfer when the agent's policy for that signal is on. The trace goes with it, retrieval_logs included,
+# which is the evidence of the cut. In suggestion mode the core sends no text and transfers nothing (ADR-0046).
+async def _not_grounded(
+    request: Request,
+    body: TurnRequest,
+    turn: Turn,
+    trace: runner.Trace,
+    grounded: grounding.Grounding,
+    rules: SearchRules,
+    found: Sequence[extraction.Extracted],
+) -> TurnResponse:
+    async with request.app.state.database.connection() as conn:
+        policies = await read_transfer_policies(conn, turn.agent.id)
+        evaluation = grounding.signal(
+            grounded,
+            message_batch_id=turn.message_batch_id,
+            rules=rules,
+            policy=policies.get(TransferSignalType.OUT_OF_DOMAIN),
+        )
+        await write_signal_evaluation(conn, evaluation)
+
+    # The mode and the transfer on the row that cut, like the triage's row carries them (ADR-0045 2.5, ADR-0046 2.4).
+    cut = trace.steps[-1]
+    detail = {**(cut.detail or {}), "mode": str(body.mode)}
+    if evaluation.fired:
+        detail["transfer"] = str(TransferSignalType.OUT_OF_DOMAIN)
+    trace = replace(trace, steps=trace.steps[:-1] + (replace(cut, detail=detail),))
+    await _write_trace(request, turn, trace.steps)
+
+    logger.info(
+        "the grounding sent the turn to a person",
+        extra={
+            "context": {
+                "conversation_id": str(turn.conversation_id),
+                "best_similarity": str(grounded.best) if grounded.best is not None else None,
+                "transfer": evaluation.fired,
+            }
+        },
+    )
+    return TurnResponse(
+        outcome="blocked",
+        notice_text=notices.rules().text_for(PipelineStep.GROUNDING, MessageDirection.INBOUND),
+        transfer=TransferProposal(proposed=evaluation.fired, signal_evaluation_id=evaluation.id),
+        extracted=_extracted(found),
+    )
 
 
 # What the customer reads when the pipeline refused the turn (O2), or nothing at all when the step that cut was the triage (O1c).

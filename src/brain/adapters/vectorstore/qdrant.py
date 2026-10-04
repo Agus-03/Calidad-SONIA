@@ -1,6 +1,7 @@
 # Qdrant through its REST API (ADR-0010, ADR-0071): one collection per AIAgent, cosine distance, and only document_id in each
 # point's payload, because the text is read from document_chunks and Qdrant keeps no copy of it (ADR-0064, regla 3).
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -42,6 +43,7 @@ class QdrantStore:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._batch_size = batch_size
+        self._timeout = timeout
         headers = {"api-key": api_key} if api_key else {}
         self._http = httpx.AsyncClient(base_url=url.rstrip("/"), headers=headers, timeout=timeout, transport=transport)
 
@@ -55,6 +57,7 @@ class QdrantStore:
             await self._call("PUT", f"/collections/{name}", json={"vectors": {"size": DIMENSION, "distance": "Cosine"}})
             schema: dict[str, Any] = {}
         else:
+            _check_vectors(name, found["result"])
             schema = found["result"].get("payload_schema") or {}
         # The search filters by document_id on every turn (ADR-0073): without an index Qdrant checks the filter point by point,
         # which is slower and can cost a filtered search some of its true neighbours. A collection made before the index gets it
@@ -97,7 +100,12 @@ class QdrantStore:
 
     async def _call(self, method: str, path: str, *, json: Any = None, allow_missing: bool = False) -> Any | None:
         try:
-            response = await self._http.request(method, path, json=json)
+            # asyncio's and not only httpx's, whose timeout is per phase of the request: the turn waits for the whole call
+            # (ADR-0074, regla 3).
+            async with asyncio.timeout(self._timeout):
+                response = await self._http.request(method, path, json=json)
+        except TimeoutError as err:
+            raise VectorStoreError(f"qdrant: {method} {path}: no answer in {self._timeout}s") from err
         except httpx.HTTPError as err:
             raise VectorStoreError(f"qdrant: {method} {path}: {type(err).__name__}: {err}") from err
         if allow_missing and response.status_code == 404:
@@ -105,3 +113,17 @@ class QdrantStore:
         if response.is_error:
             raise VectorStoreError(f"qdrant: {method} {path}: {response.status_code} {response.text[:500]}")
         return response.json()
+
+
+# A collection that already exists with another size or distance would fail only at (iii), the upsert, after (i) deleted the old
+# vectors and (ii) retired the old chunks (ADR-0064, regla 7). Checked first, so a wrong collection fails the document before
+# anything is touched. A collection whose answer does not say its vectors is let through, as before.
+def _check_vectors(name: str, collection: dict[str, Any]) -> None:
+    vectors = (((collection.get("config") or {}).get("params") or {}).get("vectors")) or {}
+    if not isinstance(vectors, dict) or "size" not in vectors:
+        return
+    if vectors["size"] != DIMENSION or str(vectors.get("distance", "")).lower() != "cosine":
+        raise VectorStoreError(
+            f"qdrant: {name} holds vectors of size {vectors['size']} by {vectors.get('distance')}, and the worker writes "
+            f"{DIMENSION} by Cosine (ADR-0067, regla 2)"
+        )

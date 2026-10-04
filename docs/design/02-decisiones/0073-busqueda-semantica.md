@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · `top_k` provisorio en 3 y buscar sólo en documentos `indexed`, decididos por el grupo el 2026-10-04 · las reglas 3 a 7 son decisiones de construcción, tomadas al escribir `knowledge/search.py` · **la regla 7 completada por la nota de §6** (2026-10-04): una colección faltante es un error, la búsqueda devuelve también lo que dejó afuera, y la base y Qdrant ganan índices, decidido por el grupo tras la revisión de la búsqueda |
+| **Estado** | Aceptada · `top_k` provisorio en 3 y buscar sólo en documentos `indexed`, decididos por el grupo el 2026-10-04 · las reglas 3 a 7 son decisiones de construcción, tomadas al escribir `knowledge/search.py` · **la regla 7 completada por la nota de §6** (2026-10-04): una colección faltante es un error, la búsqueda devuelve también lo que dejó afuera, y la base y Qdrant ganan índices, decidido por el grupo tras la revisión de la búsqueda · el umbral y los *timeouts* que dejó abiertos, fijados por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md) |
 | **Fecha** | 2026-10-04 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | El valor inicial de `top_k`, que [ADR-0068](0068-recuperacion-y-grounding.md) dejó abierto, y qué es un *"trozo activo"* (regla 3 de ADR-0068) para la búsqueda |
@@ -58,14 +58,14 @@ Para construir la búsqueda faltaban tres cosas:
 - ~~**El filtro de Qdrant no tiene índice.** La colección se crea sin índice sobre `document_id` en el *payload*, así que Qdrant filtra recorriendo. Con bases de hasta 100 MB no se nota; con muchas más, sí. Crear el índice es un cambio del `worker`.~~ *(Superada por la nota de §6: el `worker` crea el índice.)*
 - **Un punto descartado en la segunda lectura no se reemplaza**: en esa ventana vuelven menos de `top_k`.
 - **El `rank` no es la posición cruda de Qdrant** cuando se descartó un punto: es la posición entre los que quedaron.
-- **La búsqueda suma latencia al turno**: dos lecturas de la base, una llamada al proveedor de embeddings y una a Qdrant, dentro de los 10 segundos que espera el núcleo.
+- **La búsqueda suma latencia al turno**: dos lecturas de la base, una llamada al proveedor de embeddings y una a Qdrant, dentro de los 10 segundos que espera el núcleo. *(15 segundos desde [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), regla 3.)*
 
 ### Lo que queda abierto
 
 | Qué | Estado |
 |---|---|
-| **El umbral del `grounding`** | Se fija con el paso `grounding` y se valida en la evaluación de ADR-0065, regla 3 |
-| **Los *timeouts* del proveedor y de Qdrant dentro del turno, y qué hace el turno si fallan** | Se deciden con el paso `retrieval`, que es el que llama a la búsqueda |
+| **El umbral del `grounding`** | Se fija con el paso `grounding` y se valida en la evaluación de ADR-0065, regla 3 *(Arranca en 0,5 por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), regla 1.)* |
+| **Los *timeouts* del proveedor y de Qdrant dentro del turno, y qué hace el turno si fallan** | Se deciden con el paso `retrieval`, que es el que llama a la búsqueda *(Resuelto por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), reglas 2 y 3: 5 s cada uno, y el turno falla.)* |
 
 ## 5. Alternativas descartadas
 

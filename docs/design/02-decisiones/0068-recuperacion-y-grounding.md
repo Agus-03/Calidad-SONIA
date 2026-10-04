@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · buscar con el bloque redactado y el resumen del contexto vigente, decidir el grounding previo con un umbral de similitud, colgar `retrieval_logs` del paso `retrieval`, y que `not_grounded` escriba la señal `out_of_domain`, avise a la clienta con un texto fijo y transfiera, decididos por el grupo el 2026-10-03 · **el método del grounding de salida (O4) queda para la fase de evaluación** · el valor inicial de `top_k` fijado por [ADR-0073](0073-busqueda-semantica.md) (2026-10-04), que precisa además qué es un trozo activo para la búsqueda: el de un documento `indexed` |
+| **Estado** | Aceptada · buscar con el bloque redactado y el resumen del contexto vigente, decidir el grounding previo con un umbral de similitud, colgar `retrieval_logs` del paso `retrieval`, y que `not_grounded` escriba la señal `out_of_domain`, avise a la clienta con un texto fijo y transfiera, decididos por el grupo el 2026-10-03 · **el método del grounding de salida (O4) queda para la fase de evaluación** · el valor inicial de `top_k` fijado por [ADR-0073](0073-busqueda-semantica.md) (2026-10-04), que precisa además qué es un trozo activo para la búsqueda: el de un documento `indexed` · el umbral inicial y qué hace el turno si la búsqueda falla, fijados por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md) · las dos consecuencias sobre OE6 resueltas por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md) |
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | O5 y O9 de [ADR-0042](0042-pipeline-de-decision-del-turno.md), y el pendiente de su §1.1. Fija cuándo se construye O4 |
@@ -75,9 +75,9 @@ F06 pide *"búsqueda semántica para enriquecer respuestas"* y F12, detectar *"c
 - **El prefijo `retrieval` de `classifier_version` es una convención en un `varchar`**, como el `1+profanity1` de ADR-0042: nada en el esquema la hace cumplir.
 - **Los dos cortes que delegan le dicen cosas distintas a la clienta.** El del `triage` calla y el del `grounding` avisa. El argumento de O1c —un texto automático compite con la respuesta de la persona que está atendiendo— vale también acá, y el grupo eligió avisar igual. El texto sin promesa de tiempo lo atenúa, no lo elimina.
 - **La política `out_of_domain` es una sola para los dos pasos.** No se puede transferir lo que el RAG no responde sin transferir también lo que el `triage` juzga fuera del negocio, ni al revés.
-- **Con la política apagada, `not_grounded` corta y avisa sin transferir, y OE6 lo cuenta como respondido sin escalada** aunque el agente no haya contestado. Es el mismo agujero que ya tiene el corte del `triage`, y se agranda.
+- **Con la política apagada, `not_grounded` corta y avisa sin transferir, y OE6 lo cuenta como respondido sin escalada** aunque el agente no haya contestado. Es el mismo agujero que ya tiene el corte del `triage`, y se agranda. *(Resuelta por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 1: el `not_grounded` cuenta como escalada.)*
 - **La trazabilidad de OE2 suma un salto.** Para saber qué trozos usó una generación hay que pasar por el bloque y la fila del paso `retrieval`: la cadena de cuatro saltos de [DER/relaciones.md](../DER/relaciones.md) §3 pasa a cinco.
-- **Para un agente sin base, OE6 vuelve a dar 100 % por construcción.** Ningún bloque puede escalar por `not_grounded`, y la medición tiene que excluirlo o declararlo.
+- **Para un agente sin base, OE6 vuelve a dar 100 % por construcción.** Ningún bloque puede escalar por `not_grounded`, y la medición tiene que excluirlo o declararlo. *(Resuelta por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 2: los agentes sin base quedan fuera de la medición.)*
 - **Un falso `greeting` del `triage` deja una pregunta sin recuperar**: el agente la contesta sin documentos y nada lo marca.
 - **Cambia una columna de `0001`**, y con ella el código y los tests que escriben `retrieval_logs`.
 
@@ -86,8 +86,8 @@ F06 pide *"búsqueda semántica para enriquecer respuestas"* y F12, detectar *"c
 | Qué | Estado |
 |---|---|
 | **El método del grounding de salida** (regla 11) | La fase de evaluación |
-| **Los valores iniciales de `top_k` y del umbral** | La evaluación de [ADR-0065](0065-fragmentacion-de-documentos.md), regla 3, con preguntas sin respuesta en los documentos. *(`top_k` arranca en 3, provisorio, por [ADR-0073](0073-busqueda-semantica.md), regla 1; el umbral sigue abierto.)* |
-| **La rama del corte del `grounding` en [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) §4** | Se dibuja al construir los dos pasos |
+| **Los valores iniciales de `top_k` y del umbral** | La evaluación de [ADR-0065](0065-fragmentacion-de-documentos.md), regla 3, con preguntas sin respuesta en los documentos. *(`top_k` arranca en 3, provisorio, por [ADR-0073](0073-busqueda-semantica.md), regla 1; el umbral sigue abierto.)* *(El umbral arranca en 0,5 por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), regla 1; la evaluación se difiere por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md).)* |
+| **La rama del corte del `grounding` en [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) §4** | Se dibuja al construir los dos pasos *(Dibujada en §4 B.3 por [ADR-0074](0074-pasos-de-recuperacion-y-grounding.md).)* |
 
 ## 5. Alternativas descartadas
 

@@ -3,7 +3,7 @@
 | Campo | Valor |
 |---|---|
 | **Documento** | `docs/design/07-secuencia-del-turno.md` |
-| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo · **§1 y el diagrama de §2 enmendados 2026-09-26** (Fase 9 — [ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)): hasta la Fase 16 el cerebro escribe **tres** `signal_evaluations` y no cuatro; `frustration` queda registrada como salteada en el `detail_json` del `triage` · **§0, §1, el diagrama de §2 y §3 enmendados 2026-09-26** (Fase 9): `contact_attributes` la escribe el núcleo ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)); una transferencia apaga el bot de esa conversación ([ADR-0045](02-decisiones/0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md)); y en modo sugerencia no hay botón de rechazo, el mensaje lo manda el Operator y la sugerencia ignorada queda en `pending_review` ([ADR-0046](02-decisiones/0046-modo-sugerencia.md)) · **§0, los diagramas de §2 y §3 y §4 B.2 paso 5 enmendados 2026-09-26** (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)): el cerebro escribe `conversation_context_versions` y el núcleo copia la versión que usó la generación a `conversation_contexts`, en la transacción que cierra el turno |
+| **Estado** | Borrador para el Paso 8 · §2 enmendado 2026-09-20 (Fase 7 — [ADR-0041](02-decisiones/0041-temporizador-del-turno-por-poller.md)) · **§1 (el bloque *Respuesta*), §4 B.1 paso 3 y §4 B.2 paso 4 enmendados 2026-09-25** (Fase 8 — [ADR-0042](02-decisiones/0042-pipeline-de-decision-del-turno.md)): un corte **sí** escribe `messages`, con el texto fijo de su punto de corte y `sender_type = 'system'`; el único que no escribe nada es el del `triage`, y la respuesta del contrato gana `notice_text` para llevarlo · **§1 y el diagrama de §2 enmendados 2026-09-26** (Fase 9 — [ADR-0044](02-decisiones/0044-senal-de-frustracion-diferida-a-la-fase-16.md)): hasta la Fase 16 el cerebro escribe **tres** `signal_evaluations` y no cuatro; `frustration` queda registrada como salteada en el `detail_json` del `triage` · **§0, §1, el diagrama de §2 y §3 enmendados 2026-09-26** (Fase 9): `contact_attributes` la escribe el núcleo ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md)); una transferencia apaga el bot de esa conversación ([ADR-0045](02-decisiones/0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md)); y en modo sugerencia no hay botón de rechazo, el mensaje lo manda el Operator y la sugerencia ignorada queda en `pending_review` ([ADR-0046](02-decisiones/0046-modo-sugerencia.md)) · **§0, los diagramas de §2 y §3 y §4 B.2 paso 5 enmendados 2026-09-26** (Fase 9 — [ADR-0048](02-decisiones/0048-contexto-dinamico-quien-lo-escribe-y-como-se-reescribe.md)): el cerebro escribe `conversation_context_versions` y el núcleo copia la versión que usó la generación a `conversation_contexts`, en la transacción que cierra el turno · **§4 B.3 agregado 2026-10-04** (Fase 12 — [ADR-0074](02-decisiones/0074-pasos-de-recuperacion-y-grounding.md)): el corte del `grounding`, con su señal, su texto fijo y su transferencia |
 | **Fecha** | 2026-08-22 |
 | **Base documental** | [Anteproyecto](../SONIA_Anteproyecto.pdf) — F02, F10, F12, F21, F29 · [ADR-0016](02-decisiones/0016-rastro-del-pipeline-de-respuesta.md) (pipeline) · [ADR-0017](02-decisiones/0017-decomposicion-en-despliegues-y-lenguajes.md) (frontera de procesos) · [03-capa-prompts.md](03-capa-prompts.md) (las cinco reglas) |
 | **Complemento** | [DER/entidades.md](DER/entidades.md) — este documento no repite atributos, define **orden y dueño de cada escritura** |
@@ -203,9 +203,9 @@ sequenceDiagram
 
 ---
 
-## 4. Rama B — Corte temprano por blocked-list o guardrail
+## 4. Rama B — Corte temprano por blocked-list, guardrail o grounding
 
-Dos cortes, en dos momentos distintos, con consecuencias distintas.
+Tres cortes, en dos momentos distintos, con consecuencias distintas. *(El tercero, B.3, se agregó el 2026-10-04.)*
 
 ### B.1 — Corte de entrada (antes de generar)
 
@@ -236,6 +236,24 @@ El `guardrail` de salida rechaza la respuesta ya generada.
 > **`blocked` es un valor nuevo de `GenerationStatus`** (decisión del Paso 8, ya aplicada al catálogo). Los cinco valores originales —`auto_sent · pending_review · accepted · edited · rejected`— **describen todos resultados de revisión humana**, porque la enumeración es anterior a ADR-0016, que introdujo el guardrail de salida. Usar `rejected` sería afirmar que un operador la rechazó, que es falso; dejarla en `auto_sent` sería afirmar que salió sin revisión, que también es falso. Sin el valor nuevo, mirando sólo `generations` no se distingue una respuesta bloqueada de una **huérfana por caída del cerebro** (§5): las dos tienen `message_id NULL`.
 >
 > **También aplica en modo sugerencia.** El guardrail de salida corre antes de que la propuesta llegue a la bandeja, así que una generación bloqueada **nunca se le muestra al operador**: termina en `blocked` sin pasar por `pending_review`.
+
+### B.3 — Corte del `grounding` (antes de generar)
+
+*(Agregado el 2026-10-04 al construir los dos pasos — [ADR-0068](02-decisiones/0068-recuperacion-y-grounding.md), reglas 6 a 8, y [ADR-0074](02-decisiones/0074-pasos-de-recuperacion-y-grounding.md).)*
+
+La búsqueda corrió y ningún trozo alcanzó el umbral: el `grounding` devuelve `not_grounded`. Sólo pasa en un turno que llegó hasta acá: el cerebro tiene la búsqueda configurada, el agente tiene base con documentos `indexed`, el `triage` no lo cortó ni lo delegó y no era un saludo.
+
+| Orden | Quién | Qué |
+|---|---|---|
+| 1 | Cerebro | `INSERT signal_evaluations` · `out_of_domain` · `classifier_version = 'retrieval<versión>'`, con `score = 1 − la mayor similitud` y `threshold_used = 1 − el umbral`. `fired` es verdadero si la política `out_of_domain` del agente está encendida. Convive con la fila que el `triage` ya escribió para la misma señal |
+| 2 | Cerebro | `INSERT pipeline_steps` del turno, con `retrieval` (`hit` o `empty`) y `grounding` (`not_grounded`), y `INSERT retrieval_logs` colgados de la fila de `retrieval`: lo recuperado es la evidencia del corte |
+| 3 | Cerebro | Responde `outcome = 'blocked'`, sin `generation_id`, **con `notice_text`** —la entrada `grounding` de `notices.yaml`— y con `transfer` apuntando a la fila de la señal |
+| 4 | Núcleo | Escribe el texto fijo como `messages` con `sender_type = 'system'` y, si `transfer.proposed`, `transfer_events` y el modo de la conversación en `off`. En modo sugerencia no hace ninguna de las dos (ADR-0046) |
+| 5 | Núcleo | `UPDATE conversations SET status = 'waiting'` **+ `UPDATE message_batches SET processed_at`**, en la misma transacción, y envía el texto fuera de ella |
+
+La diferencia con el corte del `triage` (B.1 no lo cubre: ese corte delega en silencio, decisión O1c) es lo que la clienta preguntó. Allá, algo que el negocio no atiende; acá, algo que el negocio atiende y el agente no supo contestar con sus documentos, y por eso se le avisa.
+
+> **Una búsqueda que falla no es este corte.** Si Voyage o Qdrant no responden, el turno falla como cuando falla el proveedor del `triage` (ADR-0074, regla 2): el cerebro responde `outcome = 'failed'` y conserva los pasos que sí decidieron. Es la rama C de §5, no un `not_grounded`.
 
 ---
 
@@ -322,7 +340,7 @@ Las cinco preguntas que abrió este documento quedaron cerradas así:
 |---|---|---|
 | 1 | ¿Se agrega `blocked` a `GenerationStatus`? | **Sí.** Y `status` lo escribe el cerebro una sola vez, después del guardrail de salida. La entrega se lee en `messages.status`, no acá |
 | 2 | ¿Cómo queda el `WHERE` de OE7? | **Excluir si existe una generación con `reviewed_by_operator_id IS NOT NULL`** |
-| 3 | ¿Cuántos reintentos antes de declarar el turno fallido? | **Tres**, con backoff, **configurables por variable de entorno** (`TURN_MAX_RETRIES`) |
+| 3 | ¿Cuántos reintentos antes de declarar el turno fallido? | **Tres**, con backoff, **configurables por variable de entorno** (`TURN_MAX_RETRIES`) *(Con 15 s por intento desde [ADR-0074](02-decisiones/0074-pasos-de-recuperacion-y-grounding.md), el presupuesto del turno de 30 s alcanza para dos: el tercero no llega a correr.)* |
 | 4 | ¿Se registra el motivo de la falla? | **Sí**, en `message_batches.error_message` (text, nullable), escrito por el núcleo |
 | 5 | ¿`transfer_events` en modo sugerencia? | **No se escribe.** La evidencia queda en `signal_evaluations` |
 

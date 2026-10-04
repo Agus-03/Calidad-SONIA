@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · arrancar con `voyage-4` de Voyage AI a 1024 dimensiones, compararlo después con `embed-multilingual-v3.0` y `text-embedding-3-small`, y vectorizar sólo texto describiendo cada imagen al ingerir con Claude Sonnet 5.5, elegidos por el grupo el 2026-10-03 |
+| **Estado** | Aceptada · arrancar con `voyage-4` de Voyage AI a 1024 dimensiones, compararlo después con `embed-multilingual-v3.0` y `text-embedding-3-small`, y vectorizar sólo texto describiendo cada imagen al ingerir con Claude Sonnet 5.5, elegidos por el grupo el 2026-10-03 · **regla 3 enmendada el 2026-10-04 por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md)**: la evaluación con la que se comparan los modelos se difiere y usa el anteproyecto |
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | El modelo exacto de embeddings y su dimensión, que [ADR-0018](0018-proveedor-de-llm-y-embeddings.md) dejó abierto con fecha límite —*"antes de crear la colección de Qdrant"*—, y qué se hace con las imágenes de un PDF, que [ADR-0064](0064-ingesta-de-documentos.md) regla 10 difirió |
@@ -41,7 +41,7 @@ Voyage da además 200 millones de tokens gratis por cuenta.
 |---|---|
 | 1 | **El modelo de embeddings es `voyage-4` de Voyage AI.** Es un proveedor nuevo, con su propia credencial, y su cliente vive en `adapters/` como el de los demás proveedores ([ADR-0017](0017-decomposicion-en-despliegues-y-lenguajes.md)) |
 | 2 | **La dimensión es 1024**, y las colecciones de Qdrant se crean con ella y con distancia coseno |
-| 3 | **Se compara después con `embed-multilingual-v3.0` y `text-embedding-3-small`**, con la evaluación de recuperación de [ADR-0065](0065-fragmentacion-de-documentos.md) (*recall@k* sobre los documentos del cooperante, con todo lo demás fijo). Si uno recupera claramente mejor, se cambia y se reindexa ([ADR-0064](0064-ingesta-de-documentos.md), regla 11). Cambiar de proveedor enmienda este ADR |
+| 3 | **Se compara después con `embed-multilingual-v3.0` y `text-embedding-3-small`**, con la evaluación de recuperación de [ADR-0065](0065-fragmentacion-de-documentos.md) (*recall@k* sobre los documentos del cooperante, con todo lo demás fijo). Si uno recupera claramente mejor, se cambia y se reindexa ([ADR-0064](0064-ingesta-de-documentos.md), regla 11). Cambiar de proveedor enmienda este ADR *(Enmendada por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), reglas 3 y 4: la evaluación se difiere y se corre con el anteproyecto, no con los documentos del cooperante. Si la comparación de modelos sigue dentro de ella, queda para decidir al armarla.)* |
 | 4 | **Se vectoriza sólo texto.** Las imágenes no se vectorizan |
 | 5 | **Cada imagen de un PDF se describe al ingerir con Claude Sonnet 5.5**, y la descripción entra al texto de la página donde estaba la imagen, antes de fragmentar. Así el chunking recursivo la deja junto a su contexto |
 | 6 | **Las imágenes chicas no se describen**: logos e íconos no aportan contenido. El tamaño mínimo es un parámetro versionado en `rules/` |
@@ -55,7 +55,7 @@ Voyage da además 200 millones de tokens gratis por cuenta.
 - **Voyage porque es lo que recomienda Anthropic** y porque es la generación actual: `embed-multilingual-v3.0` es de una generación anterior a los otros dos candidatos. ADR-0018 dejó abierta la puerta a otro proveedor si la calidad en español no alcanzaba; el grupo prefirió arrancar con el modelo más nuevo y que la evaluación de la regla 3 diga si Cohere lo alcanza, en vez de arrancar con el más viejo y esperar que la evaluación diga que no alcanza.
 - **`voyage-4` y no `voyage-4-lite` ni `voyage-4-large`** porque es el del medio: al volumen de una cooperante la diferencia de precio son centavos, y la evaluación dirá si hace falta subir o se puede bajar.
 - **1024 porque la dan los tres candidatos.** Fijar la dimensión en una que todos pueden dar convierte un cambio de modelo en una reindexación, que es la misma ingesta, en vez de una colección nueva.
-- **Fijar el modelo antes de medir**, que es lo que ADR-0018 descartó, porque su argumento ya no vale: lo caro de revertir era la dimensión, y la dimensión queda fija sea cual sea el modelo. Esperar la evaluación bloquearía la fase, y la evaluación necesita documentos reales del cooperante que todavía no están.
+- **Fijar el modelo antes de medir**, que es lo que ADR-0018 descartó, porque su argumento ya no vale: lo caro de revertir era la dimensión, y la dimensión queda fija sea cual sea el modelo. Esperar la evaluación bloquearía la fase, y la evaluación necesita documentos reales del cooperante que todavía no están. *(La evaluación usa el anteproyecto desde [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 4.)*
 - **Sólo texto, porque lo que se recupera tiene que poder entrar al prompt.** El `user` de la Regla 1 de [03-capa-prompts](../03-capa-prompts.md) es texto. Una imagen recuperada habría que mandársela al LLM en cada turno que la use —de 1.300 a 4.800 tokens más por imagen y por turno— con un modelo con visión en la generación. Y la respuesta llega por WhatsApp como texto: lo que la clienta necesita de un plano es lo que dice.
 - **Un modelo multimodal, además, obliga a vectorizar todo con él**, porque una colección tiene que tener todos sus vectores en el mismo espacio. Elegir imágenes sería elegir también el modelo del texto.
 - **Describir al ingerir se paga una sola vez por imagen**, no en cada turno.
@@ -78,7 +78,7 @@ Voyage da además 200 millones de tokens gratis por cuenta.
 
 - **El modelo se fija sin la prueba en español que pedía ADR-0018.** Hasta que exista la evaluación de ADR-0065, nada dice que sea el mejor de los tres.
 - **Suma un proveedor**: una cuenta, una credencial más (`VOYAGE_API_KEY`, a agregar en [variables-de-entorno](../../standar/variables-de-entorno.md) cuando entre el código), un cliente y un adaptador nuevo en `adapters/`. Es exactamente lo que ADR-0018 §3 quería evitar.
-- **Voyage no está entre los candidatos de la sección 8.4** del anteproyecto (*"GPT-4o / Claude / Cohere / Otros"*). Cabe en *"Otros"*, pero hay que decirlo así en el informe.
+- **Voyage no está entre los candidatos de la sección 8.4** del anteproyecto (*"GPT-4o / Claude (vía API) / Cohere / Otros"*). Cabe en *"Otros"*, pero hay que decirlo así en el informe.
 - **Un proveedor más recibe el contenido de los documentos.** El aviso de [ADR-0066](0066-datos-personales-en-los-documentos.md) nombra a los proveedores que procesan el contenido, y tiene que nombrar a Voyage.
 - **El precio de Cohere no está verificado** en una fuente oficial, así que la comparación de la regla 3 arranca con un costo de memoria.
 - **Generación, recuperación y descripción dependen de proveedores externos.** Si Voyage cae, se cae la ingesta y la búsqueda, y no hay respaldo: el de Anthropic cubre sólo la generación (ADR-0018). Si Anthropic cae, los documentos se ingieren sin sus imágenes (regla 9) y nadie se entera salvo por el log.

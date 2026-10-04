@@ -6,7 +6,7 @@
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Qué se hace con los datos personales que trae un documento de la base de conocimiento, que [ADR-0064](0064-ingesta-de-documentos.md) dejó abierto |
-| **Requisitos afectados** | F06 · secciones 5.2, 6.3 y 7.3 (Ley 25.326) |
+| **Requisitos afectados** | F06 · secciones 5.2 y 7.3 (Ley 25.326) *(6.3 retirada el 2026-10-04: esa sección enumera los diferenciadores de (a) a (e) y ninguno es la anonimización)* |
 | **Enmienda** | [ADR-0006](0006-anonimizacion-de-pii.md), **§2** — *"antes de que cualquier texto salga hacia el proveedor de LLM externo"* pasa a leerse como el texto de la conversación con la clienta: el contenido de los documentos sale sin redactar · [03-capa-prompts.md](../03-capa-prompts.md), **Regla 4** — los fragmentos que recupera el RAG entran al prompt sin pasar por el *checkpoint*, así que la frase *"ninguna llamada a un modelo (…) ve el dato crudo después de este punto"* vale para lo que escribió la clienta y no para lo que trae un documento · [ADR-0064](0064-ingesta-de-documentos.md), ***Lo que queda abierto*** — la fila de los datos personales se cierra |
 | **Relacionada con** | [ADR-0031](0031-cifrado-en-reposo-de-datos-sensibles.md), [ADR-0042](0042-pipeline-de-decision-del-turno.md), [ADR-0047](0047-extraccion-de-datos-del-contacto.md), [ADR-0064](0064-ingesta-de-documentos.md) |
 
@@ -58,7 +58,7 @@ Se evaluaron cuatro salidas:
 
 ### Negativas / costos asumidos
 
-- **El sistema sí manda datos personales sin redactar a un proveedor externo.** Los que traiga un documento llegan al proveedor de embeddings al ingerirse y al proveedor del LLM en cada prompt que use ese fragmento. **Es una excepción a la promesa de 5.2 y al diferenciador de 6.3**, y el argumento de ADR-0006 §3 —*"no se puede denunciar la fuga en la formulación del problema y producirla en la solución"*— sólo se sostiene acotado a la conversación. **Tiene que estar escrito así en el informe**, antes de que un tribunal lo encuentre leyendo los dos documentos juntos.
+- **El sistema sí manda datos personales sin redactar a un proveedor externo.** Los que traiga un documento llegan al proveedor de embeddings al ingerirse y al proveedor del LLM en cada prompt que use ese fragmento. **Es una excepción a la promesa de 5.2**, *(la mención a un diferenciador de 6.3 se retiró el 2026-10-04: 6.3 no habla de anonimización)* y el argumento de ADR-0006 §3 —*"no se puede denunciar la fuga en la formulación del problema y producirla en la solución"*— sólo se sostiene acotado a la conversación. **Tiene que estar escrito así en el informe**, antes de que un tribunal lo encuentre leyendo los dos documentos juntos.
 - **El aviso no es el consentimiento de los terceros.** Quien sube acepta en nombre del negocio, que es el responsable de la base según la Ley 25.326. Las personas que aparecen en un documento —una lista de inquilinos, por ejemplo— no consintieron nada. El aviso traslada la responsabilidad al negocio; no la hace desaparecer.
 - **Aceptar se vuelve un clic.** Un aviso que se acepta en cada subida se termina aceptando sin leer, y la columna prueba que se aceptó, no que se entendió.
 - **Un dato aceptado no le sirve al AIAgent para responder**, por la regla 5: si un manual trae el CBU para las señas, toda respuesta que lo cite se rechaza.

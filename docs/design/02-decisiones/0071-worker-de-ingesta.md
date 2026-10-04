@@ -68,7 +68,7 @@ ADR-0064, ADR-0065 y ADR-0067 fijaron qué hace la ingesta: el orden de escritur
 - **El brain queda atado a Python 3.14** hasta que `voyageai` acepte 3.15.
 - **Un `worker` procesa de a un documento.** Una base recién cargada con muchos PDF se indexa en serie.
 - **`voyageai` arrastra dependencias que no se usan**, entre ellas `numpy` y `langchain-text-splitters`, que engordan la imagen del brain.
-- **El solapamiento todavía no está implementado.** `chunking.yaml` lo declara en 0 y el cargador rechaza otro valor: subirlo, como permite la regla 4 de ADR-0065, es un cambio de código además de un cambio de datos.
+- **El solapamiento todavía no está implementado.** `chunking.yaml` lo declara en 0 y el cargador rechaza otro valor: subirlo, como permite la regla 4 de ADR-0065, es un cambio de código además de un cambio de datos. *(La regla 4 de ADR-0065 dejó de aplicar por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md): el solapamiento queda en 0.)*
 
 ## 5. Alternativas descartadas
 

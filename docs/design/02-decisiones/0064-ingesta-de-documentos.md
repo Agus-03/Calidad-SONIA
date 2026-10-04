@@ -85,7 +85,7 @@ Dos hechos condicionan el cifrado y conviene tenerlos delante:
 | Qué | Dónde se decide |
 |---|---|
 | ~~**El modelo de embeddings** y su dimensión, y qué se hace con las imágenes de un PDF. [ADR-0018](0018-proveedor-de-llm-y-embeddings.md) lo dejó abierto, y la colección de Qdrant no se puede crear sin él~~ | ~~Un ADR propio de esta fase, después de discutirlo~~ *(Cerrado por [ADR-0067](0067-modelo-de-embeddings-e-imagenes.md).)* |
-| **La estrategia de chunking**: unidad, tamaño, solapamiento y dónde se versionan los parámetros | ~~Ídem~~ [ADR-0065](0065-fragmentacion-de-documentos.md), en *Propuesta* |
+| **La estrategia de chunking**: unidad, tamaño, solapamiento y dónde se versionan los parámetros | ~~Ídem~~ [ADR-0065](0065-fragmentacion-de-documentos.md), ~~en *Propuesta*~~ Aceptada |
 | ~~**Los datos personales dentro de un documento**, que llegan al proveedor de embeddings y al prompt, y que el guardrail de salida rechaza (D3 de [ADR-0042](0042-pipeline-de-decision-del-turno.md))~~ | ~~Ídem~~ *(Cerrado por [ADR-0066](0066-datos-personales-en-los-documentos.md): se avisa y se acepta al subir, y no se redactan.)* |
 | **Qué pasa con la colección de un agente IA dado de baja.** [ADR-0010](0010-qdrant-como-base-vectorial.md) dice que *"dar de baja un agente es borrar su colección"*, y la baja de [ADR-0038](0038-alta-baja-y-pausa-del-agente-ia.md) es lógica | Sin fecha |
 

@@ -53,6 +53,27 @@ class Settings(BaseSettings):
     # Development and CI answer with the doubled adapter because there is no key; production must never be able to.
     llm_use_double: bool = False
 
+    # The worker of F06 (ADR-0064, ADR-0067, ADR-0069). Not required at boot here, because the api mode has no use for them and
+    # must not even receive the document key (ADR-0064, regla 2): worker_problems() demands them when the worker starts.
+    document_encryption_key: str = ""
+    firebase_storage_bucket: str = ""
+    # The variable Google's own client reads; it is named here only to keep the emulator out of production, as the core does.
+    storage_emulator_host: str = ""
+    storage_timeout_seconds: float = Field(default=120.0, gt=0)
+    voyage_api_key: str = ""
+    voyage_timeout_seconds: float = Field(default=30.0, gt=0)
+    # The doubled embeddings, for the smoke and development: no key, and no document leaves for Voyage (ADR-0071).
+    embeddings_use_double: bool = False
+    qdrant_url: str = ""
+    qdrant_api_key: str = ""
+    qdrant_timeout_seconds: float = Field(default=30.0, gt=0)
+    # Longer than a turn's 8 s: nobody is waiting on an ingestion, and a vision model takes its time with a dense page.
+    description_timeout_seconds: float = Field(default=60.0, gt=0)
+    # How often the worker looks for pending documents, like the turn's poller looks for closed batches (ADR-0041).
+    worker_poll_interval_seconds: float = Field(default=5.0, gt=0)
+    # ADR-0064, regla 8: longer than the slowest ingestion of a 100 MB document, so a live worker is never taken for a dead one.
+    worker_lock_timeout_seconds: float = Field(default=900.0, gt=0)
+
     @model_validator(mode="after")
     def _double_stays_out_of_production(self) -> "Settings":
         if self.llm_use_double and self.environment not in DOUBLE_ALLOWED_ENVIRONMENTS:
@@ -61,6 +82,41 @@ class Settings(BaseSettings):
                 + " or ".join(sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
             )
         return self
+
+    @model_validator(mode="after")
+    def _doubles_of_the_worker_stay_out_of_production(self) -> "Settings":
+        if self.embeddings_use_double and self.environment not in DOUBLE_ALLOWED_ENVIRONMENTS:
+            raise ValueError(
+                "EMBEDDINGS_USE_DOUBLE embeds nothing real and is only allowed when ENVIRONMENT is "
+                + " or ".join(sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+            )
+        if self.storage_emulator_host and self.environment not in DOUBLE_ALLOWED_ENVIRONMENTS:
+            raise ValueError(
+                "STORAGE_EMULATOR_HOST reads the documents from a fake store and is only allowed when ENVIRONMENT is "
+                + " or ".join(sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+            )
+        return self
+
+    # What the worker cannot start without, listed all at once like the boot does (regla 10). Asked by the worker and not by the
+    # api, so a brain that only answers turns needs none of them.
+    def worker_problems(self) -> list[str]:
+        problems: list[str] = []
+        if not self.document_encryption_key:
+            problems.append("DOCUMENT_ENCRYPTION_KEY is required by the worker")
+        else:
+            from worker.crypto import decode_key
+
+            try:
+                decode_key(self.document_encryption_key)
+            except ValueError as err:
+                problems.append(str(err))
+        if not self.firebase_storage_bucket:
+            problems.append("FIREBASE_STORAGE_BUCKET is required by the worker")
+        if not self.qdrant_url:
+            problems.append("QDRANT_URL is required by the worker")
+        if not self.voyage_api_key and not self.embeddings_use_double:
+            problems.append("VOYAGE_API_KEY is required by the worker unless EMBEDDINGS_USE_DOUBLE is set")
+        return problems
 
     @model_validator(mode="after")
     def _pool_range(self) -> "Settings":

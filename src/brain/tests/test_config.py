@@ -99,3 +99,34 @@ def test_the_provider_timeout_fits_inside_the_turn_budget(clean_env) -> None:
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **_MINIMUM, llm_timeout_seconds=0)
+
+
+# The two stand-ins of the worker follow the rule of the LLM double: a fake store or fake vectors in production would be an
+# ingestion that looks done and indexes nothing real (ADR-0071).
+@pytest.mark.parametrize("field", [{"embeddings_use_double": True}, {"storage_emulator_host": "storage:4443"}])
+def test_the_worker_doubles_stay_out_of_production(clean_env, field: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **_MINIMUM, environment="production", **field)
+    assert Settings(_env_file=None, **_MINIMUM, environment="test", **field)
+
+
+# The api boots without any of the worker's variables, and must: it does not even receive the document key (ADR-0064, regla 2).
+def test_the_worker_lists_everything_it_is_missing_and_the_api_needs_none_of_it(clean_env) -> None:
+    settings = Settings(_env_file=None, **_MINIMUM)
+    problems = settings.worker_problems()
+    assert len(problems) == 4
+
+    ready = Settings(
+        _env_file=None,
+        **_MINIMUM,
+        document_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        firebase_storage_bucket="sonia",
+        qdrant_url="http://qdrant:6333",
+        voyage_api_key="k",
+    )
+    assert ready.worker_problems() == []
+
+    short_key = ready.model_copy(update={"document_encryption_key": "c2hvcnQ="})
+    assert any("32" in problem for problem in short_key.worker_problems())
+    doubled = ready.model_copy(update={"voyage_api_key": "", "embeddings_use_double": True})
+    assert doubled.worker_problems() == []

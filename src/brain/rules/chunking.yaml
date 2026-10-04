@@ -1,0 +1,25 @@
+# The chunking of ADR-0065, versioned as data (regla 9) because what it cuts is what retrieval finds, and with it OE6. Every chunk
+# records this version in document_chunks.chunking_version (regla 9 of the ADR), so a measurement knows which cut it searched.
+version: 1
+
+# About 500 tokens (ADR-0065, regla 8). A number to start from, which the retrieval evaluation of regla 3 validates.
+max_tokens: 500
+
+# Tokens are not counted but estimated from characters (ADR-0071): a chunk holds max_tokens * chars_per_token characters at most,
+# and document_chunks.token_count is its length divided by this, rounded up. Four is the usual equivalence for these models, and
+# the evaluation is what can say whether it holds for Spanish.
+chars_per_token: 4
+
+# Zero to start (ADR-0065, regla 1). Raising it is a code change too: the splitter refuses anything else until the evaluation
+# shows it pays.
+overlap_tokens: 0
+
+# The recursive strategy (ADR-0065, regla 5): it tries each separator from the largest unit to the smallest until a piece fits.
+# Pages are joined with a blank line, so a page is a section; the empty string is the last resort of a text with no spaces.
+separators:
+  - "\n\n\n"
+  - "\n\n"
+  - "\n"
+  - ". "
+  - " "
+  - ""

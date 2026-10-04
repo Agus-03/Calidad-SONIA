@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -210,5 +213,32 @@ func TestAFileGoesInAndComesBackInTheColumnFormat(t *testing.T) {
 	stored[len(stored)-1] ^= 0x01
 	if _, err := c.DecryptBytes(stored); !errors.Is(err, ErrCorrupted) {
 		t.Fatalf("a flipped bit: got %v, want ErrCorrupted", err)
+	}
+}
+
+// TestTheSharedVectorOpensWithTheGoReader is ADR-0064 §4 from the core's side: the vector in contracts/fixtures was sealed by
+// this package, and the worker's test opens the same file with Python. If either side changes the format, one of the two fails.
+func TestTheSharedVectorOpensWithTheGoReader(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "contracts", "fixtures", "document-cipher.json"))
+	if err != nil {
+		t.Fatalf("reading the shared vector: %v", err)
+	}
+	var vector struct{ Key, Plaintext, Sealed string }
+	if err := json.Unmarshal(raw, &vector); err != nil {
+		t.Fatalf("the shared vector is not json: %v", err)
+	}
+	key, err := DecodeKey(vector.Key)
+	if err != nil {
+		t.Fatalf("DecodeKey: %v", err)
+	}
+	c, err := New(key)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sealed, _ := base64.StdEncoding.DecodeString(vector.Sealed)
+	want, _ := base64.StdEncoding.DecodeString(vector.Plaintext)
+	got, err := c.DecryptBytes(sealed)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("the shared vector does not open back into its plaintext: %v", err)
 	}
 }

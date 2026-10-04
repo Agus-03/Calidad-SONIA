@@ -60,9 +60,17 @@ class OpenAIClient:
 
 
 # Like Cohere, the system prompt travels as the first message.
-def _messages(system: str | None, messages: tuple[LLMMessage, ...]) -> list[dict[str, str]]:
-    prefix = [{"role": "system", "content": system}] if system else []
-    return prefix + [{"role": m.role, "content": m.text} for m in messages]
+def _messages(system: str | None, messages: tuple[LLMMessage, ...]) -> list[dict[str, Any]]:
+    prefix: list[dict[str, Any]] = [{"role": "system", "content": system}] if system else []
+    return prefix + [{"role": m.role, "content": _content(m)} for m in messages]
+
+
+# Images travel as data URLs in parts of their own, before the text; a message without them keeps the plain string.
+def _content(message: LLMMessage) -> str | list[dict[str, Any]]:
+    if not message.images:
+        return message.text
+    parts: list[dict[str, Any]] = [{"type": "image_url", "image_url": {"url": image.data_url()}} for image in message.images]
+    return [*parts, {"type": "text", "text": message.text}]
 
 
 def _tokens(response: Any, field: str) -> int:

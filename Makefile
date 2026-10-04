@@ -120,6 +120,8 @@ smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
 # The document key and the fake store, so the smoke can read the uploaded object back and prove it left sealed (ADR-0064, ADR-0070).
 smoke: export SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY := $(DOCUMENT_ENCRYPTION_KEY)
 smoke: export SONIA_SMOKE_STORAGE_URL := http://localhost:4443
+# The Qdrant of the smoke, so it can count the points the worker wrote for a document (ADR-0071).
+smoke: export SONIA_SMOKE_QDRANT_URL := http://localhost:6333
 smoke:
 	@mkdir -p $(GOTMPDIR)
 	$(COMPOSE_SMOKE) up -d --build --wait

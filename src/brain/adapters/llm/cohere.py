@@ -60,9 +60,17 @@ class CohereClient:
 
 
 # Cohere carries the system prompt as the first message and not as a separate field, unlike Anthropic.
-def _messages(system: str | None, messages: tuple[LLMMessage, ...]) -> list[dict[str, str]]:
-    prefix = [{"role": "system", "content": system}] if system else []
-    return prefix + [{"role": m.role, "content": m.text} for m in messages]
+def _messages(system: str | None, messages: tuple[LLMMessage, ...]) -> list[dict[str, Any]]:
+    prefix: list[dict[str, Any]] = [{"role": "system", "content": system}] if system else []
+    return prefix + [{"role": m.role, "content": _content(m)} for m in messages]
+
+
+# The same parts as OpenAI's, which is what Cohere's vision models take; a message without images keeps the plain string.
+def _content(message: LLMMessage) -> str | list[dict[str, Any]]:
+    if not message.images:
+        return message.text
+    parts: list[dict[str, Any]] = [{"type": "image_url", "image_url": {"url": image.data_url()}} for image in message.images]
+    return [*parts, {"type": "text", "text": message.text}]
 
 
 # Content is a list of blocks and only the text ones are the answer: a thinking block is not what gets sent to WhatsApp.

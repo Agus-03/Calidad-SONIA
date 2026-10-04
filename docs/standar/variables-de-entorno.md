@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/standar/variables-de-entorno.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-09-20 · actualizado el 2026-10-03 (documentos de F06) |
+| **Fecha** | 2026-09-20 · actualizado el 2026-10-03 (documentos de F06) y el 2026-10-04 (worker de ingesta) |
 | **Fuente** | El código que las lee: [`config.go`](../../src/core/internal/platform/config/config.go) (núcleo), [`config.py`](../../src/brain/infra/config.py) (cerebro), [`docker-compose.yml`](../../deploy/docker-compose.yml) y el [`Makefile`](../../Makefile) |
 
 ---
@@ -146,6 +146,22 @@ Las lee el cerebro al arrancar.
 | `OPENAI_API_KEY` | vacía | Credencial de OpenAI. |
 | `LLM_TIMEOUT_SECONDS` | `8` | Lo que el cerebro espera por una llamada al modelo. Tiene que quedar por debajo de `BRAIN_TIMEOUT_MS`, que es lo que el núcleo espera por el turno entero. |
 
+### Worker de ingesta de F06 (ADR-0064, ADR-0067, ADR-0071)
+
+Las lee el cerebro sólo en modo `worker`, que **no arranca** si falta alguna de las obligatorias y las lista todas juntas. El modo `api` no las necesita, y el compose le vacía `DOCUMENT_ENCRYPTION_KEY` (ADR-0064, regla 2). Al `worker`, a su vez, le vacía `ENCRYPTION_KEY`. `DOCUMENT_ENCRYPTION_KEY`, `FIREBASE_STORAGE_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS` y `STORAGE_EMULATOR_HOST` son las mismas que lee el núcleo (sección 4).
+
+| Variable | Valor por defecto | Qué hace |
+|---|---|---|
+| `QDRANT_URL` | obligatoria en el `worker` | Dónde está Qdrant, que corre fuera de este compose. En el *smoke* es el contenedor `qdrant`. |
+| `QDRANT_API_KEY` | vacía | Clave de Qdrant, si el servicio la pide. Viaja en el encabezado `api-key`. |
+| `QDRANT_TIMEOUT_SECONDS` | `30` | Lo que el `worker` espera por cada llamada a Qdrant. |
+| `VOYAGE_API_KEY` | obligatoria en el `worker`, salvo con `EMBEDDINGS_USE_DOUBLE` | Credencial de Voyage AI, que vectoriza con `voyage-4` (ADR-0067). Antes de mandarle el primer documento hay que desactivar el entrenamiento en su organización (ADR-0067, regla 10). |
+| `VOYAGE_TIMEOUT_SECONDS` | `30` | Lo que el `worker` espera por cada lote de embeddings. |
+| `STORAGE_TIMEOUT_SECONDS` | `120` | Lo que el `worker` espera por la descarga de un documento de hasta 100 MB. |
+| `DESCRIPTION_TIMEOUT_SECONDS` | `60` | Lo que el `worker` espera por la descripción de una imagen. Es más largo que `LLM_TIMEOUT_SECONDS` porque no hay una clienta esperando. |
+| `WORKER_POLL_INTERVAL_SECONDS` | `5` | Cada cuánto el `worker` busca documentos pendientes y barre los dados de baja. |
+| `WORKER_LOCK_TIMEOUT_SECONDS` | `900` (15 min) | Cuánto puede estar un documento en `processing` antes de que el `worker` lo dé por abandonado y lo vuelva a `pending` (ADR-0064, regla 8). |
+
 **Ninguna de las tres claves es obligatoria al arrancar, y es deliberado:** el proveedor se elige por agente (`ai_agents.llm_provider`), así que exigir las tres impediría levantar el cerebro para usar uno solo. La contracara es que una clave faltante no se descubre al arrancar sino en el primer turno que la necesita.
 
 ---
@@ -176,6 +192,7 @@ Nada de esto vive en producción.
 | `SONIA_TEST_DATABASE_URL` | vacía | DSN de la base contra la que corren los tests de integración. Si no está, **esos tests se saltean en silencio en lugar de fallar**, que es lo que hace el CI. El `Makefile` la arma desde las `POSTGRES_*` y la exporta, así que el valor del `.env` sólo pesa al correr `go test` a mano. |
 | `WHATSAPP_USE_DOUBLE` | `false` | Responde sin salir a Meta. Sólo se admite con `ENVIRONMENT` en `development` o `test`; en otro caso el proceso no arranca. |
 | `LLM_USE_DOUBLE` | `false` | Responde texto enlatado en vez de llamar al modelo, que es lo que permite correr sin una clave. Misma restricción de ambiente. |
+| `EMBEDDINGS_USE_DOUBLE` | `false` | Vectoriza con una bolsa de palabras en lugar de llamar a Voyage, sin clave y sin sacar los documentos. Sólo se admite con `ENVIRONMENT` en `development` o `test` (ADR-0071). |
 | `STORAGE_EMULATOR_HOST` | vacía | Manda los documentos a un `fake-gcs-server` en lugar de Firebase, sin credencial. Sólo se admite con `ENVIRONMENT` en `development` o `test`. Es el nombre que leen los clientes de Google: el compose del smoke la apunta a `http://storage:4443` (ADR-0070). |
 
 ---
@@ -215,4 +232,4 @@ Una diferencia menor y sin consecuencia funcional: el núcleo recibe el DSN con 
 
 ## 10. Fuera del `.env`
 
-Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL`, `SONIA_SMOKE_ENCRYPTION_KEY`, `SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY` y `SONIA_SMOKE_STORAGE_URL` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. Las dos de llaves toman su valor de `ENCRYPTION_KEY` y `DOCUMENT_ENCRYPTION_KEY`, y la del almacén apunta al `fake-gcs-server` del compose del smoke, en `localhost:4443`.
+Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL`, `SONIA_SMOKE_ENCRYPTION_KEY`, `SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY`, `SONIA_SMOKE_STORAGE_URL` y `SONIA_SMOKE_QDRANT_URL` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. Las dos de llaves toman su valor de `ENCRYPTION_KEY` y `DOCUMENT_ENCRYPTION_KEY`, la del almacén apunta al `fake-gcs-server` del compose del smoke, en `localhost:4443`, y la de Qdrant al contenedor del smoke, en `localhost:6333`.

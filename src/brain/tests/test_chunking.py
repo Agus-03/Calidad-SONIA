@@ -1,0 +1,63 @@
+# ADR-0065: one recursive strategy, about 500 tokens estimated from characters (ADR-0071), no overlap, and a paragraph that fits
+# stays whole.
+
+import pytest
+
+from infra.rules import RulesFile, RulesFileError
+from knowledge import chunking
+from knowledge.chunking import ChunkingRules, split
+
+SMALL = ChunkingRules(version=1, max_tokens=10, chars_per_token=4, separators=("\n\n\n", "\n\n", "\n", ". ", " ", ""))
+
+
+def test_the_rules_are_the_ones_adr_0065_declares() -> None:
+    rules = chunking.rules()
+    assert (rules.max_tokens, rules.chars_per_token) == (500, 4)
+    assert rules.separators[0] == "\n\n\n" and rules.separators[-1] == ""
+    assert rules.estimate_tokens("a" * 9) == 3, "rounded up: a started token is a token"
+
+
+def test_a_text_that_fits_is_one_chunk() -> None:
+    assert split("  Depto 2 ambientes.  ", rules=SMALL) == ["Depto 2 ambientes."]
+    assert split("   \n\n  ", rules=SMALL) == []
+
+
+def test_the_largest_separator_that_fits_is_the_one_used() -> None:
+    first, second = "Primer parrafo corto.", "Segundo parrafo corto."
+    assert split(f"{first}\n\n{second}", rules=SMALL) == [first, second]
+
+    # Two short paragraphs that fit together stay together: the cut is the need, not the separator.
+    roomy = ChunkingRules(version=1, max_tokens=100, chars_per_token=4, separators=SMALL.separators)
+    assert split(f"{first}\n\n{second}", rules=roomy) == [f"{first}\n\n{second}"]
+
+
+def test_every_chunk_fits_and_no_text_is_lost() -> None:
+    text = "Requisitos para alquilar: recibo de sueldo, garantia propietaria o seguro de caucion. " * 30
+    chunks = split(text, rules=SMALL)
+    assert all(SMALL.estimate_tokens(chunk) <= SMALL.max_tokens for chunk in chunks)
+    assert "".join(chunks).replace(" ", "") == text.replace(" ", "")
+
+
+def test_a_run_without_any_separator_is_cut_by_characters() -> None:
+    chunks = split("x" * 95, rules=SMALL)
+    assert [len(c) for c in chunks] == [40, 40, 15]
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 50, "separators": [""]}, "overlap"),
+        ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": "\n"}, "separators"),
+        ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": ["\n"]}, "empty string"),
+    ],
+)
+def test_a_file_that_asks_for_what_the_splitter_cannot_do_stops_the_worker(
+    monkeypatch: pytest.MonkeyPatch, raw: dict, message: str
+) -> None:
+    monkeypatch.setattr(chunking.rules_file, "load", lambda name: RulesFile(name=name, version=1, raw=raw))
+    chunking.rules.cache_clear()
+    try:
+        with pytest.raises(RulesFileError, match=message):
+            chunking.rules()
+    finally:
+        chunking.rules.cache_clear()

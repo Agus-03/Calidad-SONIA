@@ -1,0 +1,35 @@
+# The description of the images of a document (ADR-0067, reglas 5 a 9), versioned as data (regla 9): what it says enters the
+# chunks, and every chunk of a document whose images ran through it records this version in description_prompt_version.
+version: 1
+
+# Claude Sonnet 5.5, through the port of adapters/llm (ADR-0067, reglas 5 y 8).
+provider: anthropic
+model: claude-sonnet-5-5
+max_tokens: 400
+
+# Smaller than this on either side is a logo or an icon, which adds nothing to a search (ADR-0067, regla 6).
+min_width: 120
+min_height: 120
+
+# Larger than this on the long side is scaled down before sending: the provider would do it anyway, and paying to upload more
+# pixels than it reads buys nothing.
+max_side: 1568
+
+# The heading the doubled adapter looks for, so the worker runs with no key; tests/test_worker.py keeps the two literals together.
+marker: "[DESCRIPCIÓN DE IMAGEN]"
+
+system: |-
+  [DESCRIPCIÓN DE IMAGEN]
+
+  Describís una imagen que está dentro de un documento de un negocio, para que el texto de la descripción se pueda encontrar con una búsqueda.
+
+  Escribís en español, en un solo párrafo, sin títulos ni listas. Decís qué muestra la imagen y transcribís el texto, los números y los datos que se leen en ella: precios, medidas, direcciones, nombres de ambientes, horarios.
+
+  Si una parte no se lee bien, decís que no se lee. No completás ni adivinás lo que no está a la vista.
+
+  Si la imagen no tiene información útil —una decoración, un fondo, una foto sin datos—, respondés únicamente: "Imagen sin información relevante."
+
+user: "Describí esta imagen del documento."
+
+# The answer the prompt asks for when there is nothing to describe: a page is not given a sentence that says nothing.
+nothing: "Imagen sin información relevante."

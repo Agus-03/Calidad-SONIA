@@ -74,9 +74,19 @@ def run_api(settings: Settings) -> None:
     )
 
 
-# Batch mode: the document ingestion of F06, declared by the deployment contract and not implemented yet.
-def run_worker(settings: Settings) -> None:
-    raise SystemExit("worker mode is not implemented yet: it is the document ingestion of F06")
+# Batch mode: the document ingestion of F06 (ADR-0064). Its own requirements are checked here and not in Settings, so the api
+# never needs the document key; a worker that cannot ingest stops at boot, listing why, like the api does (regla 10).
+def run_worker(settings: Settings) -> int:
+    if problems := settings.worker_problems():
+        print("\n".join(["config: the environment cannot serve the worker", *(f"  {p}" for p in problems)]), file=sys.stderr)
+        return 1
+
+    from worker import loop
+
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(loop.run(settings))
+    return 0
 
 
 # Owns the exit code, so a configuration that cannot serve stops the process instead of failing on the first turn.
@@ -96,9 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "api":
         run_api(settings)
-    else:
-        run_worker(settings)
-    return 0
+        return 0
+    return run_worker(settings)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/operators"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/id"
 )
@@ -34,6 +36,10 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 	store := os.Getenv("SONIA_SMOKE_STORAGE_URL")
 	if store == "" {
 		t.Fatalf("SONIA_SMOKE_STORAGE_URL is not set: the smoke reads the store to prove the file left sealed")
+	}
+	qdrant := os.Getenv("SONIA_SMOKE_QDRANT_URL")
+	if qdrant == "" {
+		t.Fatalf("SONIA_SMOKE_QDRANT_URL is not set: the smoke counts the points the worker wrote")
 	}
 	sealer := documentCipher(t)
 	createBucket(t, store)
@@ -55,6 +61,8 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 			what, sql string
 			arg       uuid.UUID
 		}{
+			// The chunks the worker wrote first: they point at the document, which is why a removal keeps them (ADR-0064, regla 9).
+			{"the chunks", `DELETE FROM document_chunks WHERE document_id IN (SELECT id FROM documents WHERE uploaded_by_operator_id = $1)`, adminID},
 			{"the documents", `DELETE FROM documents WHERE uploaded_by_operator_id = $1`, adminID},
 			{"the base", `DELETE FROM knowledge_bases WHERE ai_agent_id = $1`, agentID},
 			{"the agent", `DELETE FROM ai_agents WHERE id = $1`, agentID},
@@ -87,7 +95,8 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 		t.Fatalf("the notice carries no version: %s", body)
 	}
 
-	pdf := []byte("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\nAlquiler: $320.000 + expensas " + agentID.String() + "\n%%EOF\n")
+	// A PDF the worker can read, so the case follows it past pending: the core's half and the worker's half of F06 (ADR-0064).
+	pdf := textPDF("Alquiler: $320.000 + expensas. Agente " + agentID.String())
 	status, body = upload(t, core, base, token, "precios.pdf", pdf, notice.Version)
 	if status != http.StatusCreated {
 		t.Fatalf("POST: got %d, want 201 - %s", status, body)
@@ -103,8 +112,9 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 		WHERE  d.id = $1`, documentID).Scan(&objectKey, &rowStatus, &terms, &size, &total); err != nil {
 		t.Fatalf("reading the row: %v", err)
 	}
-	if rowStatus != "pending" || int(terms) != notice.Version || size != int64(len(pdf)) || total != size {
-		t.Fatalf("the row is %s with notice %d and %d bytes of %d, want pending, the notice and the file's size", rowStatus, terms, size, total)
+	// Pending when the core wrote it; the worker may already have taken it by the time this reads.
+	if rowStatus == "failed" || int(terms) != notice.Version || size != int64(len(pdf)) || total != size {
+		t.Fatalf("the row is %s with notice %d and %d bytes of %d, want it on its way, the notice and the file's size", rowStatus, terms, size, total)
 	}
 
 	sealed := download(t, store, objectKey)
@@ -115,6 +125,27 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 	if err != nil || !bytes.Equal(opened, pdf) {
 		t.Fatalf("the document key does not open the object back into the PDF: %v", err)
 	}
+
+	collection := "kb_" + agentID.String()
+	t.Run("el worker lo fragmenta, lo vectoriza y lo deja indexed", func(t *testing.T) {
+		awaitStatus(ctx, t, pool, documentID, "indexed")
+		var chunks, versioned int
+		var content string
+		if err := pool.QueryRow(ctx, `
+			SELECT count(*),
+			       count(*) FILTER (WHERE chunking_version = 1 AND description_prompt_version IS NULL AND embedding_model = 'double'
+			                          AND vector_id = id::text AND token_count > 0),
+			       string_agg(content, ' ')
+			FROM   document_chunks WHERE document_id = $1 AND deleted_at IS NULL`, documentID).Scan(&chunks, &versioned, &content); err != nil {
+			t.Fatalf("reading the chunks: %v", err)
+		}
+		if chunks == 0 || versioned != chunks || !strings.Contains(content, "320.000") {
+			t.Fatalf("%d chunks, %d with what made them, content %q - want the text of the PDF with its versions (ADR-0065, regla 9)", chunks, versioned, content)
+		}
+		if points := countPoints(t, qdrant, collection, documentID); points != chunks {
+			t.Fatalf("Qdrant holds %d points for the document, want one per chunk: %d", points, chunks)
+		}
+	})
 
 	t.Run("el mismo archivo otra vez se rechaza", func(t *testing.T) {
 		status, body := upload(t, core, base, token, "copia.pdf", pdf, notice.Version)
@@ -137,7 +168,92 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 		if len(download(t, store, objectKey)) == 0 {
 			t.Fatalf("the object went with the row, and ADR-0064 regla 9 keeps it")
 		}
+		// The worker's sweep takes the vectors out of Qdrant and retires the chunks, which stay for retrieval_logs (ADR-0064, regla 9).
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			var live int
+			if err := pool.QueryRow(ctx, `SELECT count(*) FROM document_chunks WHERE document_id = $1 AND deleted_at IS NULL`, documentID).Scan(&live); err != nil {
+				t.Fatalf("reading the chunks: %v", err)
+			}
+			if live == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%d chunks are still live 30 s after the removal: the worker did not sweep it", live)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if points := countPoints(t, qdrant, collection, documentID); points != 0 {
+			t.Fatalf("Qdrant still holds %d points of a removed document", points)
+		}
 	})
+}
+
+// awaitStatus polls the row, because the worker takes the document on its own clock (ADR-0064, regla 7).
+func awaitStatus(ctx context.Context, t *testing.T, pool db.Pool, documentID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var status string
+		var reason *string
+		if err := pool.QueryRow(ctx, `SELECT status, error_message FROM documents WHERE id = $1`, documentID).Scan(&status, &reason); err != nil {
+			t.Fatalf("reading the status: %v", err)
+		}
+		if status == want {
+			return
+		}
+		if status == "failed" && reason != nil {
+			t.Fatalf("the worker failed the document: %s", *reason)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the document is still %s after 60 s, want %s", status, want)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// countPoints asks Qdrant how many points carry the document, which is all the payload holds (ADR-0064, regla 3).
+func countPoints(t *testing.T, qdrant, collection, documentID string) int {
+	t.Helper()
+	body := `{"exact": true, "filter": {"must": [{"key": "document_id", "match": {"value": "` + documentID + `"}}]}}`
+	res, err := http.Post(qdrant+"/collections/"+collection+"/points/count", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("counting the points: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	var answer struct {
+		Result struct{ Count int } `json:"result"`
+	}
+	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&answer) != nil {
+		t.Fatalf("counting the points: got %d", res.StatusCode)
+	}
+	return answer.Result.Count
+}
+
+// textPDF builds the smallest PDF whose text an extractor reads as it would from a real one: one page, one line, Helvetica.
+func textPDF(text string) []byte {
+	stream := "BT /F1 12 Tf 72 720 Td (" + text + ") Tj ET"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+		"<< /Length " + strconv.Itoa(len(stream)) + " >>\nstream\n" + stream + "\nendstream",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	var out bytes.Buffer
+	out.WriteString("%PDF-1.7\n")
+	offsets := make([]int, len(objects))
+	for i, body := range objects {
+		offsets[i] = out.Len()
+		out.WriteString(strconv.Itoa(i+1) + " 0 obj\n" + body + "\nendobj\n")
+	}
+	xref := out.Len()
+	out.WriteString("xref\n0 " + strconv.Itoa(len(objects)+1) + "\n0000000000 65535 f \n")
+	for _, offset := range offsets {
+		out.WriteString(fmt.Sprintf("%010d 00000 n \n", offset))
+	}
+	out.WriteString("trailer\n<< /Size " + strconv.Itoa(len(objects)+1) + " /Root 1 0 R >>\nstartxref\n" + strconv.Itoa(xref) + "\n%%EOF\n")
+	return out.Bytes()
 }
 
 func documentCipher(t *testing.T) *encryption.Cipher {

@@ -29,6 +29,7 @@ sonia/
 ├── contracts/                          fuente única compartida por los dos servicios
 │   ├── brain.openapi.json              contrato del cerebro, generado por FastAPI
 │   ├── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   ├── fixtures/                       document-cipher.json: el vector cifrado que abren Go y Python (ADR-0064 §4)
 │   └── generate.py                     las baja a Go y a Python · nadie edita lo generado
 │
 ├── deploy/                             context: .. para que los builds vean contracts/
@@ -60,9 +61,10 @@ sonia/
 │   │   ├── pyproject.toml              Poetry · absorbe la config de pytest
 │   │   │
 │   │   ├── adapters/                   los cuatro puertos, menos el canal
-│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · cohere · anthropic · openai · double
-│   │   │   ├── storage/                lee los bytes que subió el núcleo
-│   │   │   └── vectorstore/            base · qdrant
+│   │   │   ├── llm/                    base (puerto, con imágenes desde ADR-0067) · registry (fábrica) · cohere · anthropic · openai · double
+│   │   │   ├── embeddings/             base · voyage (voyage-4, 1024) · double · registry · un proveedor, no un puerto (ADR-0067, ADR-0071)
+│   │   │   ├── storage/                firebase: lee los bytes que subió el núcleo, con google-cloud-storage (ADR-0071)
+│   │   │   └── vectorstore/            qdrant: la API REST con httpx · una colección por agente, coseno (ADR-0010, ADR-0071)
 │   │   │
 │   │   ├── api/                        el contrato interno que consume el núcleo
 │   │   │   ├── routes/                 turns/ · prompts · models · ingest · health
@@ -76,7 +78,7 @@ sonia/
 │   │   │   └── transfer.py
 │   │   │
 │   │   ├── infra/                      config · db · enums (GENERADO) · ids · logging · rules
-│   │   ├── knowledge/                  F06 · chunking · embeddings · search
+│   │   ├── knowledge/                  F06 · chunking (recursivo, tokens estimados por caracteres, ADR-0065, ADR-0071) · search
 │   │   │
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
@@ -105,13 +107,16 @@ sonia/
 │   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
 │   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
-│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml
+│   │   │   ├── extraction.yaml · frustration.yaml · intent.yaml
+│   │   │   └── chunking.yaml · image_description.yaml   los dos de la ingesta (ADR-0065, ADR-0067)
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
 │   │   ├── tests/                      unitarios · conftest.py
 │   │   │                               turns/ · triage/: tests partidos, con sus dobles en doubles.py (regla 2)
-│   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código
+│   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código (ADR-0064, ADR-0071)
+│   │                                   loop: sondea y barre · ingest: el orden de la regla 7 · repository: status, locked_at y document_chunks
+│   │                                   crypto: abre lo que selló el núcleo · pdf: texto e imágenes con pypdf · images: la descripción
 │   │
 │   ├── core/                           ── DESPLEGABLE 1 · Go · gin ──
 │   │   ├── go.mod   ·   go.sum

@@ -46,7 +46,8 @@ func Load() (Config, error) {
 
 		BrainBaseURL:       os.Getenv("BRAIN_BASE_URL"),
 		BrainInternalToken: os.Getenv("BRAIN_INTERNAL_TOKEN"),
-		BrainTimeout:       10 * time.Second,
+		// 15 s and not 10 since the turn searches the knowledge base before generating (ADR-0074): two more calls of up to 5 s.
+		BrainTimeout:       15 * time.Second,
 		PreviewTimeout:     3 * time.Second,
 
 		TurnMaxRetries:   3,

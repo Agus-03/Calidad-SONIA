@@ -207,8 +207,8 @@ func TestLoadFallsBackToDefaults(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Fatalf("LogLevel = %q, want \"info\"", cfg.LogLevel)
 	}
-	if cfg.BrainTimeout != 10*time.Second {
-		t.Fatalf("BrainTimeout = %v, want 10s", cfg.BrainTimeout)
+	if cfg.BrainTimeout != 15*time.Second {
+		t.Fatalf("BrainTimeout = %v, want 15s", cfg.BrainTimeout)
 	}
 	if cfg.PreviewTimeout != 3*time.Second {
 		t.Fatalf("PreviewTimeout = %v, want 3s", cfg.PreviewTimeout)

@@ -57,7 +57,7 @@ El núcleo llamando al cerebro. No confundir con la sección 5, que es el cerebr
 |---|---|---|
 | `BRAIN_INTERNAL_TOKEN` | obligatoria en ambos | Secreto compartido con el que el núcleo firma cada llamada al cerebro y el cerebro la verifica (ADR-0017 (k)). Es la única variable que **los dos** procesos exigen con el mismo valor: si no coinciden, el arranque pasa y lo que falla es cada turno. |
 | `BRAIN_BASE_URL` | obligatoria | Dónde vive el cerebro, desde el punto de vista del núcleo. Dentro del compose se reescribe a `http://brain:8000`. |
-| `BRAIN_TIMEOUT_MS` | `10000` | Lo que el núcleo espera por el turno entero antes de cortar. Es el techo del que cuelgan los tiempos del cerebro: `LLM_TIMEOUT_SECONDS` tiene que quedar por debajo. |
+| `BRAIN_TIMEOUT_MS` | `15000` | Lo que el núcleo espera por el turno entero antes de cortar. Es el techo del que cuelgan los tiempos del cerebro: `LLM_TIMEOUT_SECONDS` y `RETRIEVAL_TIMEOUT_SECONDS` tienen que quedar por debajo. Era `10000` hasta que el turno empezó a buscar en la base de conocimiento (ADR-0074). |
 | `BRAIN_PREVIEW_TIMEOUT_MS` | `3000` | Lo mismo, pero para la vista previa, que es interactiva y no puede hacer esperar a un operador diez segundos. |
 
 ---
@@ -148,19 +148,20 @@ Las lee el cerebro al arrancar.
 
 ### Worker de ingesta de F06 (ADR-0064, ADR-0067, ADR-0071)
 
-Las lee el cerebro sólo en modo `worker`, que **no arranca** si falta alguna de las obligatorias y las lista todas juntas. El modo `api` no las necesita, y el compose le vacía `DOCUMENT_ENCRYPTION_KEY` (ADR-0064, regla 2). Al `worker`, a su vez, le vacía `ENCRYPTION_KEY`. `DOCUMENT_ENCRYPTION_KEY`, `FIREBASE_STORAGE_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS` y `STORAGE_EMULATOR_HOST` son las mismas que lee el núcleo (sección 4).
+Las lee el cerebro en modo `worker`, que **no arranca** si falta alguna de las obligatorias y las lista todas juntas. El modo `api` usa sólo las de la búsqueda —`QDRANT_URL`, `QDRANT_API_KEY`, `VOYAGE_API_KEY`, `EMBEDDINGS_USE_DOUBLE` y `RETRIEVAL_TIMEOUT_SECONDS`— y arranca sin ellas, sin buscar (ADR-0074), y el compose le vacía `DOCUMENT_ENCRYPTION_KEY` (ADR-0064, regla 2). Al `worker`, a su vez, le vacía `ENCRYPTION_KEY`. `DOCUMENT_ENCRYPTION_KEY`, `FIREBASE_STORAGE_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS` y `STORAGE_EMULATOR_HOST` son las mismas que lee el núcleo (sección 4).
 
 | Variable | Valor por defecto | Qué hace |
 |---|---|---|
-| `QDRANT_URL` | `http://qdrant:6333` | Dónde está Qdrant: el servicio `qdrant` del compose (ADR-0072). Vacía, el compose usa ese mismo valor; se cambia sólo para usar otro Qdrant. En el *smoke* es siempre el del compose, diga lo que diga el `.env`. |
+| `QDRANT_URL` | `http://qdrant:6333` | Dónde está Qdrant: el servicio `qdrant` del compose (ADR-0072). La usan el `worker`, que escribe, y el cerebro en modo `api`, que busca en cada turno (ADR-0074). Vacía, el compose usa ese mismo valor; se cambia sólo para usar otro Qdrant. En el *smoke* es siempre el del compose, diga lo que diga el `.env`. Sin ella, o sin una forma de vectorizar, el cerebro arranca igual y no busca: lo avisa en el log de arranque. |
 | `QDRANT_API_KEY` | vacía | Clave de Qdrant, si el servicio la pide. Viaja en el encabezado `api-key`. |
 | `QDRANT_TIMEOUT_SECONDS` | `30` | Lo que el `worker` espera por cada llamada a Qdrant. |
-| `VOYAGE_API_KEY` | obligatoria en el `worker`, salvo con `EMBEDDINGS_USE_DOUBLE` | Credencial de Voyage AI, que vectoriza con `voyage-4` (ADR-0067). Antes de mandarle el primer documento hay que desactivar el entrenamiento en su organización (ADR-0067, regla 10). |
+| `VOYAGE_API_KEY` | obligatoria en el `worker`, salvo con `EMBEDDINGS_USE_DOUBLE`; en modo `api`, sin ella no se busca | Credencial de Voyage AI, que vectoriza con `voyage-4` (ADR-0067). Antes de mandarle el primer documento hay que desactivar el entrenamiento en su organización (ADR-0067, regla 10). |
 | `VOYAGE_TIMEOUT_SECONDS` | `30` | Lo que el `worker` espera por cada lote de embeddings. |
 | `STORAGE_TIMEOUT_SECONDS` | `120` | Lo que el `worker` espera por la descarga de un documento de hasta 100 MB. |
 | `DESCRIPTION_TIMEOUT_SECONDS` | `60` | Lo que el `worker` espera por la descripción de una imagen. Es más largo que `LLM_TIMEOUT_SECONDS` porque no hay una clienta esperando. |
 | `WORKER_POLL_INTERVAL_SECONDS` | `5` | Cada cuánto el `worker` busca documentos pendientes y barre los dados de baja. |
 | `WORKER_LOCK_TIMEOUT_SECONDS` | `900` (15 min) | Cuánto puede estar un documento en `processing` antes de que el `worker` lo dé por abandonado y lo vuelva a `pending` (ADR-0064, regla 8). |
+| `RETRIEVAL_TIMEOUT_SECONDS` | `5` | Lo que el turno espera a Voyage y a Qdrant cuando busca (ADR-0074): cada una de las dos llamadas, dentro de `BRAIN_TIMEOUT_MS`. Si alguna no responde, el turno falla. El `worker` no la usa: tiene `VOYAGE_TIMEOUT_SECONDS` y `QDRANT_TIMEOUT_SECONDS`, más largos porque nadie lo espera. |
 
 **Ninguna de las tres claves es obligatoria al arrancar, y es deliberado:** el proveedor se elige por agente (`ai_agents.llm_provider`), así que exigir las tres impediría levantar el cerebro para usar uno solo. La contracara es que una clave faltante no se descubre al arrancar sino en el primer turno que la necesita.
 

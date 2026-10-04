@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · `pypdf` para leer los PDF, los tokens estimados por caracteres, un Qdrant real con Voyage y la descripción doblados en el *smoke*, y `google-cloud-storage` para leer Firebase, decididos por el grupo el 2026-10-04 · las reglas 5 a 12 son decisiones de construcción, tomadas al escribir `worker/` |
+| **Estado** | Aceptada · `pypdf` para leer los PDF, los tokens estimados por caracteres, un Qdrant real con Voyage y la descripción doblados en el *smoke*, y `google-cloud-storage` para leer Firebase, decididos por el grupo el 2026-10-04 · las reglas 5 a 12 son decisiones de construcción, tomadas al escribir `worker/` · **regla 3 enmendada por [ADR-0072](0072-qdrant-en-el-compose.md)** (2026-10-04): Qdrant corre en el compose base, que el *smoke* también levanta, y no en uno propio del *smoke* |
 | **Fecha** | 2026-10-04 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Cómo se construye el `worker` de [ADR-0064](0064-ingesta-de-documentos.md): con qué bibliotecas, cómo se cuentan los 500 tokens de [ADR-0065](0065-fragmentacion-de-documentos.md) y cómo se prueba sin gastar créditos ni sacar documentos |
@@ -26,7 +26,7 @@ ADR-0064, ADR-0065 y ADR-0067 fijaron qué hace la ingesta: el orden de escritur
 |---|---|
 | 1 | **El PDF se lee con `pypdf`**: texto e imágenes por página. Es Python puro y tiene licencia BSD |
 | 2 | **Los tokens se estiman por caracteres, no se cuentan.** `rules/chunking.yaml` declara `chars_per_token: 4`: un trozo tiene como máximo `max_tokens × chars_per_token` caracteres, y `token_count` es su largo dividido por esa equivalencia, redondeado hacia arriba |
-| 3 | **En el *smoke*, Qdrant es real y Voyage y la descripción están doblados.** Qdrant corre en un contenedor del compose del *smoke*. Voyage se dobla con `EMBEDDINGS_USE_DOUBLE` y la descripción con `LLM_USE_DOUBLE`, que se admiten sólo en `development` y `test`, como los demás dobles |
+| 3 | **En el *smoke*, Qdrant es real y Voyage y la descripción están doblados.** ~~Qdrant corre en un contenedor del compose del *smoke*.~~ *(Enmendada por [ADR-0072](0072-qdrant-en-el-compose.md), regla 3: corre como servicio del compose base, que el *smoke* también levanta.)* Voyage se dobla con `EMBEDDINGS_USE_DOUBLE` y la descripción con `LLM_USE_DOUBLE`, que se admiten sólo en `development` y `test`, como los demás dobles |
 | 4 | **El `worker` lee Firebase con `google-cloud-storage`**, que lee `STORAGE_EMULATOR_HOST` y `GOOGLE_APPLICATION_CREDENTIALS` como el núcleo |
 | 5 | **Qdrant se usa por su API REST**, con `httpx`, y no con `qdrant-client` |
 | 6 | **El cliente de Voyage vive en `adapters/embeddings/`**, con un doble determinista. No es uno de los cuatro puertos de ADR-0017: es un proveedor, como dice ADR-0067, regla 1 |

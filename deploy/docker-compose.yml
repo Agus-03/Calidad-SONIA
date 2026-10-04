@@ -73,8 +73,17 @@ services:
       retries: 5
       start_period: 10s
 
+  # The vector store of F06 (ADR-0010, ADR-0072), local and with its own volume, so the vectors outlive a restart like the rows do.
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    ports:
+      # The loopback only, like the database: the dashboard and the smoke come in from the host, and nothing else should.
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrantdata:/qdrant/storage
+
   # The ingestion of F06 (ADR-0064): the brain's image with the other flag, the same code as the api (ADR-0017 (g)). It reaches
-  # Qdrant by QDRANT_URL, which the .env names, because the vector store runs outside this compose.
+  # the qdrant service above unless the .env names another Qdrant in QDRANT_URL.
   worker:
     build:
       context: ..
@@ -87,12 +96,18 @@ services:
       # Emptied over what the env_file brings: the worker holds the document key and must not read the sensitive columns,
       # which is the whole reason the two keys are different (ADR-0064, regla 2).
       ENCRYPTION_KEY: ""
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     # The same service account the core mounts: the worker reads what the core wrote (ADR-0069).
     volumes:
       - ../secrets:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy
+      # Started and not healthy: the image carries neither curl nor wget for a healthcheck, and a Qdrant still booting only costs
+      # the worker one failed tick, which the next one retries.
+      qdrant:
+        condition: service_started
 
 volumes:
   pgdata:
+  qdrantdata:

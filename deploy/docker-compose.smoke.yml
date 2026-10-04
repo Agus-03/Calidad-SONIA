@@ -17,7 +17,7 @@ services:
       LLM_USE_DOUBLE: "true"
 
   # The worker on the same doubles, plus the embeddings one, so the smoke indexes without a key and no document leaves for Voyage
-  # (ADR-0071). It reads from the fake store below and writes to the Qdrant below.
+  # (ADR-0071). It reads from the fake store below and writes to the compose's own Qdrant, whatever the .env names.
   worker:
     environment:
       ENVIRONMENT: test
@@ -39,10 +39,3 @@ services:
     ports:
       # The loopback only, like the database: the smoke reads the objects back from the host.
       - "127.0.0.1:4443:4443"
-
-  # A real Qdrant and not a double: it is local, cheap, and what the worker writes is what the search will read (ADR-0071).
-  qdrant:
-    image: qdrant/qdrant:v1.19.1
-    ports:
-      # The loopback only: the smoke counts the points from the host.
-      - "127.0.0.1:6333:6333"

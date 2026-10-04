@@ -152,7 +152,7 @@ Las lee el cerebro sólo en modo `worker`, que **no arranca** si falta alguna de
 
 | Variable | Valor por defecto | Qué hace |
 |---|---|---|
-| `QDRANT_URL` | obligatoria en el `worker` | Dónde está Qdrant, que corre fuera de este compose. En el *smoke* es el contenedor `qdrant`. |
+| `QDRANT_URL` | `http://qdrant:6333` | Dónde está Qdrant: el servicio `qdrant` del compose (ADR-0072). Vacía, el compose usa ese mismo valor; se cambia sólo para usar otro Qdrant. En el *smoke* es siempre el del compose, diga lo que diga el `.env`. |
 | `QDRANT_API_KEY` | vacía | Clave de Qdrant, si el servicio la pide. Viaja en el encabezado `api-key`. |
 | `QDRANT_TIMEOUT_SECONDS` | `30` | Lo que el `worker` espera por cada llamada a Qdrant. |
 | `VOYAGE_API_KEY` | obligatoria en el `worker`, salvo con `EMBEDDINGS_USE_DOUBLE` | Credencial de Voyage AI, que vectoriza con `voyage-4` (ADR-0067). Antes de mandarle el primer documento hay que desactivar el entrenamiento en su organización (ADR-0067, regla 10). |
@@ -232,4 +232,4 @@ Una diferencia menor y sin consecuencia funcional: el núcleo recibe el DSN con 
 
 ## 10. Fuera del `.env`
 
-Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL`, `SONIA_SMOKE_ENCRYPTION_KEY`, `SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY`, `SONIA_SMOKE_STORAGE_URL` y `SONIA_SMOKE_QDRANT_URL` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. Las dos de llaves toman su valor de `ENCRYPTION_KEY` y `DOCUMENT_ENCRYPTION_KEY`, la del almacén apunta al `fake-gcs-server` del compose del smoke, en `localhost:4443`, y la de Qdrant al contenedor del smoke, en `localhost:6333`.
+Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL`, `SONIA_SMOKE_ENCRYPTION_KEY`, `SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY`, `SONIA_SMOKE_STORAGE_URL` y `SONIA_SMOKE_QDRANT_URL` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. Las dos de llaves toman su valor de `ENCRYPTION_KEY` y `DOCUMENT_ENCRYPTION_KEY`, la del almacén apunta al `fake-gcs-server` del compose del smoke, en `localhost:4443`, y la de Qdrant al servicio `qdrant` del compose, en `localhost:6333`.

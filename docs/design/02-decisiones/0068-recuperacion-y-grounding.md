@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · buscar con el bloque redactado y el resumen del contexto vigente, decidir el grounding previo con un umbral de similitud, colgar `retrieval_logs` del paso `retrieval`, y que `not_grounded` escriba la señal `out_of_domain`, avise a la clienta con un texto fijo y transfiera, decididos por el grupo el 2026-10-03 · **el método del grounding de salida (O4) queda para la fase de evaluación** |
+| **Estado** | Aceptada · buscar con el bloque redactado y el resumen del contexto vigente, decidir el grounding previo con un umbral de similitud, colgar `retrieval_logs` del paso `retrieval`, y que `not_grounded` escriba la señal `out_of_domain`, avise a la clienta con un texto fijo y transfiera, decididos por el grupo el 2026-10-03 · **el método del grounding de salida (O4) queda para la fase de evaluación** · el valor inicial de `top_k` fijado por [ADR-0073](0073-busqueda-semantica.md) (2026-10-04), que precisa además qué es un trozo activo para la búsqueda: el de un documento `indexed` |
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | O5 y O9 de [ADR-0042](0042-pipeline-de-decision-del-turno.md), y el pendiente de su §1.1. Fija cuándo se construye O4 |
@@ -86,7 +86,7 @@ F06 pide *"búsqueda semántica para enriquecer respuestas"* y F12, detectar *"c
 | Qué | Estado |
 |---|---|
 | **El método del grounding de salida** (regla 11) | La fase de evaluación |
-| **Los valores iniciales de `top_k` y del umbral** | La evaluación de [ADR-0065](0065-fragmentacion-de-documentos.md), regla 3, con preguntas sin respuesta en los documentos |
+| **Los valores iniciales de `top_k` y del umbral** | La evaluación de [ADR-0065](0065-fragmentacion-de-documentos.md), regla 3, con preguntas sin respuesta en los documentos. *(`top_k` arranca en 3, provisorio, por [ADR-0073](0073-busqueda-semantica.md), regla 1; el umbral sigue abierto.)* |
 | **La rama del corte del `grounding` en [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) §4** | Se dibuja al construir los dos pasos |
 
 ## 5. Alternativas descartadas

@@ -95,7 +95,8 @@ class Ingestor:
     async def _ingest(self, claimed: repository.Claimed) -> None:
         sealed = await self._p.objects.download(claimed.object_key)
         pdf = self._p.opener.open(sealed)
-        pages = read(pdf, max_side=self._p.description_rules.max_side)
+        sizes = self._p.description_rules
+        pages = read(pdf, max_side=sizes.max_side, min_width=sizes.min_width, min_height=sizes.min_height)
         # ADR-0064, regla 10: no OCR, so a PDF without extractable text is failed before anything is paid for its images.
         if not any(page.text.strip() for page in pages):
             raise IngestionError("el PDF no tiene texto extraíble (sin OCR)")

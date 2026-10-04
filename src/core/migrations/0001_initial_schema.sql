@@ -383,6 +383,9 @@ CREATE TABLE document_chunks (
 -- ADR-0073 - the search reads a base's live documents and their live chunks on every turn that retrieves, and the worker retires
 -- and sweeps chunks by document; a declared exception to waiting for a slow query (migrations/README.md).
 CREATE INDEX idx_documents_knowledge_base_id ON documents (knowledge_base_id) WHERE deleted_at IS NULL;
+-- ADR-0064 rule 7 - the worker's claim takes the oldest pending document every five seconds, and the sweep looks for the ones
+-- held in processing; both by status, in the order the claim reads. A declared exception (migrations/README.md).
+CREATE INDEX idx_documents_status_created_at_id ON documents (status, created_at, id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_document_chunks_document_id ON document_chunks (document_id) WHERE deleted_at IS NULL;
 
 -- ADR-0068 rule 6 - hangs from the retrieval step and not from generations: a turn cut by not_grounded retrieved and never generated.

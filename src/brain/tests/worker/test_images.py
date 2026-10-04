@@ -44,7 +44,14 @@ async def test_the_image_travels_with_the_prompt_of_the_rules() -> None:
 
 @pytest.mark.parametrize(
     "client",
-    [Recording(error=LLMError("timeout")), Recording(text="  "), Recording(text='"Imagen sin información relevante."')],
+    [
+        Recording(error=LLMError("timeout")),
+        Recording(text="  "),
+        Recording(text='"Imagen sin información relevante."'),
+        # Without its period, in other quotes or in another case: still the answer that says there is nothing.
+        Recording(text="Imagen sin información relevante"),
+        Recording(text="«imagen sin información relevante.»"),
+    ],
 )
 async def test_a_failure_or_an_empty_image_leaves_nothing_on_the_page(client: Recording) -> None:
     assert await Describer(client, rules()).describe(IMAGE, page=1) is None

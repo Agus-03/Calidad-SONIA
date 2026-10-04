@@ -74,6 +74,25 @@ async def test_the_loop_ticks_until_it_is_stopped_and_closes_what_it_opened(read
     assert databases[0].closed and stores[0].closed
 
 
+# docker stop waits ten seconds: a worker asked to leave finishes the document it holds and does not take the next one.
+async def test_a_stop_in_the_middle_of_a_queue_takes_no_further_document(ready: Settings) -> None:
+    stop = asyncio.Event()
+    taken: list[int] = []
+
+    class Queue:
+        async def sweep(self, *, lock_timeout_seconds: float) -> None:
+            pass
+
+        async def next(self) -> bool:
+            taken.append(len(taken) + 1)
+            stop.set()
+            return True
+
+    await loop._tick(Queue(), ready, stop)
+
+    assert taken == [1]
+
+
 async def test_the_signals_stop_the_worker() -> None:
     stop = loop._stop_on_signals()
     assert not stop.is_set()

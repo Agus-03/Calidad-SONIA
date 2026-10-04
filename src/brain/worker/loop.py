@@ -50,7 +50,7 @@ async def run(settings: Settings, *, stop: asyncio.Event | None = None) -> None:
         )
         logger.info("worker ready", extra={"context": {"interval_seconds": settings.worker_poll_interval_seconds}})
         while not stop.is_set():
-            await _tick(ingestor, settings)
+            await _tick(ingestor, settings, stop)
             try:
                 await asyncio.wait_for(stop.wait(), timeout=settings.worker_poll_interval_seconds)
             except TimeoutError:
@@ -62,10 +62,12 @@ async def run(settings: Settings, *, stop: asyncio.Event | None = None) -> None:
 
 
 # One failure of a tick is logged and the next tick tries again: a database or a Qdrant that blinked must not stop the worker.
-async def _tick(ingestor: Ingestor, settings: Settings) -> None:
+# stop is looked at between documents, so a worker asked to leave finishes the one it holds and does not take the next: draining a
+# long queue would outlast the ten seconds docker stop waits, and the document cut in the middle stays in processing for the lock.
+async def _tick(ingestor: Ingestor, settings: Settings, stop: asyncio.Event) -> None:
     try:
         await ingestor.sweep(lock_timeout_seconds=settings.worker_lock_timeout_seconds)
-        while await ingestor.next():
+        while not stop.is_set() and await ingestor.next():
             pass
     except Exception:  # noqa: BLE001 - the loop outlives one bad tick; the document's own failures are handled inside next()
         logger.exception("worker tick failed")

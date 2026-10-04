@@ -7,7 +7,7 @@ from PIL import Image
 from pypdf import PageObject
 
 from tests.worker.pdfs import image_pdf, joined, text_pdf
-from worker.pdf import UnreadablePDF, read, sendable
+from worker.pdf import PageImage, UnreadablePDF, read, sendable
 
 
 def test_each_page_keeps_its_text_and_its_images() -> None:
@@ -50,6 +50,24 @@ def test_a_large_image_is_scaled_down_and_keeps_its_original_size() -> None:
     assert sendable(transparent, max_side=1568).media_type == "image/png"
     gray = Image.new("L", (50, 50))
     assert sendable(gray, max_side=1568).media_type == "image/jpeg"
+
+
+# ADR-0067, regla 6, before decoding: an image whose declared size is under the minimum never reaches sendable().
+def test_an_image_declared_under_the_minimum_is_not_even_decoded(monkeypatch: pytest.MonkeyPatch) -> None:
+    import worker.pdf as pdf
+
+    decoded: list[tuple[int, int]] = []
+    real = pdf.sendable
+
+    def counting(image: Image.Image, *, max_side: int) -> PageImage:
+        decoded.append(image.size)
+        return real(image, max_side=max_side)
+
+    monkeypatch.setattr(pdf, "sendable", counting)
+    pages = read(joined(image_pdf(60, 40), image_pdf(300, 200)), max_side=1568, min_width=120, min_height=120)
+
+    assert pages[0].images == () and len(pages[1].images) == 1
+    assert decoded == [(300, 200)], "the logo was decoded only to be thrown away"
 
 
 def test_an_image_that_cannot_be_decoded_is_left_out_and_the_page_keeps_its_text(monkeypatch: pytest.MonkeyPatch) -> None:

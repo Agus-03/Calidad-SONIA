@@ -73,6 +73,12 @@ class Describer:
             logger.warning("image not described", extra={"context": {"page": page, "error": str(err)}})
             return None
         text = completion.text.strip()
-        if not text or text.strip('"') == self._rules.nothing:
+        if not text or _plain(text) == _plain(self._rules.nothing):
             return None
         return text
+
+
+# The answer the prompt asks for when there is nothing to describe, recognised without its quotes, its final period or its case:
+# a model that drops the period would otherwise put "[Imagen: Imagen sin información relevante]" into a chunk.
+def _plain(text: str) -> str:
+    return text.strip().strip("\"'«»“”").strip().rstrip(".").strip().casefold()

@@ -190,6 +190,7 @@ Nada de esto vive en producción.
 | `PGADMIN_EMAIL` | obligatoria para `make pgadmin` | Usuario con el que se entra a pgadmin en `localhost:5050`. Lleva `:?` en [`docker-compose.dev.yml`](../../deploy/docker-compose.dev.yml): sin ella el compose de desarrollo no arranca, pero el stack normal no la necesita. |
 | `PGADMIN_PASSWORD` | obligatoria para `make pgadmin` | Su contraseña, con la misma condición. |
 | `SONIA_TEST_DATABASE_URL` | vacía | DSN de la base contra la que corren los tests de integración. Si no está, **esos tests se saltean en silencio en lugar de fallar**, que es lo que hace el CI. El `Makefile` la arma desde las `POSTGRES_*` y la exporta, así que el valor del `.env` sólo pesa al correr `go test` a mano. |
+| `SONIA_TEST_QDRANT_URL` | vacía | El Qdrant contra el que corre el test de integración de la búsqueda de F06 (ADR-0073). Si no está, ese test se saltea igual que los demás de integración. El `Makefile` la exporta apuntando al servicio `qdrant` del compose, en `localhost:6333`. |
 | `WHATSAPP_USE_DOUBLE` | `false` | Responde sin salir a Meta. Sólo se admite con `ENVIRONMENT` en `development` o `test`; en otro caso el proceso no arranca. |
 | `LLM_USE_DOUBLE` | `false` | Responde texto enlatado en vez de llamar al modelo, que es lo que permite correr sin una clave. Misma restricción de ambiente. |
 | `EMBEDDINGS_USE_DOUBLE` | `false` | Vectoriza con una bolsa de palabras en lugar de llamar a Voyage, sin clave y sin sacar los documentos. Sólo se admite con `ENVIRONMENT` en `development` o `test` (ADR-0071). |

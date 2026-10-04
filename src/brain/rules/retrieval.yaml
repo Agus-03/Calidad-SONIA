@@ -1,0 +1,7 @@
+# The retrieval of ADR-0068, versioned as data (regla 5): pipeline_steps.version of the retrieval and grounding steps is this
+# file's version, and top_k goes into the detail_json of the retrieval step (ADR-0016 §2).
+version: 1
+
+# How many chunks the search brings back, every one logged with its similarity and no threshold (ADR-0068, regla 3). Three to
+# start, chosen by the group (ADR-0073, regla 1): a provisional number that the retrieval evaluation of ADR-0065, regla 3 validates.
+top_k: 3

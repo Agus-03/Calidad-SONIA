@@ -78,7 +78,7 @@ sonia/
 │   │   │   └── transfer.py
 │   │   │
 │   │   ├── infra/                      config · db · enums (GENERADO) · ids · logging · rules
-│   │   ├── knowledge/                  F06 · chunking (recursivo, tokens estimados por caracteres, ADR-0065, ADR-0071) · search
+│   │   ├── knowledge/                  F06 · chunking (recursivo, tokens estimados por caracteres, ADR-0065, ADR-0071) · search (top_k de documentos indexed, ADR-0073) · repository
 │   │   │
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
@@ -108,7 +108,8 @@ sonia/
 │   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
 │   │   │   ├── extraction.yaml · frustration.yaml · intent.yaml
-│   │   │   └── chunking.yaml · image_description.yaml   los dos de la ingesta (ADR-0065, ADR-0067)
+│   │   │   ├── chunking.yaml · image_description.yaml   los dos de la ingesta (ADR-0065, ADR-0067)
+│   │   │   └── retrieval.yaml          top_k de la búsqueda (ADR-0068, regla 5; ADR-0073)
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │

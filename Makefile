@@ -107,6 +107,8 @@ dbhub-down:
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+# The compose's own Qdrant, so the search of F06 is tested against the vectors it will really read (ADR-0072, ADR-0073).
+test-integration: export SONIA_TEST_QDRANT_URL := http://localhost:6333
 # The 80% of ADR-0028 is enforced here and nowhere else: this is the only target where every line of the core actually gets a chance to run.
 test-integration: test
 	cd src/core && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); if ($$3 + 0 < 80) { printf "core coverage %s%% is below the 80%% of ADR-0028\n", $$3; exit 1 } }'

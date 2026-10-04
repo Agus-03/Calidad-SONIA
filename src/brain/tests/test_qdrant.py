@@ -6,7 +6,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from adapters.vectorstore.qdrant import Point, QdrantStore, VectorStoreError
+from adapters.vectorstore.qdrant import Hit, Point, QdrantStore, VectorStoreError
 
 
 def store_with(handler) -> tuple[QdrantStore, list[httpx.Request]]:
@@ -73,6 +73,32 @@ async def test_a_long_document_goes_up_in_batches_in_order() -> None:
     assert [len(batch) for batch in sent] == [2, 2, 1]
     assert [i for batch in sent for i in batch] == [str(p.id) for p in points]
     assert all(r.url.params["wait"] == "true" for r in seen)
+
+
+async def test_a_search_asks_for_the_limit_among_the_named_documents_only() -> None:
+    chunk = uuid4()
+    documents = [uuid4(), uuid4()]
+    answer = {"result": {"points": [{"id": str(chunk), "version": 3, "score": 0.82}]}, "status": "ok"}
+    store, seen = store_with(lambda request: httpx.Response(200, json=answer))
+
+    hits = await store.search("kb_agente", [0.1, 0.2], limit=3, document_ids=documents)
+
+    assert hits == [Hit(id=chunk, score=0.82)]
+    (request,) = seen
+    assert (request.method, request.url.path) == ("POST", "/collections/kb_agente/points/query")
+    assert json.loads(request.content) == {
+        "query": [0.1, 0.2],
+        "limit": 3,
+        "with_payload": False,
+        "filter": {"must": [{"key": "document_id", "match": {"any": [str(d) for d in documents]}}]},
+    }
+
+
+async def test_a_search_with_nothing_to_search_finds_nothing() -> None:
+    store, seen = store_with(lambda request: httpx.Response(404, json={}))
+    assert await store.search("kb_agente", [1.0], limit=3, document_ids=[]) == []
+    assert seen == [], "no document to search is not even a request"
+    assert await store.search("kb_nunca_indexada", [1.0], limit=3, document_ids=[uuid4()]) == []
 
 
 async def test_deleting_from_a_collection_that_does_not_exist_is_nothing_to_do() -> None:

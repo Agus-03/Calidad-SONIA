@@ -23,6 +23,14 @@ class Point:
     document_id: UUID
 
 
+@dataclass(frozen=True)
+class Hit:
+    # The chunk's id, since the point's id is the chunk's (ADR-0064, regla 5).
+    id: UUID
+    # Cosine similarity, the higher the closer: what retrieval_logs.similarity_score stores and the grounding thresholds.
+    score: float
+
+
 class QdrantStore:
     def __init__(
         self,
@@ -61,6 +69,23 @@ class QdrantStore:
     async def delete_document(self, name: str, document_id: UUID) -> None:
         body = {"filter": {"must": [{"key": "document_id", "match": {"value": str(document_id)}}]}}
         await self._call("POST", f"/collections/{name}/points/delete?wait=true", json=body, allow_missing=True)
+
+    # The closest points among the documents the caller names, and only those: a document that is not indexed, or that the sweep
+    # has not cleaned yet, takes no place among the limit (ADR-0068, regla 3). No payload comes back, because the text is read
+    # from document_chunks. A collection that does not exist has nothing to find.
+    async def search(self, name: str, vector: list[float], *, limit: int, document_ids: Sequence[UUID]) -> list[Hit]:
+        if not document_ids:
+            return []
+        body = {
+            "query": vector,
+            "limit": limit,
+            "with_payload": False,
+            "filter": {"must": [{"key": "document_id", "match": {"any": [str(d) for d in document_ids]}}]},
+        }
+        found = await self._call("POST", f"/collections/{name}/points/query", json=body, allow_missing=True)
+        if found is None:
+            return []
+        return [Hit(id=UUID(str(point["id"])), score=float(point["score"])) for point in found["result"]["points"]]
 
     async def _call(self, method: str, path: str, *, json: Any = None, allow_missing: bool = False) -> Any | None:
         try:

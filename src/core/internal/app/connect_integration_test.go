@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -32,6 +33,10 @@ func connectEnv(t *testing.T) (phoneNumberID string, inboxID uuid.UUID) {
 	t.Setenv("BRAIN_INTERNAL_TOKEN", "test-token")
 	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
 	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(connectKey))
+	// The documents of F06 need their own key and a store before the process boots; the emulator stands in for Firebase (ADR-0070).
+	t.Setenv("DOCUMENT_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x02}, encryption.KeyBytes)))
+	t.Setenv("FIREBASE_STORAGE_BUCKET", "sonia-test")
+	t.Setenv("STORAGE_EMULATOR_HOST", "127.0.0.1:1")
 
 	ctx := context.Background()
 	pool := seedPool(t, ctx)

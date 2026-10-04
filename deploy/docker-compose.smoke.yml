@@ -1,4 +1,4 @@
-# The two doubles the Fase 1 smoke test runs on, apart from the main compose so nothing deploys a fake sender by accident.
+# The doubles the smoke test runs on, apart from the main compose so nothing deploys a fake sender or a fake store by accident.
 
 services:
   core:
@@ -6,8 +6,21 @@ services:
       # Declared here and not left to the .env, because both configs refuse a double outside development and test (regla 10).
       ENVIRONMENT: test
       WHATSAPP_USE_DOUBLE: "true"
+      # The documents go to the fake-gcs-server below and not to Firebase, without a credential (ADR-0070).
+      STORAGE_EMULATOR_HOST: http://storage:4443
+      FIREBASE_STORAGE_BUCKET: sonia-smoke
+      GOOGLE_APPLICATION_CREDENTIALS: ""
 
   brain:
     environment:
       ENVIRONMENT: test
       LLM_USE_DOUBLE: "true"
+
+  # The JSON API of Cloud Storage in memory: Google's clients reach it through STORAGE_EMULATOR_HOST, so the adapter that runs is
+  # the real one (ADR-0070). It starts empty, and the smoke creates its bucket.
+  storage:
+    image: fsouza/fake-gcs-server:1.56.1
+    command: ["-scheme", "http", "-port", "4443", "-backend", "memory", "-public-host", "storage:4443"]
+    ports:
+      # The loopback only, like the database: the smoke reads the objects back from the host.
+      - "127.0.0.1:4443:4443"

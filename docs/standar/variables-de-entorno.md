@@ -4,7 +4,7 @@
 |---|---|
 | **Documento** | `docs/standar/variables-de-entorno.md` |
 | **Estado** | Vigente |
-| **Fecha** | 2026-09-20 |
+| **Fecha** | 2026-09-20 · actualizado el 2026-10-03 (documentos de F06) |
 | **Fuente** | El código que las lee: [`config.go`](../../src/core/internal/platform/config/config.go) (núcleo), [`config.py`](../../src/brain/infra/config.py) (cerebro), [`docker-compose.yml`](../../deploy/docker-compose.yml) y el [`Makefile`](../../Makefile) |
 
 ---
@@ -42,7 +42,7 @@ Las leen el núcleo y el cerebro por igual, con la misma semántica en los dos.
 | Variable | Valor por defecto | Qué hace |
 |---|---|---|
 | `DATABASE_URL` | obligatoria en ambos | DSN de la única base que comparten los dos servicios (ADR-0017). El núcleo no arranca sin ella; el cerebro la valida como `PostgresDsn`. **Dentro del compose el valor del `.env` se ignora**: el compose la reescribe apuntando al servicio `db`. Sólo pesa cuando se corre un proceso fuera del compose. |
-| `ENVIRONMENT` | `development` | Nombre del ambiente. Su único efecto hoy es habilitar los dobles: `WHATSAPP_USE_DOUBLE` y `LLM_USE_DOUBLE` sólo se admiten con `development` o `test`. Es una lista blanca y no una prohibición de `production`, para que un `prod` mal tipeado no deje pasar respuestas enlatadas. |
+| `ENVIRONMENT` | `development` | Nombre del ambiente. Su único efecto hoy es habilitar los dobles: `WHATSAPP_USE_DOUBLE`, `LLM_USE_DOUBLE` y `STORAGE_EMULATOR_HOST` sólo se admiten con `development` o `test`. Es una lista blanca y no una prohibición de `production`, para que un `prod` mal tipeado no deje pasar respuestas enlatadas. |
 | `LOG_LEVEL` | `info` | Umbral del log. Sólo se admite `debug`, `info`, `warning` o `error`; cualquier otro valor frena el arranque de los dos servicios. |
 | `DB_POOL_MIN_SIZE` | `2` en el núcleo, `1` en el cerebro | Conexiones que el pool mantiene abiertas. Tiene que ser un entero positivo. |
 | `DB_POOL_MAX_SIZE` | `10` en ambos | Tope de conexiones del pool. Si queda por debajo del mínimo, ninguno de los dos servicios arranca. |
@@ -104,6 +104,15 @@ Los cuatro primeros valores son un punto de partida y no una medición: el núme
 | Variable | Valor por defecto | Qué hace |
 |---|---|---|
 | `ENCRYPTION_KEY` | obligatoria | Clave con la que se cifran los secretos guardados en la base. Base64 de 32 bytes crudos: si falta, no decodifica o no mide 32, el núcleo no arranca, aunque todavía no haya nada cifrado. Perderla es perder los datos y no una contraseña que se resetea: entra en el procedimiento de respaldo. |
+
+### Documentos de F06 (ADR-0064, ADR-0069)
+
+| Variable | Valor por defecto | Qué hace |
+|---|---|---|
+| `DOCUMENT_ENCRYPTION_KEY` | obligatoria | Clave con la que el núcleo cifra cada documento antes de subirlo, y con la que el `worker` lo descifra al ingerirlo. Base64 de 32 bytes crudos, con las mismas condiciones que `ENCRYPTION_KEY`, y **tiene que ser distinta de ella**: si son iguales, el núcleo no arranca, porque el `worker` que la tiene no debe poder leer los datos sensibles (ADR-0064, regla 2). Perderla es perder los documentos guardados. |
+| `FIREBASE_STORAGE_BUCKET` | obligatoria | Bucket de Cloud Storage for Firebase donde quedan los documentos cifrados. Tiene que estar en `us-east1`, `us-west1` o `us-central1`, las regiones que cubre la cuota gratuita (ADR-0069). |
+| `GOOGLE_APPLICATION_CREDENTIALS` | obligatoria salvo con `STORAGE_EMULATOR_HOST` | Ruta, **dentro del contenedor**, al JSON de la cuenta de servicio de Firebase. El archivo va en `secrets/`, que git ignora, y el compose monta esa carpeta en `/run/secrets`. Es el nombre que leen los clientes de Google, así que el `worker` encuentra el mismo archivo. Si el archivo no existe o Google rechaza la cuenta, el núcleo no arranca. |
+| `STORAGE_TIMEOUT_MS` | `120000` (2 min) | Lo que el núcleo espera por una subida o un borrado en el almacén. Es largo porque una subida de hasta 100 MB viaja entera en una sola llamada. |
 
 ### Canal de WhatsApp (Meta Cloud API)
 
@@ -167,6 +176,7 @@ Nada de esto vive en producción.
 | `SONIA_TEST_DATABASE_URL` | vacía | DSN de la base contra la que corren los tests de integración. Si no está, **esos tests se saltean en silencio en lugar de fallar**, que es lo que hace el CI. El `Makefile` la arma desde las `POSTGRES_*` y la exporta, así que el valor del `.env` sólo pesa al correr `go test` a mano. |
 | `WHATSAPP_USE_DOUBLE` | `false` | Responde sin salir a Meta. Sólo se admite con `ENVIRONMENT` en `development` o `test`; en otro caso el proceso no arranca. |
 | `LLM_USE_DOUBLE` | `false` | Responde texto enlatado en vez de llamar al modelo, que es lo que permite correr sin una clave. Misma restricción de ambiente. |
+| `STORAGE_EMULATOR_HOST` | vacía | Manda los documentos a un `fake-gcs-server` en lugar de Firebase, sin credencial. Sólo se admite con `ENVIRONMENT` en `development` o `test`. Es el nombre que leen los clientes de Google: el compose del smoke la apunta a `http://storage:4443` (ADR-0070). |
 
 ---
 
@@ -205,4 +215,4 @@ Una diferencia menor y sin consecuencia funcional: el núcleo recibe el DSN con 
 
 ## 10. Fuera del `.env`
 
-Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL` y `SONIA_SMOKE_ENCRYPTION_KEY` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. La última toma su valor de `ENCRYPTION_KEY`.
+Las variables `SONIA_SMOKE_CORE_URL`, `SONIA_SMOKE_BRAIN_URL`, `SONIA_SMOKE_ENCRYPTION_KEY`, `SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY` y `SONIA_SMOKE_STORAGE_URL` las exporta el `Makefile` en el objetivo `smoke` y no se definen en el `.env`. Las dos de llaves toman su valor de `ENCRYPTION_KEY` y `DOCUMENT_ENCRYPTION_KEY`, y la del almacén apunta al `fake-gcs-server` del compose del smoke, en `localhost:4443`.

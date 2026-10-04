@@ -152,11 +152,12 @@ sonia/
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
 │   │   │   │
-│   │   │   ├── documents/              bases de conocimiento y carga · F06 (ABM)
-│   │   │   │   ├── controller.go       recibe el upload de hasta 100 MB
-│   │   │   │   ├── routes.go
-│   │   │   │   ├── service.go          bytes a platform/storage, fila en pending
-│   │   │   │   ├── repository.go
+│   │   │   ├── documents/              bases de conocimiento y carga · F06 (ABM) · DUEÑO de knowledge_bases y documents
+│   │   │   │   ├── controller.go       el multipart de hasta 100 MB · el aviso vigente · el listado con lo que queda de la base
+│   │   │   │   ├── routes.go           sólo admin: GET /documents/notice · GET, POST y DELETE /ai-agents/:id/documents
+│   │   │   │   ├── service.go          sólo PDF · el objeto cifrado antes que la fila, y borrado si la fila falla (ADR-0064) · el duplicado es un 409 (ADR-0070)
+│   │   │   │   ├── notice.go           el texto del aviso de datos personales y su versión (ADR-0066)
+│   │   │   │   ├── repository.go       el bloqueo de la base serializa el límite y el duplicado · la baja es deleted_at
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja · F13, F22–F27 · exporta Reachable, CanSee y EventRow (ADR-0063)
@@ -206,7 +207,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── auth/               emite y verifica el token de sesión · sin gin y sin base (ADR-0030)
-│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles · la llave se inyecta (ADR-0031)
+│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles y, con otra llave, los documentos de F06 · la llave se inyecta (ADR-0031, ADR-0064)
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
 │   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml
@@ -214,7 +215,7 @@ sonia/
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7
 │   │   │   │   ├── logging/
-│   │   │   │   └── storage/            PUERTO · base · supabase · disk
+│   │   │   │   └── storage/            Firebase por la API JSON de Cloud Storage · sube y borra, nunca lee (ADR-0069, ADR-0070) · el puerto lo declara documents/
 │   │   │   │
 │   │   │   ├── quick_replies/          respuestas rápidas · F09 · DUEÑO de quick_replies (ADR-0060) · paquete quickreplies
 │   │   │   │   ├── controller.go       q busca por título y contenido · el operador copia el texto en la caja, no hay ruta de envío

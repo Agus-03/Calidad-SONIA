@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -111,6 +112,7 @@ func TestTheWiredRouterActuallyServesEveryRouteItsContextsDeclare(t *testing.T) 
 
 	someLabel := "/api/v1/labels/" + uuid.New().String()
 	someContact := "/api/v1/contacts/" + uuid.New().String()
+	someAgentDocuments := "/api/v1/ai-agents/" + uuid.New().String() + "/documents"
 
 	for _, tc := range []struct {
 		method string
@@ -131,6 +133,12 @@ func TestTheWiredRouterActuallyServesEveryRouteItsContextsDeclare(t *testing.T) 
 		{http.MethodPut, someContact + "/sensitive"},
 		{http.MethodPost, someContact + "/labels"},
 		{http.MethodDelete, someContact + "/labels/" + uuid.New().String()},
+
+		// The four of F06's knowledge base (ADR-0064, ADR-0066).
+		{http.MethodGet, "/api/v1/documents/notice"},
+		{http.MethodGet, someAgentDocuments},
+		{http.MethodPost, someAgentDocuments},
+		{http.MethodDelete, someAgentDocuments + "/" + uuid.New().String()},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -160,9 +168,7 @@ func TestTheWiredRouterActuallyServesEveryRouteItsContextsDeclare(t *testing.T) 
 func wiredRouter(t *testing.T) http.Handler {
 	t.Helper()
 
-	deps, err := wire(config.Config{
-		JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: make([]byte, encryption.KeyBytes),
-	}, nil, slog.New(slog.DiscardHandler))
+	deps, err := wire(wiredConfig(), nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("wire: %v", err)
 	}
@@ -175,13 +181,40 @@ func wiredRouter(t *testing.T) http.Handler {
 	})
 }
 
+// wiredConfig is the least a graph needs to be built: the two keys, which the ciphers take at wiring time, and a store, which the
+// emulator answers without a credential (ADR-0070). Nothing here reaches it.
+func wiredConfig() config.Config {
+	return config.Config{
+		JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: make([]byte, encryption.KeyBytes),
+		DocumentEncryptionKey: bytes.Repeat([]byte{0x01}, encryption.KeyBytes),
+		StorageBucket:         "sonia-test", StorageEmulatorHost: "127.0.0.1:1",
+	}
+}
+
+// TestTheBootRefusesADocumentStoreItCannotUse: the document key and the store are built at wiring time, like the column cipher,
+// so a bad one stops the process before it serves an upload it cannot keep (ADR-0064, ADR-0069).
+func TestTheBootRefusesADocumentStoreItCannotUse(t *testing.T) {
+	short := wiredConfig()
+	short.DocumentEncryptionKey = make([]byte, 16)
+	if _, err := wire(short, nil, slog.New(slog.DiscardHandler)); err == nil {
+		t.Fatalf("wire accepted a 16 byte document key, want a refusal")
+	}
+
+	noCredential := wiredConfig()
+	noCredential.StorageEmulatorHost = ""
+	noCredential.StorageCredentialsFile = "/no/such/service-account.json"
+	if _, err := wire(noCredential, nil, slog.New(slog.DiscardHandler)); err == nil {
+		t.Fatalf("wire accepted a credential file that does not exist, want a refusal")
+	}
+}
+
 // TestTheBootRefusesAKeyTheCipherCannotUse is the branch config is supposed to make unreachable, kept because the day someone
 // relaxes that validation, the failure this catches is a process that starts and writes contacts nobody can read back.
 func TestTheBootRefusesAKeyTheCipherCannotUse(t *testing.T) {
 	for _, key := range [][]byte{nil, make([]byte, 16), make([]byte, 31)} {
-		_, err := wire(config.Config{
-			JWTSecret: testSecret, JWTTTL: 12 * time.Hour, EncryptionKey: key,
-		}, nil, slog.New(slog.DiscardHandler))
+		cfg := wiredConfig()
+		cfg.EncryptionKey = key
+		_, err := wire(cfg, nil, slog.New(slog.DiscardHandler))
 		if err == nil {
 			t.Fatalf("wire accepted a %d byte key, want a refusal", len(key))
 		}

@@ -54,6 +54,11 @@ func Conflict(code, message string) *Error {
 	return &Error{Status: http.StatusConflict, Code: code, Message: message}
 }
 
+// TooLarge is a body or a quota the request would pass: the 100 MB of a knowledge base is the first (F06).
+func TooLarge(code, message string) *Error {
+	return &Error{Status: http.StatusRequestEntityTooLarge, Code: code, Message: message}
+}
+
 func Unavailable(code, message string) *Error {
 	return &Error{Status: http.StatusServiceUnavailable, Code: code, Message: message}
 }

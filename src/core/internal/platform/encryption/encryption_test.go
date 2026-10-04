@@ -178,3 +178,37 @@ func TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong(t *testing.T) {
 		t.Fatalf("DecodeKey of a good key gave %v, %v", got, err)
 	}
 }
+
+// TestAFileGoesInAndComesBackInTheColumnFormat is ADR-0064, regla 1: a document is sealed exactly like a column, so the worker
+// reads it with the rules the columns already have.
+func TestAFileGoesInAndComesBackInTheColumnFormat(t *testing.T) {
+	c := testCipher(t)
+	pdf := append([]byte("%PDF-1.7\n"), bytes.Repeat([]byte{0x00, 0xff, '\n'}, 4096)...)
+
+	stored, err := c.EncryptBytes(pdf)
+	if err != nil {
+		t.Fatalf("EncryptBytes: %v", err)
+	}
+	if stored[0] != version || bytes.Contains(stored, []byte("%PDF-")) {
+		t.Fatalf("the sealed file does not start with the version or carries the signature in the clear")
+	}
+	back, err := c.DecryptBytes(stored)
+	if err != nil || !bytes.Equal(back, pdf) {
+		t.Fatalf("DecryptBytes: got %d bytes and %v, want the %d of the file", len(back), err, len(pdf))
+	}
+	// The column reader opens it too, which is what "the same format" means.
+	if text, err := c.Decrypt(stored); err != nil || text != string(pdf) {
+		t.Fatalf("Decrypt of a sealed file: %v", err)
+	}
+
+	if empty, err := c.EncryptBytes(nil); empty != nil || err != nil {
+		t.Fatalf("EncryptBytes(nil): got %v and %v, want nil and nil", empty, err)
+	}
+	if empty, err := c.DecryptBytes(nil); empty != nil || err != nil {
+		t.Fatalf("DecryptBytes(nil): got %v and %v, want nil and nil", empty, err)
+	}
+	stored[len(stored)-1] ^= 0x01
+	if _, err := c.DecryptBytes(stored); !errors.Is(err, ErrCorrupted) {
+		t.Fatalf("a flipped bit: got %v, want ErrCorrupted", err)
+	}
+}

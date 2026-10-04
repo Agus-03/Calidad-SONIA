@@ -117,6 +117,9 @@ smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
 smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
 # The core's own key, so the smoke can encrypt the demo inbox's app secret and sign its webhooks with it (ADR-0031, F20).
 smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
+# The document key and the fake store, so the smoke can read the uploaded object back and prove it left sealed (ADR-0064, ADR-0070).
+smoke: export SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY := $(DOCUMENT_ENCRYPTION_KEY)
+smoke: export SONIA_SMOKE_STORAGE_URL := http://localhost:4443
 smoke:
 	@mkdir -p $(GOTMPDIR)
 	$(COMPOSE_SMOKE) up -d --build --wait

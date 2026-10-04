@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
@@ -26,6 +27,10 @@ func TestRunServesHealthAndStopsWhenTheContextIsCancelled(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-hs256")
 	// The four sensitive columns need a key before the process will boot at all, and any 32 bytes are a key here (ADR-0031, regla 7).
 	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(make([]byte, encryption.KeyBytes)))
+	// The documents of F06 need their own key and a store before the process boots; the emulator stands in for Firebase (ADR-0070).
+	t.Setenv("DOCUMENT_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x02}, encryption.KeyBytes)))
+	t.Setenv("FIREBASE_STORAGE_BUCKET", "sonia-test")
+	t.Setenv("STORAGE_EMULATOR_HOST", "127.0.0.1:1")
 	t.Setenv("CORE_HTTP_ADDR", testAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())

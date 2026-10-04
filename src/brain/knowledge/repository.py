@@ -55,18 +55,25 @@ async def base(conn: AsyncConnection, agent_id: UUID, *, model: str) -> Base | N
 
 
 # The text of the chunks Qdrant found, checked again against the database: a chunk retired, or a document removed or sent back to
-# pending between the two reads, is not returned (ADR-0068, regla 3: only active chunks).
+# pending between the two reads, is not returned (ADR-0068, regla 3: only active chunks). The model and the documents are checked
+# again too, so a document reindexed by another model in between is not returned with a similarity that means nothing.
 _CHUNKS = """
 SELECT c.id, c.document_id, c.content
 FROM   document_chunks c
 JOIN   documents d ON d.id = c.document_id
-WHERE  c.id = ANY(%(ids)s) AND c.deleted_at IS NULL
+WHERE  c.id = ANY(%(ids)s) AND c.deleted_at IS NULL AND c.embedding_model = %(model)s
+  AND  c.document_id = ANY(%(document_ids)s)
   AND  d.status = %(indexed)s AND d.deleted_at IS NULL
 """
 
 
-async def chunks(conn: AsyncConnection, ids: Sequence[UUID]) -> dict[UUID, Chunk]:
-    cursor = await conn.execute(_CHUNKS, {"ids": list(ids), "indexed": DocumentStatus.INDEXED})
+async def chunks(
+    conn: AsyncConnection, ids: Sequence[UUID], *, model: str, document_ids: Sequence[UUID]
+) -> dict[UUID, Chunk]:
+    cursor = await conn.execute(
+        _CHUNKS,
+        {"ids": list(ids), "model": model, "document_ids": list(document_ids), "indexed": DocumentStatus.INDEXED},
+    )
     return {
         row["id"]: Chunk(id=row["id"], document_id=row["document_id"], content=row["content"])
         for row in await cursor.fetchall()

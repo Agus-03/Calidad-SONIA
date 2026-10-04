@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from adapters.embeddings.double import DoubleEmbedder
-from adapters.vectorstore.qdrant import Point, QdrantStore
+from adapters.vectorstore.qdrant import Point, QdrantStore, VectorStoreError
 from infra import ids
 from infra.db import Database
 from knowledge.search import Searcher, SearchRules
@@ -93,10 +93,15 @@ async def test_only_the_live_chunks_of_indexed_documents_of_the_same_model_are_f
             text = "Precio del alquiler del depto en Jesus Maria: $320.000 + expensas."
             pending = await _chunk(conn, await _document(conn, base, operator, "pending"), text, embedder.model)
             removed = await _chunk(conn, await _document(conn, base, operator, "indexed", removed=True), text, embedder.model)
-            stale = await _chunk(conn, await _document(conn, base, operator, "indexed"), text, "voyage-4")
+            stale_document = await _document(conn, base, operator, "indexed")
+            stale = await _chunk(conn, stale_document, text, "voyage-4")
 
             # Every chunk gets its point, as the worker would have left them before the document changed status.
             await vectors.ensure_collection(collection)
+            await vectors.ensure_collection(collection)
+            async with httpx.AsyncClient(base_url=_QDRANT) as client:
+                schema = (await client.get(f"/collections/{collection}")).json()["result"]["payload_schema"]
+            assert schema["document_id"]["data_type"] == "keyword", "the filter of every search has its index"
             cursor = await conn.execute(
                 """SELECT c.id, c.document_id, c.content FROM document_chunks c
                    JOIN documents d ON d.id = c.document_id WHERE d.knowledge_base_id = %s""",
@@ -112,9 +117,11 @@ async def test_only_the_live_chunks_of_indexed_documents_of_the_same_model_are_f
             searcher = Searcher(
                 embedder=embedder, vectors=vectors, connection=same_transaction, rules=SearchRules(version=1, top_k=3)
             )
-            found = await searcher.search(agent, "¿Cuanto sale el alquiler del depto en Jesus Maria?")
+            result = await searcher.search(agent, "¿Cuanto sale el alquiler del depto en Jesus Maria?")
 
-            assert found is not None
+            assert result is not None
+            assert result.stale_document_ids == (stale_document,) and result.dropped == 0
+            found = result.found
             assert [f.chunk_id for f in found] == [price, rooms], "the closest indexed chunk first, and nothing else"
             assert not {pending, removed, stale} & {f.chunk_id for f in found}
             assert [f.rank for f in found] == [1, 2]
@@ -123,6 +130,10 @@ async def test_only_the_live_chunks_of_indexed_documents_of_the_same_model_are_f
 
             _, without_base = await _agent(conn)
             assert await searcher.search(without_base, "¿Cuanto sale?") is None, "an agent with no base does not retrieve"
+
+            # Qdrant lost the collection the database says holds indexed documents: an error, not a search that found nothing.
+            with pytest.raises(VectorStoreError, match="404"):
+                await vectors.search(f"kb_{ids.new()}", [1.0] * 1024, limit=3, document_ids=[indexed])
     finally:
         if collection:
             async with httpx.AsyncClient(base_url=_QDRANT) as client:

@@ -29,15 +29,27 @@ async def test_a_missing_collection_is_created_with_the_dimension_and_distance_o
     await store.ensure_collection("kb_agente")
     await store.close()
 
-    assert [(r.method, r.url.path) for r in seen] == [("GET", "/collections/kb_agente"), ("PUT", "/collections/kb_agente")]
+    assert [(r.method, r.url.path) for r in seen] == [
+        ("GET", "/collections/kb_agente"),
+        ("PUT", "/collections/kb_agente"),
+        ("PUT", "/collections/kb_agente/index"),
+    ]
     assert json.loads(seen[1].content) == {"vectors": {"size": 1024, "distance": "Cosine"}}
+    assert json.loads(seen[2].content) == {"field_name": "document_id", "field_schema": "keyword"}, "the search filters on it"
     assert seen[0].headers["api-key"] == "clave"
 
 
-async def test_an_existing_collection_is_left_as_it_is() -> None:
-    store, seen = store_with(lambda request: httpx.Response(200, json={"result": {}}))
+async def test_an_existing_collection_with_its_index_is_left_as_it_is() -> None:
+    answer = {"result": {"payload_schema": {"document_id": {"data_type": "keyword"}}}}
+    store, seen = store_with(lambda request: httpx.Response(200, json=answer))
     await store.ensure_collection("kb_agente")
     assert len(seen) == 1
+
+
+async def test_an_existing_collection_made_before_the_index_gets_it() -> None:
+    store, seen = store_with(lambda request: httpx.Response(200, json={"result": {"payload_schema": {}}}))
+    await store.ensure_collection("kb_agente")
+    assert [(r.method, r.url.path) for r in seen] == [("GET", "/collections/kb_agente"), ("PUT", "/collections/kb_agente/index")]
 
 
 async def test_points_carry_the_chunk_id_and_nothing_but_the_document() -> None:
@@ -94,11 +106,16 @@ async def test_a_search_asks_for_the_limit_among_the_named_documents_only() -> N
     }
 
 
-async def test_a_search_with_nothing_to_search_finds_nothing() -> None:
-    store, seen = store_with(lambda request: httpx.Response(404, json={}))
+async def test_a_search_with_no_document_to_search_is_not_even_a_request() -> None:
+    store, seen = store_with(lambda request: httpx.Response(200, json={}))
     assert await store.search("kb_agente", [1.0], limit=3, document_ids=[]) == []
-    assert seen == [], "no document to search is not even a request"
-    assert await store.search("kb_nunca_indexada", [1.0], limit=3, document_ids=[uuid4()]) == []
+    assert seen == []
+
+
+async def test_a_missing_collection_with_indexed_documents_is_an_error_and_not_an_empty_answer() -> None:
+    store, _ = store_with(lambda request: httpx.Response(404, json={"status": {"error": "Not found"}}))
+    with pytest.raises(VectorStoreError, match="404"):
+        await store.search("kb_perdida", [1.0], limit=3, document_ids=[uuid4()])
 
 
 async def test_deleting_from_a_collection_that_does_not_exist_is_nothing_to_do() -> None:

@@ -51,9 +51,18 @@ class QdrantStore:
     # Created by the worker with the first document of a base, so a base nobody indexed has no collection (ADR-0064, regla 5).
     async def ensure_collection(self, name: str) -> None:
         found = await self._call("GET", f"/collections/{name}", allow_missing=True)
-        if found is not None:
-            return
-        await self._call("PUT", f"/collections/{name}", json={"vectors": {"size": DIMENSION, "distance": "Cosine"}})
+        if found is None:
+            await self._call("PUT", f"/collections/{name}", json={"vectors": {"size": DIMENSION, "distance": "Cosine"}})
+            schema: dict[str, Any] = {}
+        else:
+            schema = found["result"].get("payload_schema") or {}
+        # The search filters by document_id on every turn (ADR-0073): without an index Qdrant checks the filter point by point,
+        # which is slower and can cost a filtered search some of its true neighbours. A collection made before the index gets it
+        # with its next document.
+        if "document_id" not in schema:
+            await self._call(
+                "PUT", f"/collections/{name}/index?wait=true", json={"field_name": "document_id", "field_schema": "keyword"}
+            )
 
     # wait=true so the points are searchable when this returns, and the document can be marked indexed (ADR-0064, regla 7 (iv)).
     # In batches, so a long document stays under Qdrant's request size and the timeout: a point is about 20 KB of JSON. A batch
@@ -72,7 +81,8 @@ class QdrantStore:
 
     # The closest points among the documents the caller names, and only those: a document that is not indexed, or that the sweep
     # has not cleaned yet, takes no place among the limit (ADR-0068, regla 3). No payload comes back, because the text is read
-    # from document_chunks. A collection that does not exist has nothing to find.
+    # from document_chunks. A collection that does not exist is an error and not an empty answer: the worker creates it before
+    # it marks any document indexed, so a missing one means Qdrant lost what the database says it holds (ADR-0073, nota).
     async def search(self, name: str, vector: list[float], *, limit: int, document_ids: Sequence[UUID]) -> list[Hit]:
         if not document_ids:
             return []
@@ -82,9 +92,7 @@ class QdrantStore:
             "with_payload": False,
             "filter": {"must": [{"key": "document_id", "match": {"any": [str(d) for d in document_ids]}}]},
         }
-        found = await self._call("POST", f"/collections/{name}/points/query", json=body, allow_missing=True)
-        if found is None:
-            return []
+        found = await self._call("POST", f"/collections/{name}/points/query", json=body)
         return [Hit(id=UUID(str(point["id"])), score=float(point["score"])) for point in found["result"]["points"]]
 
     async def _call(self, method: str, path: str, *, json: Any = None, allow_missing: bool = False) -> Any | None:

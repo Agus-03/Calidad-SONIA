@@ -19,6 +19,9 @@ from knowledge import repository
 
 logger = logging.getLogger("sonia.knowledge")
 
+# The largest rank retrieval_logs.rank can hold, a smallint: a top_k above it could not be logged.
+MAX_TOP_K = 32767
+
 
 @dataclass(frozen=True)
 class SearchRules:
@@ -30,7 +33,7 @@ class SearchRules:
 @lru_cache(maxsize=1)
 def rules() -> SearchRules:
     loaded = rules_file.load("retrieval.yaml")
-    return SearchRules(version=loaded.version, top_k=loaded.integer("top_k", minimum=1))
+    return SearchRules(version=loaded.version, top_k=loaded.integer("top_k", minimum=1, maximum=MAX_TOP_K))
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,17 @@ class Found:
     # What retrieval_logs stores: similarity_score, and rank counted from 1 in the order the search returned them.
     similarity: float
     rank: int
+
+
+# What a search that ran returns: the chunks, and what it left out on the way, so the retrieval step can write it in its
+# detail_json and a measurement can tell a question the documents do not answer from a search that could not look (ADR-0073, nota).
+@dataclass(frozen=True)
+class SearchResult:
+    found: tuple[Found, ...]
+    # Indexed documents with live chunks from another embedding model, left out because they are not comparable.
+    stale_document_ids: tuple[UUID, ...] = ()
+    # Points Qdrant returned whose chunk was no longer live when the text was read: places of the top_k that came back empty.
+    dropped: int = 0
 
 
 class Vectors(Protocol):
@@ -62,37 +76,34 @@ class Searcher:
         self.rules = rules
 
     # None when the agent does not retrieve at all (ADR-0068, regla 10): no base, or no document in indexed. The pipeline then
-    # skips retrieval and grounding without writing their rows. An empty tuple is a search that ran and found nothing, which is
-    # retrieval's outcome empty. The provider's and Qdrant's failures are raised: what the turn does with them is the pipeline's.
-    async def search(self, agent_id: UUID, text: str) -> tuple[Found, ...] | None:
+    # skips retrieval and grounding without writing their rows. A result with nothing found is a search that ran, which is
+    # retrieval's outcome empty. The provider's and Qdrant's failures are raised, a missing collection among them: what the turn
+    # does with them is the pipeline's.
+    async def search(self, agent_id: UUID, text: str) -> SearchResult | None:
+        model = self._embedder.model
         async with self._connection() as conn:
-            base = await repository.base(conn, agent_id, model=self._embedder.model)
+            base = await repository.base(conn, agent_id, model=model)
         if base is None:
             return None
-        if base.stale_document_ids:
+        stale = base.stale_document_ids
+        if stale:
             logger.warning(
                 "documents embedded by another model are left out of the search",
-                extra={
-                    "context": {
-                        "agent_id": str(agent_id),
-                        "model": self._embedder.model,
-                        "documents": [str(d) for d in base.stale_document_ids],
-                    }
-                },
+                extra={"context": {"agent_id": str(agent_id), "model": model, "documents": len(stale)}},
             )
         # Nothing comparable to search, or nothing to search with: the question is not even sent to the provider.
         if not base.document_ids or not text.strip():
-            return ()
+            return SearchResult(found=(), stale_document_ids=stale)
 
         (vector,) = await self._embedder.embed([text], input_type="query")
         hits = await self._vectors.search(
             base.collection_name, vector, limit=self.rules.top_k, document_ids=base.document_ids
         )
         if not hits:
-            return ()
+            return SearchResult(found=(), stale_document_ids=stale)
 
         async with self._connection() as conn:
-            chunks = await repository.chunks(conn, [hit.id for hit in hits])
+            chunks = await repository.chunks(conn, [hit.id for hit in hits], model=model, document_ids=base.document_ids)
         found: list[Found] = []
         for hit in hits:
             chunk = chunks.get(hit.id)
@@ -107,10 +118,4 @@ class Searcher:
                     rank=len(found) + 1,
                 )
             )
-        if len(found) < len(hits):
-            # A point whose chunk retired or whose document left indexed between the two reads: rare, and it costs a place.
-            logger.info(
-                "points without a live chunk were dropped from the search",
-                extra={"context": {"agent_id": str(agent_id), "dropped": len(hits) - len(found)}},
-            )
-        return tuple(found)
+        return SearchResult(found=tuple(found), stale_document_ids=stale, dropped=len(hits) - len(found))

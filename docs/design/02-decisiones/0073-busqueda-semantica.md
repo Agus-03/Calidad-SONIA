@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · `top_k` provisorio en 3 y buscar sólo en documentos `indexed`, decididos por el grupo el 2026-10-04 · las reglas 3 a 7 son decisiones de construcción, tomadas al escribir `knowledge/search.py` |
+| **Estado** | Aceptada · `top_k` provisorio en 3 y buscar sólo en documentos `indexed`, decididos por el grupo el 2026-10-04 · las reglas 3 a 7 son decisiones de construcción, tomadas al escribir `knowledge/search.py` · **la regla 7 completada por la nota de §6** (2026-10-04): una colección faltante es un error, la búsqueda devuelve también lo que dejó afuera, y la base y Qdrant ganan índices, decidido por el grupo tras la revisión de la búsqueda |
 | **Fecha** | 2026-10-04 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | El valor inicial de `top_k`, que [ADR-0068](0068-recuperacion-y-grounding.md) dejó abierto, y qué es un *"trozo activo"* (regla 3 de ADR-0068) para la búsqueda |
@@ -31,7 +31,7 @@ Para construir la búsqueda faltaban tres cosas:
 | 4 | **El texto se lee de `document_chunks` y se vuelve a verificar ahí.** Un punto cuyo trozo se retiró, o cuyo documento dejó `indexed` entre las dos lecturas, se descarta y no se reemplaza. El `rank` cuenta desde 1, en el orden de Qdrant, sobre lo que queda |
 | 5 | **Un documento con trozos vivos de otro modelo de embeddings queda afuera**, y la búsqueda lo registra como advertencia. Si todos quedan afuera, la búsqueda corre y no encuentra nada (`outcome = empty`): no es *"el agente no recupera"* |
 | 6 | **La pregunta se vectoriza como consulta** (`input_type = query`). Un texto vacío no se manda al proveedor y no encuentra nada |
-| 7 | **La búsqueda devuelve tres cosas distintas**: nada (`None`) cuando el agente no recupera (regla 10 de ADR-0068); una lista vacía cuando buscó y no encontró; y los trozos con su similitud y su posición. Las fallas del proveedor y de Qdrant no se esconden: qué hace el turno con ellas lo decide el paso `retrieval` |
+| 7 | **La búsqueda devuelve tres cosas distintas**: nada (`None`) cuando el agente no recupera (regla 10 de ADR-0068); una lista vacía cuando buscó y no encontró; y los trozos con su similitud y su posición. Las fallas del proveedor y de Qdrant no se esconden: qué hace el turno con ellas lo decide el paso `retrieval`. *(Completada por la nota de §6: la colección faltante cuenta como falla, y la búsqueda que corrió devuelve también lo que dejó afuera.)* |
 
 ## 3. Justificación
 
@@ -55,7 +55,7 @@ Para construir la búsqueda faltaban tres cosas:
 - **Tres trozos pueden no alcanzar.** Una pregunta cuya respuesta cruza más de tres trozos llega a la generación incompleta, y sin solapamiento (ADR-0065) es más probable. Lo mide la evaluación.
 - **Un documento que se reprocesa desaparece de la búsqueda mientras dura**, y uno que falló después de subir sus vectores pierde también sus trozos válidos. Las preguntas que sólo él respondía terminan en `not_grounded` y van a una persona.
 - **Un cambio de modelo sin reindexar transfiere todo.** Si todos los documentos quedaron con el modelo viejo, cada pregunta sale `not_grounded` hasta que se reindexe.
-- **El filtro de Qdrant no tiene índice.** La colección se crea sin índice sobre `document_id` en el *payload*, así que Qdrant filtra recorriendo. Con bases de hasta 100 MB no se nota; con muchas más, sí. Crear el índice es un cambio del `worker`.
+- ~~**El filtro de Qdrant no tiene índice.** La colección se crea sin índice sobre `document_id` en el *payload*, así que Qdrant filtra recorriendo. Con bases de hasta 100 MB no se nota; con muchas más, sí. Crear el índice es un cambio del `worker`.~~ *(Superada por la nota de §6: el `worker` crea el índice.)*
 - **Un punto descartado en la segunda lectura no se reemplaza**: en esa ventana vuelven menos de `top_k`.
 - **El `rank` no es la posición cruda de Qdrant** cuando se descartó un punto: es la posición entre los que quedaron.
 - **La búsqueda suma latencia al turno**: dos lecturas de la base, una llamada al proveedor de embeddings y una a Qdrant, dentro de los 10 segundos que espera el núcleo.
@@ -77,3 +77,23 @@ Para construir la búsqueda faltaban tres cosas:
 | **Pedirle a Qdrant más de `top_k` y recortar** | Cubre el mismo caso que el filtro con un número arbitrario de sobra, que puede no alcanzar |
 | **Buscar también en los documentos de otro modelo** | Compara vectores que no son comparables, y el `grounding` toma por buenas similitudes sin sentido |
 | **Tratar *"todos de otro modelo"* como *"el agente no recupera"*** | El agente contesta sin documentos y nada lo marca |
+
+## 6. Nota — la revisión de la búsqueda (2026-10-04)
+
+La revisión de la búsqueda, antes de construir el paso `retrieval`, encontró que dos fallas terminaban en un `empty` que el rastro no distingue de una pregunta fuera de los documentos, y que la búsqueda leía en cada turno tablas sin índice. El grupo decidió:
+
+| Qué | Decisión |
+|---|---|
+| **Una colección que falta en Qdrant** | **Es un error, no una búsqueda vacía.** El `worker` crea la colección antes de marcar un documento `indexed` (ADR-0064, regla 7), así que si la base tiene documentos buscables y la colección no está, Qdrant perdió lo que la base dice que guarda. Un vacío ahí transferiría cada pregunta como `out_of_domain` y descontaría en OE6 algo que no es falta de cobertura |
+| **Lo que la búsqueda deja afuera** | **Se devuelve junto con los trozos**: los documentos excluidos por ser de otro modelo (regla 5) y cuántos puntos se descartaron en la segunda lectura (regla 4). El paso `retrieval` lo escribe en su `detail_json`, para que una medición separe *"los documentos no responden"* de *"la búsqueda no pudo mirar"* |
+| **Índices** | En la base, `idx_documents_knowledge_base_id` e `idx_document_chunks_document_id`, parciales sobre las filas vivas, declarados como excepción en [migrations/README.md](../../../src/core/migrations/README.md). En Qdrant, un índice `keyword` sobre `document_id` en el *payload*, que el `worker` crea con la colección o con el primer documento de una colección que no lo tenía |
+
+Además, como construcción: la segunda lectura vuelve a verificar el modelo y los documentos buscables, el log de documentos de otro modelo da la cantidad y no la lista, y `top_k` tiene un máximo, el mayor `rank` que cabe en `retrieval_logs`.
+
+**Consecuencias negativas que se suman a las de §4:**
+
+- **Un Qdrant que perdió una colección hace fallar el turno** en lugar de transferirlo, hasta que se reindexe la base. Qué hace el turno con ese error lo decide el paso `retrieval`.
+- **Cambiar de modelo sin reindexar sigue transfiriendo todo** (§4), y cada turno escribe además la advertencia en el log. Lo que cambia es que el rastro lo dice.
+- **Una pregunta vacía también termina en `not_grounded`** (regla 6): la búsqueda corre y no encuentra nada.
+- **`0001` gana dos índices sin una consulta lenta medida**, contra la regla general de [migrations/README.md](../../../src/core/migrations/README.md). Una base ya creada con el `0001` anterior no los tiene hasta recrearla.
+- **Una colección creada antes del índice lo recibe recién con su próximo documento**: hasta entonces, el filtro recorre.

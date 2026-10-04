@@ -4,6 +4,7 @@ import io
 
 import pytest
 from PIL import Image
+from pypdf import PageObject
 
 from tests.worker.pdfs import image_pdf, joined, text_pdf
 from worker.pdf import UnreadablePDF, read, sendable
@@ -21,6 +22,14 @@ def test_each_page_keeps_its_text_and_its_images() -> None:
     assert (image.width, image.height) == (300, 200)
     assert image.media_type in {"image/jpeg", "image/png"}
     assert Image.open(io.BytesIO(image.data)).size == (300, 200)
+
+
+def test_a_nul_in_the_text_is_dropped_before_postgresql_sees_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(PageObject, "extract_text", lambda self, *args, **kwargs: "Depto\x00 2 ambientes\x00")
+
+    (page,) = read(text_pdf(["Depto 2 ambientes"]), max_side=1568)
+
+    assert page.text == "Depto 2 ambientes"
 
 
 def test_what_is_not_a_pdf_is_refused_as_unreadable() -> None:

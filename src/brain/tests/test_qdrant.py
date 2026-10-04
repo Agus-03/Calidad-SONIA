@@ -57,6 +57,24 @@ async def test_points_carry_the_chunk_id_and_nothing_but_the_document() -> None:
     assert json.loads(delete.content) == {"filter": {"must": [{"key": "document_id", "match": {"value": str(document)}}]}}
 
 
+async def test_a_long_document_goes_up_in_batches_in_order() -> None:
+    seen: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"result": {}})
+
+    store = QdrantStore("http://qdrant:6333", "", 5, batch_size=2, transport=httpx.MockTransport(record))
+    document = uuid4()
+    points = [Point(id=uuid4(), vector=[float(i)], document_id=document) for i in range(5)]
+    await store.upsert("kb_agente", points)
+
+    sent = [[p["id"] for p in json.loads(r.content)["points"]] for r in seen]
+    assert [len(batch) for batch in sent] == [2, 2, 1]
+    assert [i for batch in sent for i in batch] == [str(p.id) for p in points]
+    assert all(r.url.params["wait"] == "true" for r in seen)
+
+
 async def test_deleting_from_a_collection_that_does_not_exist_is_nothing_to_do() -> None:
     store, _ = store_with(lambda request: httpx.Response(404, json={}))
     await store.delete_document("kb_nunca_indexada", uuid4())

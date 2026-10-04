@@ -38,6 +38,21 @@ def test_every_chunk_fits_and_no_text_is_lost() -> None:
     assert "".join(chunks).replace(" ", "") == text.replace(" ", "")
 
 
+def test_the_pieces_of_a_cut_paragraph_join_their_neighbours_instead_of_staying_tiny() -> None:
+    long = "Primera oracion larga. Segunda oracion larga. Tercera."
+    short = "Corto."
+    # The tail of the long paragraph takes the short one after it...
+    assert split(f"{long}\n\n{short}", rules=SMALL) == [
+        "Primera oracion larga.",
+        f"Segunda oracion larga. Tercera.\n\n{short}",
+    ]
+    # ...and the short one before it takes the head of the long one.
+    assert split(f"{short}\n\n{long}", rules=SMALL) == [
+        f"{short}\n\nPrimera oracion larga.",
+        "Segunda oracion larga. Tercera.",
+    ]
+
+
 def test_a_run_without_any_separator_is_cut_by_characters() -> None:
     chunks = split("x" * 95, rules=SMALL)
     assert [len(c) for c in chunks] == [40, 40, 15]

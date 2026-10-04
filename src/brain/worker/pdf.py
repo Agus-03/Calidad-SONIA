@@ -45,7 +45,9 @@ def read(data: bytes, *, max_side: int) -> list[Page]:
     out: list[Page] = []
     for number, page in enumerate(pages, start=1):
         try:
-            text = page.extract_text() or ""
+            # PostgreSQL refuses a NUL in text, and some fonts make pypdf return one: it goes here, before the chunking, so what is
+            # embedded and what document_chunks stores are still the same text.
+            text = (page.extract_text() or "").replace("\x00", "")
         except Exception as err:  # noqa: BLE001 - one page pypdf cannot read must not cost the document its other pages
             logger.warning("page text not extracted", extra={"context": {"page": number, "error": str(err)}})
             text = ""

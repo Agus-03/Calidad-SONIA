@@ -24,7 +24,16 @@ class Point:
 
 
 class QdrantStore:
-    def __init__(self, url: str, api_key: str, timeout: float, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        api_key: str,
+        timeout: float,
+        *,
+        batch_size: int = 128,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._batch_size = batch_size
         headers = {"api-key": api_key} if api_key else {}
         self._http = httpx.AsyncClient(base_url=url.rstrip("/"), headers=headers, timeout=timeout, transport=transport)
 
@@ -39,11 +48,13 @@ class QdrantStore:
         await self._call("PUT", f"/collections/{name}", json={"vectors": {"size": DIMENSION, "distance": "Cosine"}})
 
     # wait=true so the points are searchable when this returns, and the document can be marked indexed (ADR-0064, regla 7 (iv)).
+    # In batches, so a long document stays under Qdrant's request size and the timeout: a point is about 20 KB of JSON. A batch
+    # that fails leaves the earlier ones up, and the reindex deletes them by document_id before going up again (regla 7 (i)).
     async def upsert(self, name: str, points: Sequence[Point]) -> None:
-        if not points:
-            return
-        body = {"points": [{"id": str(p.id), "vector": p.vector, "payload": {"document_id": str(p.document_id)}} for p in points]}
-        await self._call("PUT", f"/collections/{name}/points?wait=true", json=body)
+        for start in range(0, len(points), self._batch_size):
+            batch = points[start : start + self._batch_size]
+            body = {"points": [{"id": str(p.id), "vector": p.vector, "payload": {"document_id": str(p.document_id)}} for p in batch]}
+            await self._call("PUT", f"/collections/{name}/points?wait=true", json=body)
 
     # By document and not by point, so the vectors of a document go whole, whatever chunks the database still lists for it.
     # A collection that does not exist has nothing to delete, which is the base whose first document failed.

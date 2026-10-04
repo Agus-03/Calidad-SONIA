@@ -64,20 +64,20 @@ def _split(text: str, separators: tuple[str, ...], count: Callable[[str], int], 
     parts = text.split(separator)
     parts = [part + separator for part in parts[:-1]] + parts[-1:]
 
+    # A part too large is cut at the smaller separators, and its pieces join the accumulation like any other part: the head of a
+    # long paragraph fills what the one before it left, and its tail takes the next one, so neither is left as a tiny chunk.
     chunks: list[str] = []
     current = ""
     for part in parts:
-        candidate = current + part
-        if count(candidate) <= limit:
-            current = candidate
-            continue
-        if current:
-            chunks.append(current)
-        if count(part) <= limit:
-            current = part
-        else:
-            chunks.extend(_split(part, smaller, count, limit))
-            current = ""
+        pieces = [part] if count(part) <= limit else _split(part, smaller, count, limit)
+        for piece in pieces:
+            candidate = current + piece
+            if count(candidate) <= limit:
+                current = candidate
+                continue
+            if current:
+                chunks.append(current)
+            current = piece
     if current:
         chunks.append(current)
     return chunks

@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · OE6 con el RAG construido 2026-10-04 (ADR-0075): el not_grounded escala y los agentes sin base salen · la búsqueda fallida como no respondida 2026-10-05 (ADR-0077) · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · OE6 con el RAG construido 2026-10-04 (ADR-0075): el not_grounded escala y los agentes sin base salen · la búsqueda y la generación fallidas como no respondidas 2026-10-05 (ADR-0077) · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -831,10 +831,12 @@ ORDER  BY te.rubric_version;
 --       agente es el que la conversación tiene hoy, no el de ese momento.
 --
 -- (e) ADR-0077 — un bloque cuya búsqueda falló (Voyage o Qdrant no
---     respondieron) es una consulta NO RESPONDIDA: el turno falló y el agente
---     no contestó. No es una escalada, porque nadie transfirió; resta igual.
---     La deja el paso `retrieval` con `outcome = 'failed'`. Si un reintento
---     del núcleo después responde, esa fila se borra con el rastro viejo.
+--     respondieron) o cuya generación falló es una consulta NO RESPONDIDA: el
+--     turno falló y el agente no contestó. No es una escalada, porque nadie
+--     transfirió; resta igual. Lo dejan el paso `retrieval` o el `generation`
+--     con `outcome = 'failed'`. Un `failed` no se reintenta; si el núcleo
+--     reintenta el bloque porque falló el salto y el reintento responde, esa
+--     fila se borra con el rastro viejo.
 --
 --     Abierto (README de decisiones, pendiente del Paso 11): una transferencia
 --     marca TODOS los bloques de su conversación, y un `not_grounded` sin
@@ -888,6 +890,11 @@ no_respondidas AS (                     -- (c): la conversación terminó escala
     FROM   consultas_del_dominio c
     JOIN   pipeline_steps r ON r.message_batch_id = c.message_batch_id
     WHERE  r.step = 'retrieval' AND r.outcome = 'failed'
+    UNION                               -- (e): o su generación falló
+    SELECT c.message_batch_id
+    FROM   consultas_del_dominio c
+    JOIN   pipeline_steps g ON g.message_batch_id = c.message_batch_id
+    WHERE  g.step = 'generation' AND g.outcome = 'failed'
 )
 SELECT count(*)                                                    AS consultas_del_dominio,
        count(*) - (SELECT count(*) FROM no_respondidas)            AS respondidas_sin_escalada,

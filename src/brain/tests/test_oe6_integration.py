@@ -69,16 +69,25 @@ async def _block(conn, seeded: dict, agent: UUID, *after_triage: str) -> None:
         (batch, conversation, _DAY, _DAY),
     )
     steps = [("triage", "in_domain", 3, {"mode": "autonomous"})]
-    steps += [(step, outcome, position, None) for step, outcome, position in zip(("retrieval", "grounding"), after_triage, (4, 5))]
+    names = ("retrieval", "grounding", "generation")
+    steps += [(step, outcome, position, None) for step, outcome, position in zip(names, after_triage, (4, 5, 6))]
     for step, outcome, position, detail in steps:
         await conn.execute(
             """INSERT INTO pipeline_steps (id, message_batch_id, step, direction, position, outcome, version, detail_json)
-               VALUES (%s, %s, %s, 'inbound', %s, %s, '1', %s)""",
-            (ids.new(), batch, step, position, outcome, Jsonb(detail) if detail is not None else None),
+               VALUES (%s, %s, %s, %s, %s, %s, '1', %s)""",
+            (
+                ids.new(),
+                batch,
+                step,
+                "outbound" if step == "generation" else "inbound",
+                position,
+                outcome,
+                Jsonb(detail) if detail is not None else None,
+            ),
         )
 
 
-async def test_oe6_counts_the_not_grounded_and_the_failed_search_as_not_answered_and_leaves_agents_without_a_base_out() -> None:
+async def test_oe6_counts_the_not_grounded_and_the_failed_turns_as_not_answered_and_leaves_agents_without_a_base_out() -> None:
     database = Database(_DSN)
     await database.open()
     try:
@@ -97,7 +106,9 @@ async def test_oe6_counts_the_not_grounded_and_the_failed_search_as_not_answered
             )
             with_base = await _agent(conn, seeded["account"], with_base=True, operator=operator)
             without_base = await _agent(conn, seeded["account"], with_base=False, operator=operator)
-            await _block(conn, seeded, with_base, "hit", "grounded")
+            await _block(conn, seeded, with_base, "hit", "grounded", "ok")
+            # Grounded, and the provider never answered: nobody got an answer (ADR-0077).
+            await _block(conn, seeded, with_base, "hit", "grounded", "failed")
             # Not grounded with the policy off: no transfer_events, and still not answered (ADR-0075).
             await _block(conn, seeded, with_base, "hit", "not_grounded")
             # Voyage or Qdrant did not answer: the turn failed, and the block was not answered either (ADR-0077).
@@ -108,6 +119,6 @@ async def test_oe6_counts_the_not_grounded_and_the_failed_search_as_not_answered
             cursor = await conn.execute(_oe6(), {"desde": _DAY - timedelta(hours=1), "hasta": _DAY + timedelta(hours=1)})
             row = await cursor.fetchone()
 
-            assert (row["consultas_del_dominio"], row["respondidas_sin_escalada"], float(row["oe6_pct"])) == (3, 1, 33.33)
+            assert (row["consultas_del_dominio"], row["respondidas_sin_escalada"], float(row["oe6_pct"])) == (4, 1, 25.0)
     finally:
         await database.close()

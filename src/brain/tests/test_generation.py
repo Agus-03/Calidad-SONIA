@@ -24,7 +24,7 @@ from pipeline.generation import (
     pricing,
     rate_for,
 )
-from pipeline.repository import Agent, Message, Turn
+from pipeline.repository.turn import Agent, Message, Turn
 from prompts.assembler import assemble
 from prompts.repository import Component
 

@@ -39,7 +39,7 @@ class AnthropicClient:
             "model": model,
             # Required by this provider and nullable in ai_agents, which is why the port carries a default at all.
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
-            "messages": [{"role": m.role, "content": m.text} for m in messages],
+            "messages": [{"role": m.role, "content": _content(m)} for m in messages],
         }
         # A separate field and not the first message: this is the one shape difference between the three providers.
         if system:
@@ -59,6 +59,17 @@ class AnthropicClient:
             prompt_tokens=_tokens(response, "input_tokens"),
             completion_tokens=_tokens(response, "output_tokens"),
         )
+
+
+# A message with images becomes a list of blocks, the images before the text as Anthropic recommends; one without stays a string.
+def _content(message: LLMMessage) -> str | list[dict[str, Any]]:
+    if not message.images:
+        return message.text
+    blocks: list[dict[str, Any]] = [
+        {"type": "image", "source": {"type": "base64", "media_type": image.media_type, "data": image.base64()}}
+        for image in message.images
+    ]
+    return [*blocks, {"type": "text", "text": message.text}]
 
 
 # Content is a list of blocks and only the text ones are the answer: a thinking block is not what gets sent to WhatsApp.

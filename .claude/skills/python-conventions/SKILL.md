@@ -15,7 +15,7 @@ El cerebro hace **DML, nunca DDL**: `src/core/migrations/` es el único dueño d
 
 ## 2. Async y bloqueo del event loop
 
-- **Async donde hay I/O; sync en la lógica pura.** Los repositorios —`prompts/repository.py`, `pipeline/repository.py`— son `async def` y reciben `AsyncConnection`; `assemble()` de `prompts/assembler.py` es sync a propósito, y por eso se prueba sin event loop (`tests/test_prompts.py`). Un `async def` sin I/O adentro agrega un `await` en cada llamada y no gana nada.
+- **Async donde hay I/O; sync en la lógica pura.** Los repositorios —`prompts/repository.py`, `pipeline/repository/`— son `async def` y reciben `AsyncConnection`; `assemble()` de `prompts/assembler.py` es sync a propósito, y por eso se prueba sin event loop (`tests/test_prompts.py`). Un `async def` sin I/O adentro agrega un `await` en cada llamada y no gana nada.
 - Nunca I/O sincrónico **dentro de** un `async def`: ni un driver sync, ni un `open()` bloqueante, ni `time.sleep`. Bloquea el event loop para **todos** los turnos, no sólo para el que llama.
 - La excepción declarada: leer un archivo de `rules/` con `path.read_text()` es bloqueante y está bien, porque ocurre **en la construcción** y queda cacheado con `lru_cache`, no una vez por turno. Si algo hay que leerlo por request, la regla anterior vuelve a aplicar.
 - **Toda llamada externa lleva timeout, y el valor sale de `Settings`** (`llm_timeout_seconds`), nunca de un literal en la llamada.
@@ -32,7 +32,7 @@ El cerebro hace **DML, nunca DDL**: `src/core/migrations/` es el único dueño d
 ## 4. Manejo de errores
 
 - Cada paso de un flujo tiene su propio `try/except`, acotado a lo que ese paso puede fallar.
-- Excepciones propias, nombradas por la condición y declaradas en el módulo que las levanta: `RulesError` en `prompts/assembler.py`, `PricingError` y `UnpricedModel` en `pipeline/generation.py`, `TurnNotFound` en `pipeline/repository.py`, `ConfigError` en `infra/config.py`. No hay un `exceptions.py` central.
+- Excepciones propias, nombradas por la condición y declaradas en el módulo que las levanta: `RulesError` en `prompts/assembler.py`, `PricingError` y `UnpricedModel` en `pipeline/generation.py`, `TurnNotFound` en `pipeline/repository/turn.py`, `ConfigError` en `infra/config.py`. No hay un `exceptions.py` central.
 - Nunca `raise Exception` pelado. Una captura amplia se admite **sólo en un límite** —con un SDK de terceros, como en `adapters/llm/base.py`— y va marcada con el motivo: `# noqa: BLE001 - the boundary with a third-party SDK, whose exceptions are its own business`.
 - Una jerarquía de excepciones existe para poder **decidir**: `LLMError` → `LLMTimeout` / `LLMRefusal` / `LLMUnavailable` está separada porque reintentar una negativa del proveedor quema el presupuesto del turno.
 - El contexto del error dice **qué paso falló, con qué entrada, y cuál fue el error original**.

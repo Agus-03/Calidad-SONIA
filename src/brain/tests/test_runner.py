@@ -10,7 +10,8 @@ import pytest
 from adapters.llm.base import Completion, LLMTimeout
 from infra.enums import MessageDirection, PipelineStep, SenderType
 from pipeline import runner
-from pipeline.repository import Agent, Message, TracedStep, Turn, write_steps
+from pipeline.repository.turn import Agent, Message, Turn
+from pipeline.repository.evidence import TracedStep, write_steps
 from pipeline.step import Step, StepRequest, StepResult
 
 BATCH_ID = uuid4()

@@ -12,6 +12,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/brainclient"
 	"github.com/mateo-velasquez/sonia/src/core/internal/contacts"
 	"github.com/mateo-velasquez/sonia/src/core/internal/conversations"
+	"github.com/mateo-velasquez/sonia/src/core/internal/documents"
 	"github.com/mateo-velasquez/sonia/src/core/internal/inbox"
 	"github.com/mateo-velasquez/sonia/src/core/internal/labels"
 	"github.com/mateo-velasquez/sonia/src/core/internal/notes"
@@ -21,6 +22,7 @@ import (
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/storage"
 	quickreplies "github.com/mateo-velasquez/sonia/src/core/internal/quick_replies"
 	"github.com/mateo-velasquez/sonia/src/core/internal/realtime"
 	"github.com/mateo-velasquez/sonia/src/core/internal/reasoning"
@@ -234,6 +236,39 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 	reminderRepo := reminders.NewRepository(pool)
 	alarms := reminders.NewPoller(reminders.PollerOptions{Store: reminderRepo, Alerts: hub, Logger: log})
 
+	// F06: the documents are sealed with their own key, never the columns' one, because the worker holds it (ADR-0064, regla 2).
+	sealer, err := encryption.New(cfg.DocumentEncryptionKey)
+	if err != nil {
+		return wiring{}, fmt.Errorf("app: the document key config accepted is not one the cipher can use: %w", err)
+	}
+	// Built at boot so a credential that cannot be read or that Google refuses stops the process, not the first upload (ADR-0069).
+	objects, err := storage.NewFirebase(storage.FirebaseOptions{
+		Bucket:          cfg.StorageBucket,
+		CredentialsFile: cfg.StorageCredentialsFile,
+		EmulatorHost:    cfg.StorageEmulatorHost,
+		Timeout:         cfg.StorageTimeout,
+		Logger:          log,
+	})
+	if err != nil {
+		return wiring{}, fmt.Errorf("app: the object store cannot be reached: %w", err)
+	}
+	if cfg.StorageEmulatorHost != "" {
+		log.Warn("object store emulated", slog.String("environment", cfg.Environment), slog.String("host", cfg.StorageEmulatorHost))
+	}
+	documentRepo := documents.NewRepository(pool)
+	knowledge := documents.NewService(documents.Options{
+		Repo: documentRepo,
+		// The lock of the base, the row and the size it adds commit together (ADR-0064, regla 6).
+		Tx: func(ctx context.Context, fn func(documents.Store) error) error {
+			return db.InTx(ctx, pool, func(exec db.Executor) error {
+				return fn(documentRepo.WithExecutor(exec))
+			})
+		},
+		Objects: objects,
+		Sealer:  sealer,
+		Logger:  log,
+	})
+
 	// The socket is public for the router because the browser cannot send the bearer on it; its ticket is the credential, and the
 	// operator is read again with the same lookup the bearer uses (ADR-0051).
 	gate := realtime.NewStreamGate(hub, resolveActor(people), log)
@@ -256,6 +291,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			reminders.NewController(reminders.NewService(reminderRepo, book, log), log),
 			sales.NewController(sales.NewService(sales.NewRepository(pool), desk, log), log),
 			quickreplies.NewController(quickreplies.NewService(quickreplies.NewRepository(pool), log), log),
+			documents.NewController(knowledge, log),
 		},
 		tokenVerifier:     verifyToken(tokens),
 		actorLookup:       resolveActor(people),

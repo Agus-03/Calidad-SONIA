@@ -15,7 +15,8 @@ from typing import Any
 from adapters.llm.base import LLMMessage, LLMRefusal, unfenced
 from infra.enums import MessageDirection, PromptComponentType, SenderType, TransferSignalType
 from infra.rules import RulesFileError, load
-from pipeline.repository import Message, TracedStep
+from pipeline.repository.turn import Message
+from pipeline.repository.evidence import TracedStep
 from pipeline.step import StepRequest, StepResult
 
 logger = logging.getLogger("sonia.pipeline.triage")

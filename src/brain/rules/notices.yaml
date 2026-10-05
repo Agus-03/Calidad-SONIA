@@ -4,16 +4,21 @@
 # THIS IS WHAT THE CUSTOMER READS, the one file in rules/ written in Spanish and in the voice of the business.
 #
 # THE TRIAGE HAS NO TEXT AND MAY NOT HAVE ONE (decision O1c), and pipeline/notices.py refuses this file if somebody writes one.
-# The other steps with no entry do not cut yet: the inbound guardrail will with ADR-0043, and Fase 12 decides for the rest.
+# The other steps with no entry do not cut yet: the inbound guardrail will with ADR-0043. The retrieval never cuts: the grounding
+# after it does, and has its entry.
 #
 # A TEXT MAY NOT promise a time, say who answers, say what was refused, or carry a personal datum: these are fixed, so the
 # redaction of ADR-0006 never looks at them.
-version: 1
+version: 2
 
 # The customer's own message was refused before anything was generated (07-secuencia B.1).
 inbound:
   blocklist: |-
     No puedo ayudarte con eso por acá. Le paso tu mensaje a una persona del equipo para que lo vea.
+  # The business attends it and the documents do not answer it (ADR-0068, reglas 7 and 8): unlike the triage's cut, the customer
+  # is told, because the question was for this business and silence would spend the 24-hour window.
+  grounding: |-
+    No tengo esa información a mano. Le paso tu consulta a una persona del equipo para que te responda por acá.
 
 # Generated and then refused, so there is a generation with status blocked and no message (07-secuencia B.2). The two texts
 # promise the same amount on purpose: what the customer reads cannot depend on which of our checks fired.

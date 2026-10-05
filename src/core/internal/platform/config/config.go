@@ -46,7 +46,8 @@ func Load() (Config, error) {
 
 		BrainBaseURL:       os.Getenv("BRAIN_BASE_URL"),
 		BrainInternalToken: os.Getenv("BRAIN_INTERNAL_TOKEN"),
-		BrainTimeout:       10 * time.Second,
+		// 15 s and not 10 since the turn searches the knowledge base before generating (ADR-0074): two more calls of up to 5 s.
+		BrainTimeout:       15 * time.Second,
 		PreviewTimeout:     3 * time.Second,
 
 		TurnMaxRetries:   3,
@@ -66,6 +67,13 @@ func Load() (Config, error) {
 		MetaAPIVersion: env("META_API_VERSION", "v21.0"),
 		// Shorter than the brain's: Meta answers in hundreds of milliseconds, and the turn already spent its budget upstream.
 		WhatsAppTimeout: 5 * time.Second,
+
+		StorageBucket: os.Getenv("FIREBASE_STORAGE_BUCKET"),
+		// The two names Google's own clients read, so the worker's Python client finds the same values without a translation.
+		StorageCredentialsFile: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+		StorageEmulatorHost:    strings.TrimSpace(os.Getenv("STORAGE_EMULATOR_HOST")),
+		// Two minutes because a whole upload of up to 100 MB rides on it, and an administrator is waiting for it and not a customer.
+		StorageTimeout: 2 * time.Minute,
 	}
 
 	for _, required := range []struct {
@@ -96,7 +104,35 @@ func Load() (Config, error) {
 		cfg.EncryptionKey = key
 	}
 
+	// Validated at boot for the same reason, and kept apart from ENCRYPTION_KEY: two equal keys would give the worker the DNI (ADR-0064, regla 2).
+	if raw := strings.TrimSpace(os.Getenv("DOCUMENT_ENCRYPTION_KEY")); raw == "" {
+		problems = append(problems, "DOCUMENT_ENCRYPTION_KEY is required")
+	} else if key, err := encryption.DecodeKey(raw); err != nil {
+		problems = append(problems, "DOCUMENT_ENCRYPTION_KEY "+err.Error())
+	} else if cfg.EncryptionKey != nil && string(key) == string(cfg.EncryptionKey) {
+		problems = append(problems, "DOCUMENT_ENCRYPTION_KEY is the same as ENCRYPTION_KEY, and the worker that holds it must not read the sensitive columns")
+	} else {
+		cfg.DocumentEncryptionKey = key
+	}
+
+	if strings.TrimSpace(cfg.StorageBucket) == "" {
+		problems = append(problems, "FIREBASE_STORAGE_BUCKET is required")
+	}
+	// The emulator takes no credential and the real service needs one, so exactly one of the two has to be there.
+	switch {
+	case cfg.StorageEmulatorHost != "" && !slices.Contains(doubleAllowedEnvironments, cfg.Environment):
+		problems = append(problems, fmt.Sprintf(
+			"STORAGE_EMULATOR_HOST writes the documents to a fake store and ENVIRONMENT=%q is not one of %s",
+			cfg.Environment, strings.Join(doubleAllowedEnvironments, ", ")))
+	case cfg.StorageEmulatorHost == "" && strings.TrimSpace(cfg.StorageCredentialsFile) == "":
+		problems = append(problems, "GOOGLE_APPLICATION_CREDENTIALS is required unless STORAGE_EMULATOR_HOST is set")
+	}
+
 	var err error
+
+	if cfg.StorageTimeout, err = durationMS("STORAGE_TIMEOUT_MS", cfg.StorageTimeout); err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	if cfg.JWTTTL, err = durationMS("JWT_TTL_MS", cfg.JWTTTL); err != nil {
 		problems = append(problems, err.Error())

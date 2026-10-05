@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · §2, §3 y §4 enmendadas el 2026-09-20 por [ADR-0041](0041-temporizador-del-turno-por-poller.md) — el alcance se acota a las conversaciones en modo autónomo · **§2, §3, §4 y §5 enmendadas el 2026-09-26 por [ADR-0046](0046-modo-sugerencia.md)**: el modo `suggestion` vuelve a abrir bloque, y el alcance autónomo se sostiene con un filtro sobre el `detail_json` del `triage` en vez de con la ausencia del bloque. La alternativa descartada el 2026-09-20 queda adoptada con otro argumento: el modo la necesita para funcionar |
+| **Estado** | Aceptada · §2, §3 y §4 enmendadas el 2026-09-20 por [ADR-0041](0041-temporizador-del-turno-por-poller.md) — el alcance se acota a las conversaciones en modo autónomo · **§2, §3, §4 y §5 enmendadas el 2026-09-26 por [ADR-0046](0046-modo-sugerencia.md)**: el modo `suggestion` vuelve a abrir bloque, y el alcance autónomo se sostiene con un filtro sobre el `detail_json` del `triage` en vez de con la ausencia del bloque. La alternativa descartada el 2026-09-20 queda adoptada con otro argumento: el modo la necesita para funcionar · **§2 enmendada el 2026-10-04 por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md)**: un bloque que el `grounding` cortó por `not_grounded` también es una escalada, haya transferencia o no, y los agentes sin base de conocimiento quedan fuera del alcance |
 | **Fecha** | 2026-09-04 |
 | **Etapa** | Diseño — Paso 11 anticipado (definición de métrica) |
 | **Resuelve** | La parte de **H-24** que ADR-0016 dejó abierta |
@@ -22,9 +22,9 @@ ADR-0016 resolvió qué es *"dentro del dominio"*: el veredicto del paso `triage
 ## 2. Decisión
 
 - **Consulta = bloque** (`message_batches`), que es lo que `03-capa-prompts.md` ya llama turno. Aunque F11 detecte varias intenciones en un bloque, la unidad de medida de OE6 es el bloque.
-- **"Sin escalada" = sin transferencia de tipo `out_of_domain`.** Las otras tres señales de F12 no cuentan contra OE6.
+- **"Sin escalada" = sin transferencia de tipo `out_of_domain`.** Las otras tres señales de F12 no cuentan contra OE6. *(Enmendada por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 1: un bloque que el `grounding` cortó por `not_grounded` también es una escalada, aunque la política `out_of_domain` esté apagada y no haya transferencia.)*
 - **Los turnos posteriores a una escalada quedan fuera del denominador**: desde ahí la conversación no la atiende el bot.
-- **El alcance son las conversaciones en modo autónomo.** Sólo se abre bloque cuando el AIAgent responde solo —regla 8 de [ADR-0041](0041-temporizador-del-turno-por-poller.md)—, así que una conversación en modo `suggestion` no tiene turnos y **no entra ni en el numerador ni en el denominador de OE6**. *(Enmienda del 2026-09-20: la Fase 7 hizo esto cierto en el código antes de que nadie lo decidiera, y acá se decide.)*
+- **El alcance son las conversaciones en modo autónomo.** Sólo se abre bloque cuando el AIAgent responde solo —regla 8 de [ADR-0041](0041-temporizador-del-turno-por-poller.md)—, así que una conversación en modo `suggestion` no tiene turnos y **no entra ni en el numerador ni en el denominador de OE6**. *(Enmienda del 2026-09-20: la Fase 7 hizo esto cierto en el código antes de que nadie lo decidiera, y acá se decide.)* *(Enmendada por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 2: quedan fuera además los agentes sin base de conocimiento, que no recuperan y darían 100 % por construcción.)*
 
 ## 3. Justificación
 

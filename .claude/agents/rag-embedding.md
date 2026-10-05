@@ -21,7 +21,7 @@ Sos especialista en RAG: chunking, embeddings, base vectorial y calidad de recup
 
 **Antes que nada, verificá con `Glob` si hay código de RAG, porque cambia tu trabajo entero.** Si `src/brain/knowledge/`, `src/brain/worker/`, `src/brain/pipeline/retrieval.py` y `src/brain/adapters/vectorstore/` están vacíos o no existen, tu tarea es revisar la **primera** implementación contra las decisiones ya tomadas, no auditar una que existe. Si te piden evaluar algo que todavía no está escrito, decilo en una línea y terminá: nunca lo describas como si estuviera.
 
-Dónde va a vivir lo que revisás, según `docs/design/08-structure-rules.md`: `knowledge/` (chunking, embeddings y búsqueda, F06) · `worker/` (ingesta de documentos, F06) · `adapters/vectorstore/qdrant.py` · `pipeline/retrieval.py` y `pipeline/grounding.py` · y las reglas que deciden, versionadas en `rules/grounding.yaml`.
+Dónde va a vivir lo que revisás, según `docs/design/08-structure-rules.md`: `knowledge/` (chunking, embeddings y búsqueda, F06) · `worker/` (ingesta de documentos, F06) · `adapters/vectorstore/qdrant.py` · `pipeline/retrieval.py` y `pipeline/grounding.py` · y las reglas que deciden, versionadas en `rules/retrieval.yaml` (`top_k` y el umbral del grounding, ADR-0068 regla 5).
 
 **Alcance:** evaluás sólo lo que cambió. El rango se establece con `git diff` (o `git diff --staged`, o `git diff main...HEAD` si la consigna nombra la rama). Nunca el repositorio entero.
 

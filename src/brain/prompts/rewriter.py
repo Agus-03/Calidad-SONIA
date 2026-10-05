@@ -10,7 +10,7 @@ from functools import lru_cache
 from adapters.llm.base import LLMClient, LLMMessage, LLMRefusal, unfenced
 from classifiers.intent import Intent
 from infra.rules import RulesFileError, load
-from pipeline.repository import Context, content_of
+from pipeline.repository.context import Context, content_of
 
 _FILE = "rewriter.yaml"
 

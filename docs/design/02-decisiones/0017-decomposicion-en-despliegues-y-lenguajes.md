@@ -388,6 +388,6 @@ sonia/                              ← un solo repositorio
 | **Proveedor de LLM** | 8.4: *"GPT-4o / Claude / Cohere / Otros"*. OE2 exige compararlos (pendiente abierto) |
 | **Base vectorial** | 8.4: *"pgvector o Qdrant"*. [ADR-0010](0010-qdrant-como-base-vectorial.md) eligió Qdrant; el puerto protege la reindexación si cambia el modelo de embeddings |
 | **Canal de WhatsApp** | 8.4: *"Twilio Sandbox para desarrollo"* → Anexo D, Fase 4: API oficial de Meta. **El cambio está agendado** |
-| **Almacén de objetos** | F06 admite documentos de 100 MB y los bytes no van en la fila. **El proveedor está sin decidir** (Supabase, DigitalOcean, otro), así que el puerto no es especulativo: es la incertidumbre misma. Go escribe al subir, el `worker` lee al ingerir; `documents.object_key` guarda la clave (H-31) |
+| **Almacén de objetos** | F06 admite documentos de 100 MB y los bytes no van en la fila. **El proveedor está sin decidir** (Supabase, DigitalOcean, otro), así que el puerto no es especulativo: es la incertidumbre misma. *(Lo fijó [ADR-0019](0019-almacenamiento-de-objetos.md), Supabase, y [ADR-0069](0069-almacen-de-objetos-en-firebase.md) lo cambió a Cloud Storage for Firebase antes de escribir el adaptador: la incertidumbre era real.)* Go escribe al subir, el `worker` lee al ingerir; `documents.object_key` guarda la clave (H-31) |
 
 En el resto —ABM de contactos, etiquetas, recordatorios— **un repositorio alcanza**. No conviene inventar puertos donde no hay dos implementaciones a la vista.

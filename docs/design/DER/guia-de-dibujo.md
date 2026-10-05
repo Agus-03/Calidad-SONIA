@@ -253,7 +253,7 @@ FK  prompt_component_version_id → prompt_component_versions  ⇄ B2
 | `generations` | 0..1 — 0..1 | `messages` | **`generations.message_id`** | B1 |
 | `operators` | 0..1 — 0..* | `generations` | `generations.reviewed_by_operator_id` | B5 |
 | `prompt_component_versions` | 1 — 0..* | `generation_components` | `.prompt_component_version_id` | B2 |
-| `generations` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.generation_id` | B4 |
+| `pipeline_steps` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.pipeline_step_id` | B4 |
 | `generations` | 0..1 — 0..* | `tone_evaluations` | `tone_evaluations.generation_id` | B7 |
 | `message_batches` | 1 — 0..* | `signal_evaluations` | `signal_evaluations.message_batch_id` | B7 |
 
@@ -290,7 +290,7 @@ FK  document_id           → documents
 ### `retrieval_logs`  — inmutable
 ```
 PK  id
-FK  generation_id         → generations         ⇄ B3
+FK  pipeline_step_id      → pipeline_steps      ⇄ B3
 FK  document_chunk_id     → document_chunks
     similarity_score, rank, created_at
 ```
@@ -307,7 +307,7 @@ FK  document_chunk_id     → document_chunks
 |---|---|---|---|---|
 | `ai_agents` | 1 — **0..1** | `knowledge_bases` | `knowledge_bases.ai_agent_id` (único) | B2 |
 | `operators` | 1 — 0..* | `documents` | `documents.uploaded_by_operator_id` | B5 |
-| `generations` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.generation_id` | B3 |
+| `pipeline_steps` | 1 — 0..* | `retrieval_logs` | `retrieval_logs.pipeline_step_id` | B3 |
 
 ---
 

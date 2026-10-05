@@ -45,6 +45,8 @@ def test_the_shipped_file_answers_every_cut_a_turn_can_take_today() -> None:
     assert spec.text_for(PipelineStep.BLOCKLIST, MessageDirection.INBOUND)
     assert spec.text_for(PipelineStep.BLOCKLIST, MessageDirection.OUTBOUND)
     assert spec.text_for(PipelineStep.GUARDRAIL, MessageDirection.OUTBOUND)
+    # The grounding's cut is told, unlike the triage's: the question was for this business (ADR-0068, regla 8).
+    assert spec.text_for(PipelineStep.GROUNDING, MessageDirection.INBOUND)
 
 
 # Decision O1c, which is the reason this file has a shape at all: a question outside the domain is not told anything. The core
@@ -62,13 +64,13 @@ def test_a_text_for_the_triage_is_refused_while_loading(tmp_path, monkeypatch) -
         notices.rules()
 
 
-# The inbound guardrail redacts and never cuts, and nothing after the triage cuts yet: a step with no entry says nothing, which is
+# The inbound guardrail redacts and never cuts, and the retrieval never does either: a step with no entry says nothing, which is
 # the same shape as the triage and is why the case above exists.
 @pytest.mark.parametrize(
     ("step", "direction"),
     [
         (PipelineStep.GUARDRAIL, MessageDirection.INBOUND),
-        (PipelineStep.GROUNDING, MessageDirection.INBOUND),
+        (PipelineStep.RETRIEVAL, MessageDirection.INBOUND),
         (PipelineStep.GENERATION, MessageDirection.OUTBOUND),
     ],
 )

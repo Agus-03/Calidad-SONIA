@@ -2,8 +2,9 @@
 name = "sonia-brain"
 version = "0.1.0"
 description = "SONIA — cerebro: ensamblado de prompts, RAG y clasificadores (desplegable 2 de ADR-0017)"
-# Capped because the provider SDKs are: an open upper bound makes the resolver refuse a range they cannot satisfy.
-requires-python = ">=3.14,<4.0"
+# Capped because the provider SDKs are: an open upper bound makes the resolver refuse a range they cannot satisfy. voyageai caps
+# at 3.15, so the whole brain does (ADR-0071).
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -17,6 +18,20 @@ dependencies = [
     "openai>=1.50",
     # Runtime and not development: rules/ is read while a turn runs, so the production image needs it (regla 9).
     "pyyaml>=6.0",
+    # F06, the worker's ingestion (ADR-0064, ADR-0065, ADR-0067, ADR-0071): the embeddings and the tokenizer that counts its chunks,
+    "voyageai>=0.5",
+    # the text and the images of a PDF, pure Python and BSD (ADR-0071), pinned because the layout mode's text depends on the
+    # version and chunking_version does not record it: moving it changes the cuts, so it goes with a new version of
+    # rules/chunking.yaml (ADR-0076),
+    "pypdf==6.19.0",
+    # which pypdf needs to decode an image and the description to measure it,
+    "pillow>=11.0",
+    # the bytes the core uploaded to Firebase, honouring STORAGE_EMULATOR_HOST like the core does (ADR-0069, ADR-0070),
+    "google-cloud-storage>=3.0",
+    # the AES-256-GCM of ADR-0031, in the format the core seals the documents with (ADR-0064, regla 1),
+    "cryptography>=44.0",
+    # and Qdrant's REST API, which the SDKs already pull in and the adapter now names as its own (ADR-0010, ADR-0071).
+    "httpx>=0.27",
 ]
 
 [tool.poetry]

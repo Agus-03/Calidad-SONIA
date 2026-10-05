@@ -99,7 +99,7 @@ Ocho reglas la acompañan, y son la decisión tanto como el titular:
 | **Meter el rol dentro del token** | Ahorraría la lectura de la fila, y a cambio una baja o un cambio de rol tardarían hasta doce horas en tener efecto. Es lo contrario de lo que ADR-0011 necesita |
 | **Una vida de una semana** | Evaluada y descartada: sin lista de revocación, la duración del token **es** la única mitigación que la decisión tiene, y estirarla a 168 horas la multiplica por 21 sobre una aplicación que le da a un `admin` el DNI, el CUIT y el CBU de toda la cartera. Doce horas resuelven lo que la semana buscaba —no volver a loguearse en la mitad de la jornada— sin ampliar esa ventana |
 | **Agregar un *refresh token*** | Trae de vuelta el almacenamiento y la rotación que la decisión evitó, para resolver una fricción —volver a loguearse una vez por jornada— que nadie reportó |
-| **Delegar la autenticación en Supabase** | [ADR-0019](0019-almacenamiento-de-objetos.md) declara que Supabase se usa **exclusivamente** como almacén de objetos, y explícitamente no como proveedor de autenticación |
+| **Delegar la autenticación en Supabase** | [ADR-0019](0019-almacenamiento-de-objetos.md) declara que Supabase se usa **exclusivamente** como almacén de objetos, y explícitamente no como proveedor de autenticación. *(Desde [ADR-0069](0069-almacen-de-objetos-en-firebase.md) el almacén es Cloud Storage for Firebase y Supabase no se usa. El descarte vale igual para Firebase Authentication, que ese ADR también deja afuera.)* |
 
 ## 6. Relación con ADR-0017 (k), que descartó JWT
 

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from infra import ids
 from infra.enums import TransferSignalType
-from pipeline.repository import SignalEvaluation, TransferPolicy
+from pipeline.repository.signals import SignalEvaluation, TransferPolicy
 from pipeline.triage import Verdict
 
 # The fixed order of ADR-0021: the first signal that fired is the one the transfer is attributed to.

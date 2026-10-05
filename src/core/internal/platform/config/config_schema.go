@@ -19,6 +19,16 @@ type Config struct {
 	// The raw 32 bytes, already decoded: whoever holds the Config must not have to learn that the environment carries them in base64 (ADR-0031).
 	EncryptionKey []byte
 
+	// The documents of F06 have a key of their own, because the worker decrypts them and must not hold ENCRYPTION_KEY (ADR-0064, regla 2).
+	DocumentEncryptionKey []byte
+
+	// Where the encrypted documents go (ADR-0069). The credential is a file and not a value: a service account is a JSON document.
+	StorageBucket          string
+	StorageCredentialsFile string
+	// The fake-gcs-server of the smoke, never the real service: config refuses it outside development and test (ADR-0070).
+	StorageEmulatorHost string
+	StorageTimeout      time.Duration
+
 	// Read but never required: only `make seed-admin` needs these, so a missing one must not stop the process from serving (regla 3).
 	SeedAdminEmail       string
 	SeedAdminPassword    string

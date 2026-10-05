@@ -12,7 +12,8 @@ import yaml
 from adapters.llm.base import LLMClient, LLMMessage
 from infra import ids
 from infra.enums import GenerationStatus, MessageDirection
-from pipeline.repository import Generation, Turn
+from pipeline.repository.turn import Turn
+from pipeline.repository.evidence import Generation
 from prompts.assembler import Prompt
 
 # Anchored to the package and not to the working directory: the brain runs in a container, where neither is the repository.

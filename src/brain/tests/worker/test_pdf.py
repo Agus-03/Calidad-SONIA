@@ -32,6 +32,40 @@ def test_a_nul_in_the_text_is_dropped_before_postgresql_sees_it(monkeypatch: pyt
     assert page.text == "Depto 2 ambientes"
 
 
+# ADR-0076: the layout mode keeps the lines and the blank line between paragraphs, and drops the padding that places them.
+def test_the_layout_mode_keeps_the_lines_and_drops_the_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+    def extract(self: PageObject, *args: object, extraction_mode: str = "plain", **kwargs: object) -> str:
+        if extraction_mode == "layout":
+            return "      Depto   2   ambientes   \n\n   en  Jesus Maria\t\t\n"
+        return "Depto\n \n2\n \nambientes"
+
+    monkeypatch.setattr(PageObject, "extract_text", extract)
+
+    (layout,) = read(text_pdf(["x"]), max_side=1568, mode="layout")
+    (plain,) = read(text_pdf(["x"]), max_side=1568)
+
+    assert layout.text == "Depto 2 ambientes\n\nen Jesus Maria\n"
+    assert plain.text == "Depto\n \n2\n \nambientes", "plain is still pypdf's text as it comes"
+
+
+def test_the_layout_mode_reads_a_real_pdf_line_by_line() -> None:
+    (page,) = read(text_pdf(["Depto 2 ambientes\nRequisitos para alquilar"]), max_side=1568, mode="layout")
+    assert page.text.strip() == "Depto 2 ambientes\nRequisitos para alquilar"
+
+
+def test_a_page_the_layout_mode_cannot_read_is_read_plain(monkeypatch: pytest.MonkeyPatch) -> None:
+    def extract(self: PageObject, *args: object, extraction_mode: str = "plain", **kwargs: object) -> str:
+        if extraction_mode == "layout":
+            raise ZeroDivisionError("a font without widths")
+        return "Depto 2 ambientes"
+
+    monkeypatch.setattr(PageObject, "extract_text", extract)
+
+    (page,) = read(text_pdf(["x"]), max_side=1568, mode="layout")
+
+    assert page.text == "Depto 2 ambientes"
+
+
 def test_what_is_not_a_pdf_is_refused_as_unreadable() -> None:
     with pytest.raises(UnreadablePDF):
         read(b"%PDF-1.7 esto no tiene objetos", max_side=1568)

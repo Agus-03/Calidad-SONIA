@@ -8,6 +8,9 @@ from functools import lru_cache
 
 from infra import rules as rules_file
 
+# The two ways pypdf reads a page's text (ADR-0076).
+PDF_TEXT_MODES = ("plain", "layout")
+
 
 @dataclass(frozen=True)
 class ChunkingRules:
@@ -17,6 +20,8 @@ class ChunkingRules:
     # The equivalence the tokens are estimated with (ADR-0071).
     chars_per_token: int
     separators: tuple[str, ...]
+    # How the worker extracts the text it cuts, versioned with the cut because it decides where the separators fall (ADR-0076).
+    pdf_text: str
 
     # What document_chunks.token_count stores: an estimate, from the same equivalence the cut was made with.
     def estimate_tokens(self, text: str) -> int:
@@ -36,11 +41,15 @@ def rules() -> ChunkingRules:
         raise rules_file.RulesFileError("rules: chunking.yaml has no separators list")
     if separators[-1] != "":
         raise rules_file.RulesFileError("rules: chunking.yaml has to end its separators with the empty string, the last resort")
+    pdf_text = loaded.raw.get("pdf_text")
+    if pdf_text not in PDF_TEXT_MODES:
+        raise rules_file.RulesFileError(f"rules: chunking.yaml pdf_text has to be one of {', '.join(PDF_TEXT_MODES)}")
     return ChunkingRules(
         version=loaded.version,
         max_tokens=loaded.integer("max_tokens", minimum=1),
         chars_per_token=loaded.integer("chars_per_token", minimum=1),
         separators=tuple(separators),
+        pdf_text=pdf_text,
     )
 
 

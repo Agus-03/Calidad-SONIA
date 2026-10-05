@@ -1,6 +1,11 @@
 # The chunking of ADR-0065, versioned as data (regla 9) because what it cuts is what retrieval finds, and with it OE6. Every chunk
 # records this version in document_chunks.chunking_version (regla 9 of the ADR), so a measurement knows which cut it searched.
-version: 1
+version: 2
+
+# How pypdf reads the text that is cut (ADR-0076): "layout" places each line as it sits on the page and keeps the blank lines of
+# a vertical gap, which the separators read as the end of a paragraph; "plain" was version 1, and it put a line break between
+# every two words of the anteproyecto. It is here because it changes what is cut as much as any separator does.
+pdf_text: layout
 
 # About 500 tokens (ADR-0065, regla 8). A number to start from, which the retrieval evaluation of regla 3 validates.
 max_tokens: 500

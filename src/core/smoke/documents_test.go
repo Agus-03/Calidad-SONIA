@@ -135,9 +135,10 @@ func TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker(t *testing.T) {
 		awaitStatus(ctx, t, pool, documentID, "indexed")
 		var chunks, versioned int
 		var content string
+		// chunking_version is the version of the brain's rules/chunking.yaml, which ADR-0076 took to 2.
 		if err := pool.QueryRow(ctx, `
 			SELECT count(*),
-			       count(*) FILTER (WHERE chunking_version = 1 AND description_prompt_version IS NULL AND embedding_model = 'double'
+			       count(*) FILTER (WHERE chunking_version = 2 AND description_prompt_version IS NULL AND embedding_model = 'double'
 			                          AND vector_id = id::text AND token_count > 0),
 			       string_agg(content, ' ')
 			FROM   document_chunks WHERE document_id = $1 AND deleted_at IS NULL`, documentID).Scan(&chunks, &versioned, &content); err != nil {

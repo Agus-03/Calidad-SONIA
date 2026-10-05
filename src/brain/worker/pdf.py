@@ -2,6 +2,7 @@
 
 import io
 import logging
+import re
 from dataclasses import dataclass
 
 from PIL import Image
@@ -12,6 +13,9 @@ logger = logging.getLogger("sonia.worker.pdf")
 
 # The formats the three providers' vision models take as they are; anything else is converted before it is sent.
 _SENDABLE = {"JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif", "WEBP": "image/webp"}
+
+# The padding pypdf's layout mode writes to put a line at its column on the page.
+_PADDING = re.compile(r"[ \t]{2,}")
 
 
 class UnreadablePDF(Exception):
@@ -36,7 +40,8 @@ class Page:
 # read never fails on one image: an image that cannot be decoded is left out and logged, and the page keeps its text (ADR-0067,
 # regla 9). It fails on the document, when pypdf cannot open it at all. min_width and min_height leave out, before decoding them,
 # the images whose declared size is under the minimum of ADR-0067, regla 6: a logo repeated on every page is never decoded.
-def read(data: bytes, *, max_side: int, min_width: int = 1, min_height: int = 1) -> list[Page]:
+# mode is pdf_text of rules/chunking.yaml (ADR-0076).
+def read(data: bytes, *, max_side: int, min_width: int = 1, min_height: int = 1, mode: str = "plain") -> list[Page]:
     try:
         reader = PdfReader(io.BytesIO(data))
         pages = list(reader.pages)
@@ -48,12 +53,25 @@ def read(data: bytes, *, max_side: int, min_width: int = 1, min_height: int = 1)
         try:
             # PostgreSQL refuses a NUL in text, and some fonts make pypdf return one: it goes here, before the chunking, so what is
             # embedded and what document_chunks stores are still the same text.
-            text = (page.extract_text() or "").replace("\x00", "")
+            text = _text(page, number, mode).replace("\x00", "")
         except Exception as err:  # noqa: BLE001 - one page pypdf cannot read must not cost the document its other pages
             logger.warning("page text not extracted", extra={"context": {"page": number, "error": str(err)}})
             text = ""
         out.append(Page(number=number, text=text, images=tuple(_images(page, number, max_side, min_width, min_height))))
     return out
+
+
+# In layout mode the padding goes and the line breaks stay: runs of spaces become one and each line loses its margins, which are
+# not text and would count as characters in the estimate of ADR-0071, while the blank lines of a vertical gap are what the
+# separators read as the end of a paragraph. A page the layout mode cannot read is read plain, so it keeps its text (ADR-0076).
+def _text(page: object, number: int, mode: str) -> str:
+    if mode == "layout":
+        try:
+            laid_out = page.extract_text(extraction_mode="layout") or ""  # type: ignore[attr-defined]
+            return "\n".join(_PADDING.sub(" ", line).strip() for line in laid_out.split("\n"))
+        except Exception as err:  # noqa: BLE001 - the layout mode is the newer one in pypdf, and it fails on pages plain reads
+            logger.warning("page text read plain", extra={"context": {"page": number, "error": str(err)}})
+    return page.extract_text() or ""  # type: ignore[attr-defined]
 
 
 def _images(page: object, number: int, max_side: int, min_width: int, min_height: int) -> list[PageImage]:

@@ -293,7 +293,7 @@ Una fila **por cada paso del pipeline ejecutado en un turno**. El pipeline es: *
 > | `blocklist` | `pass` · `blocked` |
 > | `guardrail` | `pass` · `blocked` · `modified` |
 > | `triage` | `in_domain` · `out_of_domain` |
-> | `retrieval` | `hit` · `empty` |
+> | `retrieval` | `hit` · `empty` · `failed` *(`failed` agregado por [ADR-0077](../02-decisiones/0077-busqueda-fallida-y-arranque-sin-busqueda.md): Voyage o Qdrant no respondieron)* |
 > | `reranking` | `applied` · `skipped` |
 > | `grounding` | `grounded` · `not_grounded` |
 > | `generation` | `ok` · `failed` |

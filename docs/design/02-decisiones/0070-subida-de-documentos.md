@@ -41,6 +41,7 @@
 - **Un emulador y no un doble en memoria** porque así se ejecuta el adaptador que va a producción: la URL, el escape de la clave, el cuerpo y los códigos de estado. Un doble activado por una variable probaría el resto y dejaría sin ejecutar justo la parte que habla con Google.
 - **HTTP directo y no un SDK** porque el núcleo sólo sube y borra, dos llamadas. El cliente oficial de Cloud Storage arrastra gRPC y telemetría a la imagen para eso, y el SDK de Firebase lo envuelve. `x/oauth2` suma un solo módulo directo y uno indirecto.
 - **Dos llaves distintas por la regla 2 de ADR-0064**: el `worker` tiene la de documentos y no debe poder leer el DNI. Si las dos fueran iguales, esa regla se cumpliría en la configuración y no en los hechos.
+- **Megabytes binarios porque son los que ve el admin.** El anteproyecto dice *"documentos de hasta 100 MB por agente"* (7.2, OE6) y no dice qué megabyte. El Explorador de Windows muestra los tamaños en múltiplos de 1024² y los llama "MB", así que un archivo que el admin ve de 100 MB entra en la base, y uno que ve de 101 MB no. Con megabytes decimales, un archivo que el Explorador muestra de 96 MB ya no entraría. *(Justificación agregada el 2026-10-05, a pedido de la revisión de diseño de la Fase 12.)*
 - **El control en la aplicación** porque el bloqueo de la base ya serializa todas las subidas y bajas de esa base (ADR-0064, regla 6), y con eso alcanza. Un índice único sobre `(knowledge_base_id, checksum)` parcial por `deleted_at` diría lo mismo con una línea de DDL más.
 
 ## 4. Consecuencias
@@ -54,6 +55,7 @@
 ### Negativas / costos asumidos
 
 - **Unos 200 MB de RAM por subida de 100 MB**, y dos subidas grandes simultáneas los duplican. Nada limita cuántas subidas corren a la vez.
+- **El límite es un 4,9 % más generoso que la lectura decimal** del anteproyecto: 104.857.600 bytes y no 100.000.000. Quien lea "100 MB" como el Sistema Internacional ve un límite más alto que el escrito. Además, no todos los sistemas operativos usan los mismos múltiplos: macOS muestra los tamaños en múltiplos de 1000, así que ahí un archivo que se ve de 104 MB todavía entra.
 - **Un PDF re-exportado no es un duplicado.** El mismo contenido guardado otra vez cambia los bytes y el *checksum*, y entra dos veces. La regla 1 atrapa el mismo archivo, no el mismo documento.
 - **El emulador no es Firebase.** No prueba la cuenta de servicio contra Google, ni las reglas de seguridad de ADR-0069, ni los límites reales. El intercambio del token se prueba contra un servidor local en los tests unitarios, y nada más.
 - **El adaptador es código nuestro contra una API de Google**, sin el SDK que la sigue. Si la API cambia, el arreglo es nuestro.

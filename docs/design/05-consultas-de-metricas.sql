@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · OE6 con el RAG construido 2026-10-04 (ADR-0075): el not_grounded escala y los agentes sin base salen · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · OE6 con el RAG construido 2026-10-04 (ADR-0075): el not_grounded escala y los agentes sin base salen · la búsqueda fallida como no respondida 2026-10-05 (ADR-0077) · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -830,6 +830,18 @@ ORDER  BY te.rubric_version;
 --       se guarda, así que un documento que falló cuenta como cargado. Y el
 --       agente es el que la conversación tiene hoy, no el de ese momento.
 --
+-- (e) ADR-0077 — un bloque cuya búsqueda falló (Voyage o Qdrant no
+--     respondieron) es una consulta NO RESPONDIDA: el turno falló y el agente
+--     no contestó. No es una escalada, porque nadie transfirió; resta igual.
+--     La deja el paso `retrieval` con `outcome = 'failed'`. Si un reintento
+--     del núcleo después responde, esa fila se borra con el rastro viejo.
+--
+--     Abierto (README de decisiones, pendiente del Paso 11): una transferencia
+--     marca TODOS los bloques de su conversación, y un `not_grounded` sin
+--     transferencia sólo el suyo, así que apagar la política `out_of_domain`
+--     mejora OE6. Si se cuenta por bloque o por conversación se decide en la
+--     etapa de medición (ADR-0077).
+--
 -- FORMA DE LA CONSULTA
 
 WITH escaladas_del_dominio AS (        -- (c): sólo out_of_domain (ADR-0024)
@@ -862,7 +874,7 @@ consultas_del_dominio AS (             -- (b): unidad = bloque
                  AND  (d.deleted_at IS NULL OR d.deleted_at > mb.closed_at))
       AND  mb.closed_at >= :desde AND mb.closed_at < :hasta
 ),
-escaladas AS (                          -- (c): la conversación terminó escalando por fuera de dominio
+no_respondidas AS (                     -- (c): la conversación terminó escalando por fuera de dominio
     SELECT c.message_batch_id
     FROM   consultas_del_dominio c
     JOIN   escaladas_del_dominio e ON e.conversation_id = c.conversation_id
@@ -871,10 +883,15 @@ escaladas AS (                          -- (c): la conversación terminó escala
     FROM   consultas_del_dominio c
     JOIN   pipeline_steps g ON g.message_batch_id = c.message_batch_id
     WHERE  g.step = 'grounding' AND g.outcome = 'not_grounded'
+    UNION                               -- (e): o la búsqueda de este bloque falló
+    SELECT c.message_batch_id
+    FROM   consultas_del_dominio c
+    JOIN   pipeline_steps r ON r.message_batch_id = c.message_batch_id
+    WHERE  r.step = 'retrieval' AND r.outcome = 'failed'
 )
 SELECT count(*)                                                    AS consultas_del_dominio,
-       count(*) - (SELECT count(*) FROM escaladas)                 AS sin_escalada,
-       round(100.0 * (count(*) - (SELECT count(*) FROM escaladas))
+       count(*) - (SELECT count(*) FROM no_respondidas)            AS respondidas_sin_escalada,
+       round(100.0 * (count(*) - (SELECT count(*) FROM no_respondidas))
              / count(*), 2)                                        AS oe6_pct
 FROM   consultas_del_dominio;
 
@@ -990,7 +1007,7 @@ ORDER  BY conversion_pct DESC NULLS LAST;
 --   OE3  [OK]         · con ADR-0014 (precision, unidad = conversación)
 --   OE4  [OK]         · frustración con ADR-0014; intención con ADR-0023 y ADR-0048
 --   OE5  [NO-SQL]     · cobertura de tests
---   OE6  [OK]         · con ADR-0016 (a), ADR-0024 (b) y (c) y ADR-0075 (d)
+--   OE6  [OK]         · con ADR-0016 (a), ADR-0024 (b) y (c), ADR-0075 (d) y ADR-0077 (e)
 --   OE7  [PARCIAL]    · resolución autónoma OK; tono bloqueado por H-22
 --   F34  [OK]
 --   F35  [BLOQUEADA]  · H-25 — regla de atribución

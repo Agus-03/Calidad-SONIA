@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · el umbral provisorio en 0,5, fallar el paso si Voyage o Qdrant fallan, 5 s para cada una y 15 s para el turno entero, decididos por el grupo el 2026-10-04 · las reglas 4 a 11 son decisiones de construcción, tomadas al escribir `pipeline/retrieval.py` y `pipeline/grounding.py` |
+| **Estado** | Aceptada · el umbral provisorio en 0,5, fallar el paso si Voyage o Qdrant fallan, 5 s para cada una y 15 s para el turno entero, decididos por el grupo el 2026-10-04 · las reglas 4 a 11 son decisiones de construcción, tomadas al escribir `pipeline/retrieval.py` y `pipeline/grounding.py` · **reglas 2 y 5 enmendadas el 2026-10-05 por [ADR-0077](0077-busqueda-fallida-y-arranque-sin-busqueda.md)**: la búsqueda que falla deja su fila `retrieval` con `outcome = 'failed'`, y fuera de `development` y `test` el cerebro no arranca sin búsqueda |
 | **Fecha** | 2026-10-04 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Lo que [ADR-0068](0068-recuperacion-y-grounding.md) y [ADR-0073](0073-busqueda-semantica.md) dejaron para el paso `retrieval`: el umbral inicial, los tiempos de la búsqueda dentro del turno y qué hace el turno si la búsqueda falla. Dibuja la rama del corte del `grounding` en [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) §4 B.3 |
@@ -25,10 +25,10 @@
 | # | Regla |
 |---|---|
 | 1 | **El umbral arranca en 0,5** de similitud coseno, en `rules/retrieval.yaml`. Es provisorio: lo calibra la evaluación de recuperación |
-| 2 | **Si Voyage o Qdrant fallan, falla el paso y con él el turno**, como cuando falla el proveedor del `triage`: el cerebro responde `outcome = 'failed'` y conserva los pasos que sí decidieron. No se sigue sin documentos ni se transfiere |
+| 2 | **Si Voyage o Qdrant fallan, falla el paso y con él el turno**, como cuando falla el proveedor del `triage`: el cerebro responde `outcome = 'failed'` y conserva los pasos que sí decidieron. No se sigue sin documentos ni se transfiere *(Enmendada por [ADR-0077](0077-busqueda-fallida-y-arranque-sin-busqueda.md), regla 1: también escribe la fila de `retrieval`, con `outcome = 'failed'`, para que OE6 cuente el bloque como no respondido.)* |
 | 3 | **El turno espera 5 s a Voyage y 5 s a Qdrant** (`RETRIEVAL_TIMEOUT_SECONDS`), **y el núcleo espera 15 s por el turno entero** (`BRAIN_TIMEOUT_MS`, antes 10 s). El `worker` sigue con sus 30 s. Cada tope es de la llamada entera, no de una fase de ella: los dos adaptadores envuelven la llamada en `asyncio.timeout`, como los del LLM |
 | 4 | **Los dos pasos corren después de evaluar las señales del `triage`, fuera de `runner.INBOUND`.** Siguen siendo del tramo de entrada (ADR-0068, regla 1), pero no son entradas de esa tupla. Las posiciones siguen el orden de ADR-0068, regla 1: `triage` en la 3, `retrieval` en la 4 y `grounding` en la 5 |
-| 5 | **Un agente sin base, un saludo o un cerebro sin búsqueda configurada no recuperan**: los dos pasos no escriben filas (ADR-0068, reglas 9 y 10) |
+| 5 | **Un agente sin base, un saludo o un cerebro sin búsqueda configurada no recuperan**: los dos pasos no escriben filas (ADR-0068, reglas 9 y 10) *(Enmendada por [ADR-0077](0077-busqueda-fallida-y-arranque-sin-busqueda.md), regla 3: un cerebro sin búsqueda configurada sólo existe en `development` y `test`; en cualquier otro `ENVIRONMENT` no arranca.)* |
 | 6 | **El texto de búsqueda es el resumen seguido del bloque, con un tope de caracteres** (`max_query_chars`, 4000). Pasado el tope se conserva el final: se recorta primero el principio del resumen y recién después el del bloque |
 | 7 | **`retrieval_logs` lo escribe la misma función que escribe el rastro**, colgado de la fila de `retrieval` y en la misma transacción. Al reintentar un bloque (ADR-0020), los logs viejos se borran junto con las filas de las que cuelgan, en una sola sentencia |
 | 8 | **El `detail_json` de `retrieval` lleva `top_k`, el umbral, cuántos documentos quedaron afuera por modelo, cuántos puntos se descartaron, el largo del texto buscado y si el tope lo recortó.** Nunca el texto: lleva lo que escribió la clienta. El del `grounding` lleva el umbral y cuántos trozos lo alcanzaron |
@@ -60,7 +60,7 @@
 - **Con 15 s por intento, el presupuesto del turno de 30 s (ADR-0029) alcanza para dos intentos y no para tres.** La cuenta de ADR-0029 —*"hasta 10 s por intento, con hasta tres intentos"*— queda corta.
 - **Una caída de Voyage o de Qdrant deja a todos los agentes con base sin responder** mientras dura, aunque la pregunta no necesitara documentos.
 - **El umbral es provisorio**, y equivocarse duele en las dos direcciones: bajo, deja pasar trozos que no responden; alto, transfiere preguntas que los documentos sí responden. Ninguno de los dos errores se ve sin la evaluación.
-- **Un cerebro sin búsqueda configurada contesta sin documentos**, y sólo lo dice el log de arranque. Un agente con base no se entera.
+- **Un cerebro sin búsqueda configurada contesta sin documentos**, y sólo lo dice el log de arranque. Un agente con base no se entera. *(Desde [ADR-0077](0077-busqueda-fallida-y-arranque-sin-busqueda.md), sólo en `development` y `test`.)*
 - **El umbral de la política `out_of_domain` no afecta al `grounding`.** Su corte lo decide el umbral de `retrieval.yaml`, y de la política sólo cuenta si está encendida. Un administrador que mueva ese umbral mueve el del `triage` y no el del RAG.
 - **En modo sugerencia, un `not_grounded` deja al Operator sin borrador** para ese turno: no hay generación, y el núcleo no envía el texto ni transfiere (ADR-0046).
 - **Cada turno que recupera suma dos filas a `pipeline_steps` y hasta `top_k` a `retrieval_logs`**, que crecen con cada bloque y no se borran.

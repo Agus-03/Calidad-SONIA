@@ -253,7 +253,7 @@ La búsqueda corrió y ningún trozo alcanzó el umbral: el `grounding` devuelve
 
 La diferencia con el corte del `triage` (B.1 no lo cubre: ese corte delega en silencio, decisión O1c) es lo que la clienta preguntó. Allá, algo que el negocio no atiende; acá, algo que el negocio atiende y el agente no supo contestar con sus documentos, y por eso se le avisa.
 
-> **Una búsqueda que falla no es este corte.** Si Voyage o Qdrant no responden, el turno falla como cuando falla el proveedor del `triage` (ADR-0074, regla 2): el cerebro responde `outcome = 'failed'` y conserva los pasos que sí decidieron. Es la rama C de §5, no un `not_grounded`.
+> **Una búsqueda que falla no es este corte.** Si Voyage o Qdrant no responden, el turno falla como cuando falla el proveedor del `triage` (ADR-0074, regla 2): el cerebro responde `outcome = 'failed'` y conserva los pasos que sí decidieron, más la fila de `retrieval` con `outcome = 'failed'` *(agregada por [ADR-0077](02-decisiones/0077-busqueda-fallida-y-arranque-sin-busqueda.md), regla 2: sin ella, OE6 contaba el bloque como respondido)*. Es la rama C de §5, no un `not_grounded`.
 
 ---
 

@@ -43,3 +43,9 @@ services:
     ports:
       # The loopback only, like the database: the smoke reads the objects back from the host.
       - "127.0.0.1:4443:4443"
+    # So `up --wait` returns with the store listening, and the smoke's first call to create its bucket does not race its boot.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:4443/_internal/healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

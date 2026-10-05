@@ -178,7 +178,8 @@ func (s *Service) Delete(ctx context.Context, scope Scope, agentID, documentID u
 	if err := s.agentExists(ctx, scope, agentID); err != nil {
 		return err
 	}
-	return s.tx(ctx, func(tx Store) error {
+	var removed uuid.UUID
+	err := s.tx(ctx, func(tx Store) error {
 		// The base first and the document second, the order Upload takes them in, so the two never wait on each other.
 		locked, err := tx.KnowledgeBaseForUpdate(ctx, agentID)
 		if errors.Is(err, errNoKnowledgeBase) {
@@ -197,9 +198,15 @@ func (s *Service) Delete(ctx context.Context, scope Scope, agentID, documentID u
 		if err := tx.AddSize(ctx, locked.ID, -doc.SizeBytes); err != nil {
 			return err
 		}
-		s.log.Info("document removed", slog.String("document_id", doc.ID.String()), slog.String("operator_id", scope.OperatorID.String()))
+		removed = doc.ID
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// After the commit and not inside the transaction: a commit that fails would leave a log of a removal that never happened.
+	s.log.Info("document removed", slog.String("document_id", removed.String()), slog.String("operator_id", scope.OperatorID.String()))
+	return nil
 }
 
 func (s *Service) agentExists(ctx context.Context, scope Scope, agentID uuid.UUID) error {

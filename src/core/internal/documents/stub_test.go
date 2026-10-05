@@ -25,6 +25,10 @@ type stubStore struct {
 	readErr error
 	// Called inside the transaction before the lock, so a test can play the upload that won the race.
 	beforeLock func(*stubStore)
+	// Set to make the n-th duplicate check fail, counted from 1: the first is the one before the upload, the second the one under
+	// the lock. readErr cannot reach them, because it stops the upload at the agent.
+	checksumErrOn int
+	checksumCalls int
 }
 
 func newStubStore(accountID uuid.UUID, agents ...uuid.UUID) *stubStore {
@@ -109,6 +113,9 @@ func (s *stubStore) ChecksumTaken(_ context.Context, knowledgeBaseID uuid.UUID, 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.checksumCalls++; s.checksumCalls == s.checksumErrOn {
+		return false, errBoom
+	}
 	for _, d := range s.docs {
 		if d.KnowledgeBaseID == knowledgeBaseID && d.Checksum == checksum {
 			return true, nil

@@ -186,6 +186,9 @@ func TestTheLimitIsCheckedAgainUnderTheLock(t *testing.T) {
 	if _, err := h.service.Upload(t.Context(), h.scope, h.agentID, validUpload("doble")); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("the same file entered under the lock: got %v, want ErrDuplicate", err)
 	}
+	if len(h.objects.objects) != 0 || len(h.objects.deleted) != 1 {
+		t.Fatalf("the losing duplicate left %d objects and deleted %d, want its object gone", len(h.objects.objects), len(h.objects.deleted))
+	}
 }
 
 // TestARowThatCannotBeWrittenTakesItsObjectWithIt is ADR-0064, regla 6 (d): one attempt, and the key to the log if that fails.
@@ -240,6 +243,26 @@ func TestAStoreOrACipherThatFailsLeavesNoRow(t *testing.T) {
 	}
 	if _, err := h.service.List(t.Context(), h.scope, h.agentID); !errors.Is(err, errBoom) {
 		t.Fatalf("List with a failing read: got %v", err)
+	}
+
+	// The duplicate check failing before the upload costs no transfer, and failing under the lock takes its object with it.
+	before := newFixture()
+	before.store.checksumErrOn = 1
+	if _, err := before.service.Upload(t.Context(), before.scope, before.agentID, validUpload("x")); !errors.Is(err, errBoom) {
+		t.Fatalf("Upload with the first duplicate check failing: got %v, want its error", err)
+	}
+	if len(before.objects.objects) != 0 || len(before.objects.deleted) != 0 {
+		t.Fatalf("a check that failed before the upload stored %d objects and deleted %d, want neither", len(before.objects.objects), len(before.objects.deleted))
+	}
+
+	under := newFixture()
+	under.store.checksumErrOn = 2
+	if _, err := under.service.Upload(t.Context(), under.scope, under.agentID, validUpload("x")); !errors.Is(err, errBoom) {
+		t.Fatalf("Upload with the duplicate check under the lock failing: got %v, want its error", err)
+	}
+	if len(under.store.docs) != 0 || len(under.objects.objects) != 0 || len(under.objects.deleted) != 1 {
+		t.Fatalf("after a failed check under the lock: %d rows, %d objects, %d deletes, want no row and the object deleted once",
+			len(under.store.docs), len(under.objects.objects), len(under.objects.deleted))
 	}
 }
 

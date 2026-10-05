@@ -112,9 +112,11 @@ func (c *Controller) upload(gc *gin.Context) {
 		return
 	}
 	defer func() { _ = file.Close() }()
-	// One byte past the limit, so a file that does not fit is told apart from one that fills it exactly.
-	data, err := io.ReadAll(io.LimitReader(file, MaxKnowledgeBaseBytes+1))
-	if err != nil {
+	// Allocated once at the size the multipart reader measured, and not grown by doubling as io.ReadAll does: the peak stays the
+	// file and its ciphertext that ADR-0070, regla 2, declares. One byte past the limit, so a file that does not fit is told apart
+	// from one that fills it exactly.
+	data := make([]byte, min(header.Size, MaxKnowledgeBaseBytes+1))
+	if _, err := io.ReadFull(file, data); err != nil {
 		soniahttp.Fail(gc, c.log, readFailure(err))
 		return
 	}

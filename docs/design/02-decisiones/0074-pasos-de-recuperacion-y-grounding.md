@@ -7,7 +7,7 @@
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Lo que [ADR-0068](0068-recuperacion-y-grounding.md) y [ADR-0073](0073-busqueda-semantica.md) dejaron para el paso `retrieval`: el umbral inicial, los tiempos de la búsqueda dentro del turno y qué hace el turno si la búsqueda falla. Dibuja la rama del corte del `grounding` en [07-secuencia-del-turno.md](../07-secuencia-del-turno.md) §4 B.3 |
 | **Requisitos afectados** | F06 · F12 · OE6 |
-| **Enmienda** | [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§7, decisión 3** — *"Tres"* reintentos deja de ser lo que pasa: con 15 s por intento y un presupuesto de 30 s (`TURN_BUDGET_MS`, ADR-0029) entran dos. La variable sigue en 3 |
+| **Enmienda** | [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§7, decisión 3** — *"Tres"* reintentos deja de ser lo que pasa: con 15 s por intento y un presupuesto de 30 s (`TURN_BUDGET_MS`, ADR-0029) entran dos. La variable sigue en 3 · [07-secuencia-del-turno.md](../07-secuencia-del-turno.md), **§5** — el presupuesto del turno deja de estar *"en el orden de los diez segundos"*, por lo mismo |
 | **Relacionada con** | [ADR-0016](0016-rastro-del-pipeline-de-respuesta.md), [ADR-0020](0020-idempotencia-de-los-mensajes-salientes.md), [ADR-0029](0029-el-acuse-del-webhook-no-espera-al-turno.md), [ADR-0042](0042-pipeline-de-decision-del-turno.md), [ADR-0045](0045-senales-de-transferencia-y-desactivacion-del-agente-ia.md), [ADR-0046](0046-modo-sugerencia.md), [ADR-0068](0068-recuperacion-y-grounding.md), [ADR-0073](0073-busqueda-semantica.md) |
 
 ---

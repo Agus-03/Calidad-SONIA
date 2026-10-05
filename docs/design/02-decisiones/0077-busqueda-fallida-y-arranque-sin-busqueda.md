@@ -1,8 +1,8 @@
-# ADR-0077 — La búsqueda que falla cuenta como no respondida, y el cerebro no arranca sin búsqueda fuera de desarrollo
+# ADR-0077 — La búsqueda o la generación que falla cuenta como no respondida, y el cerebro no arranca sin búsqueda fuera de desarrollo
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · el bloque cuya búsqueda falló como no respondido en OE6, el cerebro que no arranca sin búsqueda fuera de `development` y `test`, y la forma de contar la escalada de OE6 diferida a la etapa de medición, decididos por el grupo el 2026-10-05 · la regla 2, de construcción |
+| **Estado** | Aceptada · el bloque cuya búsqueda o cuya generación falló como no respondido en OE6, el cerebro que no arranca sin búsqueda fuera de `development` y `test`, y la forma de contar la escalada de OE6 diferida a la etapa de medición, decididos por el grupo el 2026-10-05 · la regla 2, de construcción |
 | **Fecha** | 2026-10-05 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Tres puntos que dejaron abiertos las revisiones del cierre de la Fase 12: qué hace OE6 con un bloque cuya búsqueda falló, qué hace el cerebro si arranca sin poder buscar, y cómo cuenta OE6 una escalada |
@@ -16,7 +16,7 @@
 
 OE6 pide *"que el 90% de las consultas dentro del dominio del negocio sean respondidas sin escalada al operador humano"*. [ADR-0024](0024-unidad-y-alcance-de-oe6.md) y [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md) definieron la consulta, la escalada y el alcance. Las revisiones del cierre de la Fase 12 encontraron tres huecos:
 
-- **La búsqueda que falla.** Si Voyage o Qdrant no responden, el turno falla y el cerebro conserva sólo los pasos que decidieron ([ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), regla 2). El `triage` ya dejó su `in_domain`, así que el bloque entra en el denominador. No hay `grounding` ni transferencia, así que la consulta de OE6 lo contaba como **respondido**, aunque el agente no contestó nada.
+- **La búsqueda que falla.** Si Voyage o Qdrant no responden, el turno falla y el cerebro conserva sólo los pasos que decidieron ([ADR-0074](0074-pasos-de-recuperacion-y-grounding.md), regla 2). El `triage` ya dejó su `in_domain`, así que el bloque entra en el denominador. No hay `grounding` ni transferencia, así que la consulta de OE6 lo contaba como **respondido**, aunque el agente no contestó nada. Lo mismo pasa cuando falla la generación: el paso `generation` queda con `outcome = 'failed'`, y la consulta no lo miraba.
 - **El cerebro sin búsqueda.** Sin `QDRANT_URL` o sin `VOYAGE_API_KEY`, el cerebro arranca, avisa en el log y contesta a todos los agentes sin documentos (ADR-0074, regla 5). Un agente con base contesta sin respaldo, y su OE6 sale perfecto porque ningún bloque puede salir `not_grounded`.
 - **Cómo se cuenta la escalada.** Una transferencia marca como escaladas todas las consultas de su conversación, también las que el agente respondió antes. Un `not_grounded` sin transferencia marca sólo su bloque. Por eso apagar la política `out_of_domain` mejora OE6. El pendiente ya estaba en el [README](README.md), desde el Paso 11.
 
@@ -24,8 +24,8 @@ OE6 pide *"que el 90% de las consultas dentro del dominio del negocio sean respo
 
 | # | Regla |
 |---|---|
-| 1 | **Un bloque cuya búsqueda falló es una consulta no respondida** para OE6. Queda en el denominador y no en las respondidas. No es una escalada, porque nadie transfirió |
-| 2 | **La búsqueda que falla escribe su fila de `retrieval` con `outcome = 'failed'`**, junto con los pasos que decidieron, y el turno sigue fallando como dice ADR-0074, regla 2. Su `detail_json` lleva `top_k`, el umbral, el largo del texto buscado, si se recortó y el nombre del error, pero nunca su mensaje, que puede traer lo que respondió Qdrant. Si un reintento del núcleo después responde, la fila se borra con el rastro viejo (ADR-0074, regla 7) |
+| 1 | **Un bloque cuya búsqueda o cuya generación falló es una consulta no respondida** para OE6. Queda en el denominador y no en las respondidas. No es una escalada, porque nadie transfirió |
+| 2 | **La búsqueda que falla escribe su fila de `retrieval` con `outcome = 'failed'`**, junto con los pasos que decidieron, y el turno sigue fallando como dice ADR-0074, regla 2. Su `detail_json` lleva `top_k`, el umbral, el largo del texto buscado, si se recortó y el nombre del error, pero nunca su mensaje, que puede traer lo que respondió Qdrant. Un `failed` del cerebro no se reintenta. Si el núcleo reintenta el bloque porque falló el salto ([ADR-0020](0020-idempotencia-de-los-mensajes-salientes.md)) y el reintento responde, la fila se borra con el rastro viejo (ADR-0074, regla 7) |
 | 3 | **Fuera de `development` y `test`, el cerebro no arranca sin `QDRANT_URL` y `VOYAGE_API_KEY`**, en ninguno de los dos modos. Es la misma lista de entornos permitidos que la de los dobles, así que un `ENVIRONMENT` mal escrito también queda obligado. En `development` y `test` sigue arrancando sin buscar, con el aviso |
 | 4 | **Si la escalada se cuenta por bloque o por conversación se decide en la etapa de medición.** OE6 no se mide en esta etapa, y la consulta queda como está |
 
@@ -47,7 +47,7 @@ OE6 pide *"que el 90% de las consultas dentro del dominio del negocio sean respo
 
 ### Negativas / costos asumidos
 
-- **Una caída de Voyage o de Qdrant baja OE6.** Es una falla de infraestructura y no de la base de conocimiento, y la métrica no las separa. El diagnóstico de OE6 puede separarlas filtrando por `outcome = 'failed'`.
+- **Una caída de Voyage, de Qdrant o del proveedor del LLM baja OE6.** Es una falla de infraestructura y no de la base de conocimiento, y la métrica no las separa. El diagnóstico de OE6 puede separarlas filtrando por `outcome = 'failed'`.
 - **Un bloque que falló en todos sus intentos queda con una fila `retrieval` sin `grounding`.** Quien lea el rastro tiene que saber que un `failed` cierra el turno.
 - **Una fila más por turno fallido** en `pipeline_steps`.
 - **El cerebro de producción depende de Voyage y de Qdrant para arrancar**, aunque ningún agente tenga documentos todavía. Se puede desplegar sin documentos, pero no sin las dos variables.
@@ -60,7 +60,7 @@ OE6 pide *"que el 90% de las consultas dentro del dominio del negocio sean respo
 | Qué | Estado |
 |---|---|
 | **Si la escalada se cuenta por bloque o por conversación** | En la etapa de medición, con el pendiente del Paso 11 del [README](README.md) |
-| **Si un turno cuya generación falló cuenta como no respondido** | No se decidió: la regla 1 habla de la búsqueda. La consulta de OE6 todavía no mira `generation` |
+| **Los bloques que generaron y no llegaron a la clienta**: la respuesta que cortó el tramo de salida, o el turno que falló en él | Siguen contando como respondidos. La regla 1 habla de la búsqueda y de la generación |
 
 ## 5. Alternativas descartadas
 

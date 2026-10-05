@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · el solapamiento inicial en 0, a validar con una evaluación, una sola estrategia, la recursiva, a la que se suman otras sólo cuando la evaluación muestre un tipo de documento donde falla, trozos de unos 500 tokens, y la versión del chunking, la del prompt de descripción y el modelo de embeddings registrados en cada fila de `document_chunks`, decididos por el grupo el 2026-10-03 · **reglas 3 y 4 enmendadas el 2026-10-04 por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md)**: la evaluación se difiere hasta poder pagar Voyage, se corre con el anteproyecto como documento de prueba y sin comparar solapamientos, que quedan en 0 |
+| **Estado** | Aceptada · el solapamiento inicial en 0, a validar con una evaluación, una sola estrategia, la recursiva, a la que se suman otras sólo cuando la evaluación muestre un tipo de documento donde falla, trozos de unos 500 tokens, y la versión del chunking, la del prompt de descripción y el modelo de embeddings registrados en cada fila de `document_chunks`, decididos por el grupo el 2026-10-03 · **reglas 3 y 4 enmendadas el 2026-10-04 por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md)**: la evaluación se difiere hasta poder pagar Voyage, se corre con el anteproyecto como documento de prueba y sin comparar solapamientos, que quedan en 0 · **§3 enmendada el 2026-10-05 por [ADR-0076](0076-extraccion-del-texto-en-modo-layout.md)**: medido sobre el anteproyecto, la mayoría de los trozos no termina donde termina una idea · **§4 enmendada el 2026-10-05 por [ADR-0078](0078-sin-comparacion-de-modelos-de-embeddings.md)**: la evaluación no compara modelos |
 | **Fecha** | 2026-10-03 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Cómo y con qué parámetros se parte un documento en `document_chunks`, el pendiente de chunking que dejó [ADR-0064](0064-ingesta-de-documentos.md) |
@@ -39,7 +39,7 @@ El valor habitual de cada parámetro se elige de memoria, y el que sirve depende
 ## 3. Justificación
 
 - **Arrancar en 0 porque es el punto de partida que no supone nada.** Un solapamiento de 10 o 15 % es una costumbre, no un dato sobre estos documentos. Empezando sin solapamiento, cualquier valor que se agregue después tiene que ganarse su costo en la evaluación.
-- **Con cortes entre párrafos, el solapamiento aporta poco.** La recursiva corta en los separadores naturales del texto, así que la mayoría de los trozos terminan donde termina una idea, y repetir el final del anterior no agrega contexto.
+- **Con cortes entre párrafos, el solapamiento aporta poco.** La recursiva corta en los separadores naturales del texto, así que la mayoría de los trozos terminan donde termina una idea, y repetir el final del anterior no agrega contexto. *(Enmendado por [ADR-0076](0076-extraccion-del-texto-en-modo-layout.md): medido sobre el anteproyecto, el 40 % de los trozos termina a mitad de una oración, así que este argumento no se sostiene. El solapamiento sigue en 0 por [ADR-0075](0075-medicion-de-oe6-y-evaluacion-de-recuperacion.md), regla 5.)*
 - **La recursiva porque se adapta sola a documentos variados.** Usa los separadores que cada documento tenga y no falla cuando no tiene ninguno: un PDF con títulos se parte por secciones y uno sin estructura, por párrafos u oraciones. Las demás estrategias rinden mejor sólo en un tipo de documento, o cuestan una llamada a un modelo por oración o por trozo al ingerir.
 - **Una estrategia por documento cuesta más en la validación que en el código.** Escribir otra función de fragmentación y un selector es poco código. Lo caro es que cada estrategia y el propio selector necesitan su medición —un selector que se equivoca es invisible si no se mide— y que OE6 sólo es reproducible si se sabe con qué estrategia se partió cada documento. Sumarlas cuando un dato lo justifica paga ese costo una vez por estrategia que sirve, no por cada una que se pruebe.
 - **Un selector determinista y no un LLM** porque el mismo documento tiene que fragmentarse igual en cada reindexación. Un LLM agregaría además una llamada por documento.
@@ -53,7 +53,7 @@ El valor habitual de cada parámetro se elige de memoria, y el que sirve depende
 ### Positivas
 
 - La decisión queda escrita como hipótesis con su forma de comprobarla, no como números elegidos de memoria.
-- La evaluación de la regla 3 sirve también para el resto de los parámetros, para justificar cada estrategia nueva y para comparar modelos de embeddings.
+- La evaluación de la regla 3 sirve también para el resto de los parámetros, para justificar cada estrategia nueva y para comparar modelos de embeddings. *(La comparación de modelos deja de hacerse por [ADR-0078](0078-sin-comparacion-de-modelos-de-embeddings.md).)*
 - Con 0 no hay trozos repetidos: menos vectores y ningún texto duplicado en el prompt.
 - Una sola estrategia es un solo camino que probar mientras no haya datos.
 - Cada medición de OE6 sabe con qué versión de chunking, de prompt de descripción y de modelo se hizo cada trozo que recuperó, también después de una reindexación.

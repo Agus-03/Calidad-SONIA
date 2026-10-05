@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · `pypdf` para leer los PDF, los tokens estimados por caracteres, un Qdrant real con Voyage y la descripción doblados en el *smoke*, y `google-cloud-storage` para leer Firebase, decididos por el grupo el 2026-10-04 · las reglas 5 a 12 son decisiones de construcción, tomadas al escribir `worker/` · **regla 3 enmendada por [ADR-0072](0072-qdrant-en-el-compose.md)** (2026-10-04): Qdrant corre en el compose base, que el *smoke* también levanta, y no en uno propio del *smoke* |
+| **Estado** | Aceptada · `pypdf` para leer los PDF, los tokens estimados por caracteres, un Qdrant real con Voyage y la descripción doblados en el *smoke*, y `google-cloud-storage` para leer Firebase, decididos por el grupo el 2026-10-04 · las reglas 5 a 12 son decisiones de construcción, tomadas al escribir `worker/` · **regla 3 enmendada por [ADR-0072](0072-qdrant-en-el-compose.md)** (2026-10-04): Qdrant corre en el compose base, que el *smoke* también levanta, y no en uno propio del *smoke* · el modo de extracción de la regla 1, fijado el 2026-10-05 por [ADR-0076](0076-extraccion-del-texto-en-modo-layout.md): *layout*, con el normal por página cuando pierde texto, y `pypdf` fijo en 6.19.0 |
 | **Fecha** | 2026-10-04 |
 | **Etapa** | Construcción — Fase 12 (conocimiento) |
 | **Resuelve** | Cómo se construye el `worker` de [ADR-0064](0064-ingesta-de-documentos.md): con qué bibliotecas, cómo se cuentan los 500 tokens de [ADR-0065](0065-fragmentacion-de-documentos.md) y cómo se prueba sin gastar créditos ni sacar documentos |

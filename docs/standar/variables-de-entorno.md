@@ -58,7 +58,7 @@ El núcleo llamando al cerebro. No confundir con la sección 5, que es el cerebr
 | `BRAIN_INTERNAL_TOKEN` | obligatoria en ambos | Secreto compartido con el que el núcleo firma cada llamada al cerebro y el cerebro la verifica (ADR-0017 (k)). Es la única variable que **los dos** procesos exigen con el mismo valor: si no coinciden, el arranque pasa y lo que falla es cada turno. |
 | `BRAIN_BASE_URL` | obligatoria | Dónde vive el cerebro, desde el punto de vista del núcleo. Dentro del compose se reescribe a `http://brain:8000`. |
 | `BRAIN_TIMEOUT_MS` | `15000` | Lo que el núcleo espera por el turno entero antes de cortar. Es el techo del que cuelgan los tiempos del cerebro: `LLM_TIMEOUT_SECONDS` y `RETRIEVAL_TIMEOUT_SECONDS` tienen que quedar por debajo. Era `10000` hasta que el turno empezó a buscar en la base de conocimiento (ADR-0074). |
-| `BRAIN_PREVIEW_TIMEOUT_MS` | `3000` | Lo mismo, pero para la vista previa, que es interactiva y no puede hacer esperar a un operador diez segundos. |
+| `BRAIN_PREVIEW_TIMEOUT_MS` | `3000` | Lo mismo, pero para la vista previa, que es interactiva y no puede hacer esperar a un operador los quince segundos del turno. |
 
 ---
 

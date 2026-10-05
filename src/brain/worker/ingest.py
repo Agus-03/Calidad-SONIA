@@ -99,9 +99,10 @@ class Ingestor:
         pages = read(
             pdf,
             max_side=sizes.max_side,
+            mode=self._p.chunking_rules.pdf_text,
+            layout_min_ratio=self._p.chunking_rules.layout_min_ratio,
             min_width=sizes.min_width,
             min_height=sizes.min_height,
-            mode=self._p.chunking_rules.pdf_text,
         )
         # ADR-0064, regla 10: no OCR, so a PDF without extractable text is failed before anything is paid for its images.
         if not any(page.text.strip() for page in pages):
@@ -141,11 +142,21 @@ class Ingestor:
             indexed = await repository.mark_indexed(conn, claimed.id)
         logger.info(
             "document indexed" if indexed else "document indexed after the sweep released it",
-            extra={"context": {"document_id": str(claimed.id), "chunks": len(chunks), "images_described": described}},
+            extra={
+                "context": {
+                    "document_id": str(claimed.id),
+                    "chunks": len(chunks),
+                    "images_described": described,
+                    # The pages the layout mode would have lost text on, read plain instead (ADR-0076, regla 4): the only place
+                    # that says which documents mix the two modes under one chunking_version.
+                    "pages_read_plain": sum(page.read_plain for page in pages),
+                }
+            },
         )
 
     # The text of the document with each image's description in the page it was on, so the chunking keeps the two together
-    # (ADR-0067, regla 5). Pages are joined with a blank line, which the chunking reads as the end of a section.
+    # (ADR-0067, regla 5). Pages are joined with one blank line, the chunking's paragraph separator: a page break weighs what a
+    # paragraph does, and less than the wide vertical gap inside a page that the layout mode writes as two blank lines.
     async def _text(self, pages: list[Page]) -> tuple[str, int]:
         described = 0
         out: list[str] = []

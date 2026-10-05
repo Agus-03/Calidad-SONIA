@@ -1,6 +1,8 @@
 # ADR-0065: one recursive strategy, about 500 tokens estimated from characters (ADR-0071), no overlap, and a paragraph that fits
 # stays whole.
 
+from dataclasses import replace
+
 import pytest
 
 from infra.rules import RulesFile, RulesFileError
@@ -8,7 +10,12 @@ from knowledge import chunking
 from knowledge.chunking import ChunkingRules, split
 
 SMALL = ChunkingRules(
-    version=1, max_tokens=10, chars_per_token=4, separators=("\n\n\n", "\n\n", "\n", ". ", " ", ""), pdf_text="layout"
+    version=1,
+    max_tokens=10,
+    chars_per_token=4,
+    separators=("\n\n\n", "\n\n", "\n", ". ", " ", ""),
+    pdf_text="layout",
+    layout_min_ratio=0.9,
 )
 
 
@@ -16,6 +23,7 @@ def test_the_rules_are_the_ones_adr_0065_declares() -> None:
     rules = chunking.rules()
     assert (rules.max_tokens, rules.chars_per_token) == (500, 4)
     assert (rules.version, rules.pdf_text) == (2, "layout"), "ADR-0076 changed the text that is cut, and with it the version"
+    assert rules.layout_min_ratio == 0.9
     assert rules.separators[0] == "\n\n\n" and rules.separators[-1] == ""
     assert rules.estimate_tokens("a" * 9) == 3, "rounded up: a started token is a token"
 
@@ -30,7 +38,7 @@ def test_the_largest_separator_that_fits_is_the_one_used() -> None:
     assert split(f"{first}\n\n{second}", rules=SMALL) == [first, second]
 
     # Two short paragraphs that fit together stay together: the cut is the need, not the separator.
-    roomy = ChunkingRules(version=1, max_tokens=100, chars_per_token=4, separators=SMALL.separators, pdf_text="layout")
+    roomy = replace(SMALL, max_tokens=100)
     assert split(f"{first}\n\n{second}", rules=roomy) == [f"{first}\n\n{second}"]
 
 
@@ -69,6 +77,13 @@ def test_a_run_without_any_separator_is_cut_by_characters() -> None:
         ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": ["\n"]}, "empty string"),
         ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": [""], "pdf_text": "ocr"}, "pdf_text"),
         ({"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": [""]}, "pdf_text"),
+        *(
+            (
+                {"max_tokens": 500, "chars_per_token": 4, "overlap_tokens": 0, "separators": [""], "pdf_text": "layout", **ratio},
+                "layout_min_ratio",
+            )
+            for ratio in ({}, {"layout_min_ratio": 0}, {"layout_min_ratio": 1.5}, {"layout_min_ratio": "0.9"})
+        ),
     ],
 )
 def test_a_file_that_asks_for_what_the_splitter_cannot_do_stops_the_worker(

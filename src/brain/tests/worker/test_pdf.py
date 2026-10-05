@@ -6,14 +6,18 @@ import pytest
 from PIL import Image
 from pypdf import PageObject
 
-from tests.worker.pdfs import image_pdf, joined, text_pdf
+from tests.worker.pdfs import form_pdf, image_pdf, joined, text_pdf
 from worker.pdf import PageImage, UnreadablePDF, read, sendable
+
+# The two ways a test asks for the text, with the share of rules/chunking.yaml (ADR-0076).
+PLAIN = {"mode": "plain", "layout_min_ratio": 0.9}
+LAYOUT = {"mode": "layout", "layout_min_ratio": 0.9}
 
 
 def test_each_page_keeps_its_text_and_its_images() -> None:
     document = joined(text_pdf(["Depto 2 ambientes en Jesus Maria", "Requisitos para alquilar"]), image_pdf(300, 200))
 
-    pages = read(document, max_side=1568)
+    pages = read(document, max_side=1568, **PLAIN)
 
     assert [p.number for p in pages] == [1, 2, 3]
     assert "Jesus Maria" in pages[0].text and "Requisitos" in pages[1].text
@@ -27,48 +31,76 @@ def test_each_page_keeps_its_text_and_its_images() -> None:
 def test_a_nul_in_the_text_is_dropped_before_postgresql_sees_it(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PageObject, "extract_text", lambda self, *args, **kwargs: "Depto\x00 2 ambientes\x00")
 
-    (page,) = read(text_pdf(["Depto 2 ambientes"]), max_side=1568)
+    (page,) = read(text_pdf(["Depto 2 ambientes"]), max_side=1568, **PLAIN)
 
     assert page.text == "Depto 2 ambientes"
 
 
-# ADR-0076: the layout mode keeps the lines and the blank line between paragraphs, and drops the padding that places them.
-def test_the_layout_mode_keeps_the_lines_and_drops_the_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+# Stands in for pypdf: the layout text and the plain text of one page, or an error for either.
+def extracting(layout: str | Exception, plain: str | Exception):
     def extract(self: PageObject, *args: object, extraction_mode: str = "plain", **kwargs: object) -> str:
-        if extraction_mode == "layout":
-            return "      Depto   2   ambientes   \n\n   en  Jesus Maria\t\t\n"
-        return "Depto\n \n2\n \nambientes"
+        answer = layout if extraction_mode == "layout" else plain
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
-    monkeypatch.setattr(PageObject, "extract_text", extract)
+    return extract
 
-    (layout,) = read(text_pdf(["x"]), max_side=1568, mode="layout")
-    (plain,) = read(text_pdf(["x"]), max_side=1568)
 
-    assert layout.text == "Depto 2 ambientes\n\nen Jesus Maria\n"
-    assert plain.text == "Depto\n \n2\n \nambientes", "plain is still pypdf's text as it comes"
+# ADR-0076, regla 2: the layout mode keeps the lines and the blank line between paragraphs, and drops the padding that places
+# them: runs of spaces, any tab, and the margins of each line.
+def test_the_layout_mode_keeps_the_lines_and_drops_the_padding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        PageObject, "extract_text", extracting("      Depto   2\tambientes   \n\n   en  Jesus Maria\t\t\n", "Depto\n \n2\n \nambientes")
+    )
+
+    (layout,) = read(text_pdf(["x"]), max_side=1568, **LAYOUT)
+    (plain,) = read(text_pdf(["x"]), max_side=1568, **PLAIN)
+
+    assert (layout.text, layout.read_plain) == ("Depto 2 ambientes\n\nen Jesus Maria\n", False)
+    assert (plain.text, plain.read_plain) == ("Depto\n \n2\n \nambientes", False), "plain is still pypdf's text as it comes"
 
 
 def test_the_layout_mode_reads_a_real_pdf_line_by_line() -> None:
-    (page,) = read(text_pdf(["Depto 2 ambientes\nRequisitos para alquilar"]), max_side=1568, mode="layout")
-    assert page.text.strip() == "Depto 2 ambientes\nRequisitos para alquilar"
+    (page,) = read(text_pdf(["Depto 2 ambientes\nRequisitos para alquilar"]), max_side=1568, **LAYOUT)
+    assert page.text.strip() == "Depto 2 ambientes\nRequisitos para alquilar" and not page.read_plain
 
 
-def test_a_page_the_layout_mode_cannot_read_is_read_plain(monkeypatch: pytest.MonkeyPatch) -> None:
-    def extract(self: PageObject, *args: object, extraction_mode: str = "plain", **kwargs: object) -> str:
-        if extraction_mode == "layout":
-            raise ZeroDivisionError("a font without widths")
-        return "Depto 2 ambientes"
+# ADR-0076, regla 4: a page the layout mode cannot read, or reads short without saying so, is read plain and marked.
+@pytest.mark.parametrize(
+    ("layout", "why"),
+    [
+        (ZeroDivisionError("a font without widths"), "it raised"),
+        ("", "it came back empty"),
+        ("Depto", "it kept less than the share of the characters"),
+    ],
+)
+def test_a_page_the_layout_mode_loses_is_read_plain(monkeypatch: pytest.MonkeyPatch, layout: str | Exception, why: str) -> None:
+    monkeypatch.setattr(PageObject, "extract_text", extracting(layout, "Depto 2 ambientes"))
 
-    monkeypatch.setattr(PageObject, "extract_text", extract)
+    (page,) = read(text_pdf(["x"]), max_side=1568, **LAYOUT)
 
-    (page,) = read(text_pdf(["x"]), max_side=1568, mode="layout")
+    assert (page.text, page.read_plain) == ("Depto 2 ambientes", True), why
 
-    assert page.text == "Depto 2 ambientes"
+
+def test_the_layout_text_stays_when_the_plain_one_is_only_the_yardstick_and_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(PageObject, "extract_text", extracting("Depto  2 ambientes", ValueError("a broken stream")))
+
+    (page,) = read(text_pdf(["x"]), max_side=1568, **LAYOUT)
+
+    assert (page.text, page.read_plain) == ("Depto 2 ambientes", False)
+
+
+# The case the share exists for, on a real PDF: a page drawn inside a form XObject, which the layout mode does not walk.
+def test_a_page_drawn_inside_a_form_keeps_its_text() -> None:
+    (page,) = read(form_pdf("Alquiler del depto: $320.000 + expensas"), max_side=1568, **LAYOUT)
+
+    assert "$320.000 + expensas" in page.text and page.read_plain
 
 
 def test_what_is_not_a_pdf_is_refused_as_unreadable() -> None:
     with pytest.raises(UnreadablePDF):
-        read(b"%PDF-1.7 esto no tiene objetos", max_side=1568)
+        read(b"%PDF-1.7 esto no tiene objetos", max_side=1568, **PLAIN)
 
 
 # A large image is scaled before it is sent, and keeps the size it had, which is what the minimum of ADR-0067 is judged on.
@@ -98,7 +130,7 @@ def test_an_image_declared_under_the_minimum_is_not_even_decoded(monkeypatch: py
         return real(image, max_side=max_side)
 
     monkeypatch.setattr(pdf, "sendable", counting)
-    pages = read(joined(image_pdf(60, 40), image_pdf(300, 200)), max_side=1568, min_width=120, min_height=120)
+    pages = read(joined(image_pdf(60, 40), image_pdf(300, 200)), max_side=1568, min_width=120, min_height=120, **PLAIN)
 
     assert pages[0].images == () and len(pages[1].images) == 1
     assert decoded == [(300, 200)], "the logo was decoded only to be thrown away"
@@ -111,5 +143,5 @@ def test_an_image_that_cannot_be_decoded_is_left_out_and_the_page_keeps_its_text
         raise OSError("not an image")
 
     monkeypatch.setattr(pdf, "sendable", broken)
-    pages = read(joined(text_pdf(["texto"]), image_pdf(300, 300)), max_side=1568)
+    pages = read(joined(text_pdf(["texto"]), image_pdf(300, 300)), max_side=1568, **PLAIN)
     assert pages[0].text.strip() == "texto" and pages[1].images == ()

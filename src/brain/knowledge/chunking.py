@@ -5,11 +5,13 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal, get_args
 
 from infra import rules as rules_file
 
 # The two ways pypdf reads a page's text (ADR-0076).
-PDF_TEXT_MODES = ("plain", "layout")
+PdfText = Literal["plain", "layout"]
+PDF_TEXT_MODES: tuple[str, ...] = get_args(PdfText)
 
 
 @dataclass(frozen=True)
@@ -21,7 +23,10 @@ class ChunkingRules:
     chars_per_token: int
     separators: tuple[str, ...]
     # How the worker extracts the text it cuts, versioned with the cut because it decides where the separators fall (ADR-0076).
-    pdf_text: str
+    pdf_text: PdfText
+    # The share of a page's characters the layout mode has to keep for its text to be used instead of the plain one (ADR-0076,
+    # regla 4).
+    layout_min_ratio: float
 
     # What document_chunks.token_count stores: an estimate, from the same equivalence the cut was made with.
     def estimate_tokens(self, text: str) -> int:
@@ -32,8 +37,8 @@ class ChunkingRules:
 def rules() -> ChunkingRules:
     loaded = rules_file.load("chunking.yaml")
     overlap = loaded.integer("overlap_tokens", minimum=0)
-    # The parameter exists so the evaluation can raise it (ADR-0065, regla 4); the splitter does not overlap yet, and a file that
-    # asks for it must stop the worker instead of being silently ignored.
+    # The overlap stays at 0 (ADR-0075, regla 5) and the splitter does not implement one, so a file that asks for it must stop the
+    # worker instead of being silently ignored.
     if overlap != 0:
         raise rules_file.RulesFileError("rules: chunking.yaml asks for an overlap the splitter does not implement yet")
     separators = loaded.raw.get("separators")
@@ -44,12 +49,17 @@ def rules() -> ChunkingRules:
     pdf_text = loaded.raw.get("pdf_text")
     if pdf_text not in PDF_TEXT_MODES:
         raise rules_file.RulesFileError(f"rules: chunking.yaml pdf_text has to be one of {', '.join(PDF_TEXT_MODES)}")
+    # Above 0, or a page the layout mode returns empty would keep its empty text; up to 1, or no page could ever keep the layout.
+    ratio = loaded.raw.get("layout_min_ratio")
+    if not isinstance(ratio, (int, float)) or isinstance(ratio, bool) or not 0 < ratio <= 1:
+        raise rules_file.RulesFileError("rules: chunking.yaml needs layout_min_ratio as a share above 0 and up to 1")
     return ChunkingRules(
         version=loaded.version,
         max_tokens=loaded.integer("max_tokens", minimum=1),
         chars_per_token=loaded.integer("chars_per_token", minimum=1),
         separators=tuple(separators),
         pdf_text=pdf_text,
+        layout_min_ratio=float(ratio),
     )
 
 

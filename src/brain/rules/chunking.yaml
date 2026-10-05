@@ -7,6 +7,12 @@ version: 2
 # every two words of the anteproyecto. It is here because it changes what is cut as much as any separator does.
 pdf_text: layout
 
+# The layout mode loses text without an error on some pages (a page drawn inside a form XObject, rotated text, a font it cannot
+# read), so the worker reads each page both ways and keeps the layout text only when it holds at least this share of the plain
+# text's characters, white space left out; below it the page is read plain (ADR-0076, regla 4). 0.9 leaves room for a rotated
+# watermark the layout mode drops on purpose.
+layout_min_ratio: 0.9
+
 # About 500 tokens (ADR-0065, regla 8). A number to start from, which the retrieval evaluation of regla 3 validates.
 max_tokens: 500
 
@@ -15,12 +21,14 @@ max_tokens: 500
 # the evaluation is what can say whether it holds for Spanish.
 chars_per_token: 4
 
-# Zero to start (ADR-0065, regla 1). Raising it is a code change too: the splitter refuses anything else until the evaluation
-# shows it pays.
+# Zero (ADR-0065, regla 1), and it stays there (ADR-0075, regla 5). Raising it would be a code change too: the splitter refuses
+# anything else.
 overlap_tokens: 0
 
 # The recursive strategy (ADR-0065, regla 5): it tries each separator from the largest unit to the smallest until a piece fits.
-# Pages are joined with a blank line, so a page is a section; the empty string is the last resort of a text with no spaces.
+# Pages are joined with one blank line, the paragraph separator, so a page break weighs what a paragraph does; two blank lines
+# come only from a wide vertical gap the layout mode found inside a page, which is cut before a page break (ADR-0076). The empty
+# string is the last resort of a text with no spaces.
 separators:
   - "\n\n\n"
   - "\n\n"

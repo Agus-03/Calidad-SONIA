@@ -20,8 +20,10 @@ dependencies = [
     "pyyaml>=6.0",
     # F06, the worker's ingestion (ADR-0064, ADR-0065, ADR-0067, ADR-0071): the embeddings and the tokenizer that counts its chunks,
     "voyageai>=0.5",
-    # the text and the images of a PDF, pure Python and BSD (ADR-0071),
-    "pypdf>=6.0",
+    # the text and the images of a PDF, pure Python and BSD (ADR-0071), pinned because the layout mode's text depends on the
+    # version and chunking_version does not record it: moving it changes the cuts, so it goes with a new version of
+    # rules/chunking.yaml (ADR-0076),
+    "pypdf==6.19.0",
     # which pypdf needs to decode an image and the description to measure it,
     "pillow>=11.0",
     # the bytes the core uploaded to Firebase, honouring STORAGE_EMULATOR_HOST like the core does (ADR-0069, ADR-0070),

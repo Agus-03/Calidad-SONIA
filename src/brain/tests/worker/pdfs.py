@@ -28,7 +28,32 @@ def text_pdf(pages: list[str]) -> bytes:
         stream = "\n".join(ops).encode("latin-1")
         objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    return _written(objects)
 
+
+# One page whose text is drawn inside a form XObject, as templates and merged PDFs draw theirs: the page itself only says "Do".
+def form_pdf(text: str) -> bytes:
+    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    form = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+    page = b"/Fm1 Do"
+    return _written(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /XObject << /Fm1 5 0 R >> >> >>",
+            b"<< /Length " + str(len(page)).encode() + b" >>\nstream\n" + page + b"\nendstream",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Length "
+            + str(len(form)).encode()
+            + b" >>\nstream\n"
+            + form
+            + b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        ]
+    )
+
+
+# The objects, numbered from 1 in order, with their cross-reference table and a trailer whose root is the first.
+def _written(objects: list[bytes]) -> bytes:
     out = io.BytesIO()
     out.write(b"%PDF-1.7\n")
     offsets = []

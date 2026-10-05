@@ -43,9 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await database.close()
 
 
-# The search of F06 for the turn (ADR-0068, ADR-0074), with the turn's timeout on both calls. A brain that cannot search still
-# answers, as an agent without a base does, and says so at boot: refusing to start would take down every agent for the sake of
-# the ones that have documents.
+# The search of F06 for the turn (ADR-0068, ADR-0074), with the turn's timeout on both calls. Only development and test reach
+# the warning: anywhere else Settings refuses to start without the search (ADR-0077), so there the brain always searches.
 def _knowledge(app: FastAPI, settings: Settings, database: Database) -> QdrantStore | None:
     if not settings.knowledge_ready():
         logger.warning("knowledge search disabled: QDRANT_URL, or VOYAGE_API_KEY or EMBEDDINGS_USE_DOUBLE, is missing")

@@ -77,10 +77,24 @@ class Settings(BaseSettings):
     # the worker's two, because a customer is waiting on this one and nobody waits on an ingestion.
     retrieval_timeout_seconds: float = Field(default=5.0, gt=0)
 
-    # Whether the api can search the knowledge base: Qdrant named, and a way to embed the question. Without it the api still
-    # answers, as an agent without a base does (ADR-0068, regla 10), and says so at boot (ADR-0074).
+    # Whether the api can search the knowledge base: Qdrant named, and a way to embed the question. Without it, in development
+    # and test, the api still answers, as an agent without a base does (ADR-0068, regla 10), and says so at boot (ADR-0074);
+    # anywhere else it does not start (ADR-0077).
     def knowledge_ready(self) -> bool:
         return bool(self.qdrant_url) and (bool(self.voyage_api_key) or self.embeddings_use_double)
+
+    # ADR-0077: a brain that cannot search answers every agent without its documents, and nothing tells an agent with a base
+    # apart from one without. The allowlist again, so an ENVIRONMENT typed "prod" is held to it too. Required of the worker as
+    # well, which cannot index without them anyway.
+    @model_validator(mode="after")
+    def _knowledge_is_required_outside_development(self) -> "Settings":
+        if self.environment not in DOUBLE_ALLOWED_ENVIRONMENTS and not self.knowledge_ready():
+            raise ValueError(
+                "QDRANT_URL and VOYAGE_API_KEY are required unless ENVIRONMENT is "
+                + " or ".join(sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+                + ": without them every agent would answer without its documents"
+            )
+        return self
 
     @model_validator(mode="after")
     def _double_stays_out_of_production(self) -> "Settings":

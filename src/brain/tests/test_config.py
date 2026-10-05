@@ -110,6 +110,22 @@ def test_the_worker_doubles_stay_out_of_production(clean_env, field: dict[str, o
     assert Settings(_env_file=None, **_MINIMUM, environment="test", **field)
 
 
+# ADR-0077: outside development and test, a brain that cannot search does not start, because every agent would answer without
+# its documents. Inside them it still starts, and the lifespan warns.
+@pytest.mark.parametrize("environment", ["production", "staging", "prod", ""])
+def test_the_search_is_required_outside_development(clean_env, environment: str) -> None:
+    for missing in ({}, {"qdrant_url": "http://qdrant:6333"}, {"voyage_api_key": "k"}):
+        with pytest.raises(ValidationError, match="QDRANT_URL and VOYAGE_API_KEY"):
+            Settings(_env_file=None, **_MINIMUM, environment=environment, **missing)
+    ready = Settings(_env_file=None, **_MINIMUM, environment=environment, qdrant_url="http://qdrant:6333", voyage_api_key="k")
+    assert ready.knowledge_ready()
+
+
+@pytest.mark.parametrize("environment", sorted(DOUBLE_ALLOWED_ENVIRONMENTS))
+def test_development_and_test_still_start_without_the_search(clean_env, environment: str) -> None:
+    assert not Settings(_env_file=None, **_MINIMUM, environment=environment).knowledge_ready()
+
+
 # The api boots without any of the worker's variables, and must: it does not even receive the document key (ADR-0064, regla 2).
 def test_the_worker_lists_everything_it_is_missing_and_the_api_needs_none_of_it(clean_env) -> None:
     settings = Settings(_env_file=None, **_MINIMUM)

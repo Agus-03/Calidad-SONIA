@@ -10,6 +10,8 @@ from decimal import Decimal
 from time import perf_counter
 from uuid import UUID
 
+from adapters.embeddings.base import EmbeddingError
+from adapters.vectorstore.qdrant import VectorStoreError
 from infra.enums import MessageDirection, PipelineStep
 from knowledge.search import Found, Searcher
 from pipeline.repository.evidence import RetrievedChunk, TracedStep
@@ -17,6 +19,8 @@ from pipeline.repository.evidence import RetrievedChunk, TracedStep
 # The outcome domain declared for this step in DER/entidades.md.
 HIT = "hit"
 EMPTY = "empty"
+# Voyage or Qdrant did not answer (ADR-0077): the block was not answered, and OE6 has to be able to say so.
+FAILED = "failed"
 
 # Six decimals of a cosine: more than any threshold will ever be compared at, and a stable number in the column and the log.
 _SCALE = Decimal("0.000001")
@@ -27,6 +31,13 @@ class Retrieval:
     row: TracedStep
     # What the grounding decides about, in rank order.
     found: tuple[Found, ...]
+    # The provider's or Qdrant's error when the search failed, for the route's log and never for the row: it may carry what
+    # Qdrant answered.
+    error: str | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.row.outcome == FAILED
 
 
 # ADR-0068, regla 2: the summary of the current context first and the block after it, and no model asked to rephrase. Past the
@@ -40,13 +51,29 @@ def _joined(summary: str | None, block: str) -> str:
     return f"{summary.strip()}\n\n{block.strip()}" if summary and summary.strip() else block.strip()
 
 
-# None when the agent does not retrieve (ADR-0068, regla 10): no row, and the grounding does not run either. The provider's and
-# Qdrant's failures are raised to the route, which fails the turn as it does when the triage's provider fails (ADR-0074, regla 2).
+# None when the agent does not retrieve (ADR-0068, regla 10): no row, and the grounding does not run either. A failure of the
+# provider or of Qdrant comes back as a row with outcome failed, which the route writes before failing the turn as it does when
+# the triage's provider fails (ADR-0074, regla 2): without it the block would read as answered (ADR-0077).
 async def run(searcher: Searcher, *, agent_id: UUID, summary: str | None, block: str, position: int) -> Retrieval | None:
     rules = searcher.rules
     text = query(summary, block, max_chars=rules.max_query_chars)
+    measured = {"query_chars": len(text), "truncated": len(_joined(summary, block)) > rules.max_query_chars}
     started = perf_counter()
-    result = await searcher.search(agent_id, text)
+    try:
+        result = await searcher.search(agent_id, text)
+    except (EmbeddingError, VectorStoreError) as err:
+        # The search only calls out once it knows the agent has documents, so a failure is always a turn that had to retrieve.
+        row = TracedStep(
+            step=PipelineStep.RETRIEVAL,
+            direction=MessageDirection.INBOUND,
+            position=position,
+            outcome=FAILED,
+            version=str(rules.version),
+            latency_ms=round((perf_counter() - started) * 1000),
+            # Which of the two failed and never its message, which may carry what Qdrant answered.
+            detail={"top_k": rules.top_k, "threshold": str(rules.threshold), "error": type(err).__name__, **measured},
+        )
+        return Retrieval(row=row, found=(), error=str(err))
     latency_ms = round((perf_counter() - started) * 1000)
     if result is None:
         return None
@@ -66,8 +93,7 @@ async def run(searcher: Searcher, *, agent_id: UUID, summary: str | None, block:
             "threshold": str(rules.threshold),
             "stale_documents": len(result.stale_document_ids),
             "dropped": result.dropped,
-            "query_chars": len(text),
-            "truncated": len(_joined(summary, block)) > rules.max_query_chars,
+            **measured,
         },
         retrieved=tuple(
             RetrievedChunk(document_chunk_id=f.chunk_id, similarity=similarity(f), rank=f.rank) for f in result.found

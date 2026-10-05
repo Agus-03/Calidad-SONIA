@@ -138,14 +138,19 @@ def test_a_greeting_does_not_search(monkeypatch) -> None:
     "error",
     [VectorStoreError("qdrant: POST /collections/kb/points/query: 404"), EmbeddingError("voyage: TimeoutError: ")],
 )
-def test_a_search_that_fails_fails_the_turn_and_keeps_the_steps_that_decided(error: Exception) -> None:
+def test_a_search_that_fails_fails_the_turn_and_leaves_its_row_for_oe6(error: Exception) -> None:
     connection = asking("¿cuanto sale?")
 
     payload = turn(connection, FakeSearcher(error=error))
 
     assert payload["outcome"] == "failed"
-    assert [s["step"] for s in steps(connection)] == ["blocklist", "guardrail", "triage"]
-    assert "generations" not in connection.seen
+    trace = steps(connection)
+    assert [s["step"] for s in trace] == ["blocklist", "guardrail", "triage", "retrieval"]
+    failed = trace[-1]
+    assert (failed["outcome"], failed["position"]) == ("failed", 4), "OE6 reads the block as not answered (ADR-0077)"
+    assert failed["detail_json"].obj["error"] == type(error).__name__
+    assert str(error) not in str(failed["detail_json"].obj), "the message may carry what Qdrant answered"
+    assert logs(connection) == [] and "generations" not in connection.seen
 
 
 # In suggestion mode the brain cuts the same way and says the mode on the row: the core then sends no text and transfers nothing

@@ -1,6 +1,6 @@
-# OE6 calculable (ADR-0024, ADR-0075): the query of docs/design/05-consultas-de-metricas.sql, read from the document itself and run
-# against the real DDL on a scenario whose answer is known. If the document's query stops parsing, or stops counting what ADR-0075
-# says, this fails. One transaction, rolled back.
+# OE6 calculable (ADR-0024, ADR-0075, ADR-0077): the query of docs/design/05-consultas-de-metricas.sql, read from the document
+# itself and run against the real DDL on a scenario whose answer is known. If the document's query stops parsing, or stops
+# counting what ADR-0075 and ADR-0077 say, this fails. One transaction, rolled back.
 
 import os
 from datetime import UTC, datetime, timedelta
@@ -55,8 +55,8 @@ async def _agent(conn, account: UUID, *, with_base: bool, operator: UUID) -> UUI
     return agent
 
 
-# One closed block of its own conversation, with the triage's verdict and, when given, the grounding's.
-async def _block(conn, seeded: dict, agent: UUID, grounding: str | None) -> None:
+# One closed block of its own conversation, with the triage's verdict and, when given, the retrieval's and the grounding's.
+async def _block(conn, seeded: dict, agent: UUID, *after_triage: str) -> None:
     conversation, batch = ids.new(), ids.new()
     await conn.execute(
         """INSERT INTO conversations (id, contact_id, inbox_id, ai_agent_id, status, mode, last_inbound_at, window_expires_at)
@@ -69,8 +69,7 @@ async def _block(conn, seeded: dict, agent: UUID, grounding: str | None) -> None
         (batch, conversation, _DAY, _DAY),
     )
     steps = [("triage", "in_domain", 3, {"mode": "autonomous"})]
-    if grounding is not None:
-        steps += [("retrieval", "hit", 4, None), ("grounding", grounding, 5, None)]
+    steps += [(step, outcome, position, None) for step, outcome, position in zip(("retrieval", "grounding"), after_triage, (4, 5))]
     for step, outcome, position, detail in steps:
         await conn.execute(
             """INSERT INTO pipeline_steps (id, message_batch_id, step, direction, position, outcome, version, detail_json)
@@ -79,7 +78,7 @@ async def _block(conn, seeded: dict, agent: UUID, grounding: str | None) -> None
         )
 
 
-async def test_oe6_counts_the_not_grounded_as_escalated_and_leaves_agents_without_a_base_out() -> None:
+async def test_oe6_counts_the_not_grounded_and_the_failed_search_as_not_answered_and_leaves_agents_without_a_base_out() -> None:
     database = Database(_DSN)
     await database.open()
     try:
@@ -98,15 +97,17 @@ async def test_oe6_counts_the_not_grounded_as_escalated_and_leaves_agents_withou
             )
             with_base = await _agent(conn, seeded["account"], with_base=True, operator=operator)
             without_base = await _agent(conn, seeded["account"], with_base=False, operator=operator)
-            await _block(conn, seeded, with_base, "grounded")
+            await _block(conn, seeded, with_base, "hit", "grounded")
             # Not grounded with the policy off: no transfer_events, and still not answered (ADR-0075).
-            await _block(conn, seeded, with_base, "not_grounded")
+            await _block(conn, seeded, with_base, "hit", "not_grounded")
+            # Voyage or Qdrant did not answer: the turn failed, and the block was not answered either (ADR-0077).
+            await _block(conn, seeded, with_base, "failed")
             # 100 % by construction, so out of the measurement (ADR-0075).
-            await _block(conn, seeded, without_base, None)
+            await _block(conn, seeded, without_base)
 
             cursor = await conn.execute(_oe6(), {"desde": _DAY - timedelta(hours=1), "hasta": _DAY + timedelta(hours=1)})
             row = await cursor.fetchone()
 
-            assert (row["consultas_del_dominio"], row["sin_escalada"], float(row["oe6_pct"])) == (2, 1, 50.0)
+            assert (row["consultas_del_dominio"], row["respondidas_sin_escalada"], float(row["oe6_pct"])) == (3, 1, 33.33)
     finally:
         await database.close()

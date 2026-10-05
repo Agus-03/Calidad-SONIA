@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from adapters.embeddings.base import EmbeddingError
+from adapters.vectorstore.qdrant import VectorStoreError
 from infra.enums import MessageDirection, PipelineStep, TransferSignalType
 from knowledge.search import Found, SearchResult, SearchRules
 from pipeline import grounding, retrieval
@@ -87,6 +89,26 @@ async def test_the_row_says_how_long_the_searched_text_was_and_that_the_limit_cu
 
     assert searcher.asked[0][1] == ("x" * 50 + "\n\n¿Y cuanto sale?")[-40:]
     assert (result.row.detail["query_chars"], result.row.detail["truncated"]) == (40, True)
+
+
+@pytest.mark.parametrize("error", [EmbeddingError("voyage: TimeoutError: "), VectorStoreError("qdrant: POST /x: 500 boom")])
+async def test_a_search_that_fails_is_a_failed_row_that_keeps_what_it_searched_with(error: Exception) -> None:
+    class Failing(FakeSearcher):
+        async def search(self, agent_id: UUID, text: str) -> SearchResult | None:
+            raise error
+
+    result = await retrieval.run(Failing(None), agent_id=uuid4(), summary="x" * 50, block="¿Y cuanto sale?", position=4)
+
+    assert result is not None and result.failed and result.found == ()
+    assert (result.row.step, result.row.position, result.row.outcome) == (PipelineStep.RETRIEVAL, 4, "failed")
+    assert result.row.detail == {
+        "top_k": 3,
+        "threshold": "0.5",
+        "error": type(error).__name__,
+        "query_chars": 40,
+        "truncated": True,
+    }
+    assert result.error == str(error), "the message goes to the log, and never to the row"
 
 
 async def test_a_search_that_found_nothing_is_empty() -> None:

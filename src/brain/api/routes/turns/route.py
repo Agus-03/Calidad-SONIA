@@ -8,10 +8,8 @@ from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from adapters.embeddings.base import EmbeddingError
 from adapters.llm.base import LLMError
 from adapters.llm.registry import resolve
-from adapters.vectorstore.qdrant import VectorStoreError
 from api.routes.turns import enrichment, signals
 from api.schemas.turn import ExtractedDatum, TransferProposal, TurnRequest, TurnResponse
 from classifiers import extraction, transfer
@@ -131,18 +129,18 @@ async def create_turn(request: Request, body: TurnRequest) -> TurnResponse:
     searcher = request.app.state.searcher
     if searcher is not None and not _greeting(trace):
         summary = current.context.summary if current is not None else None
-        try:
-            retrieved = await retrieval.run(
-                searcher, agent_id=turn.agent.id, summary=summary, block=message, position=trace.next_position
-            )
-        except (EmbeddingError, VectorStoreError) as err:
+        retrieved = await retrieval.run(
+            searcher, agent_id=turn.agent.id, summary=summary, block=message, position=trace.next_position
+        )
+        if retrieved is not None and retrieved.failed:
             # The step fails, as the triage does when its provider fails (ADR-0074, regla 2): answering without the documents
-            # could invent, and transferring would count against OE6 what is a failure of ours.
+            # could invent, and transferring would count against OE6 what is a failure of ours. Its row is written with the steps
+            # that decided, so OE6 reads the block as not answered (ADR-0077).
             logger.error(
                 "turn not retrieved",
-                extra={"context": {"conversation_id": str(turn.conversation_id), "error": str(err)}},
+                extra={"context": {"conversation_id": str(turn.conversation_id), "error": retrieved.error}},
             )
-            await _write_trace(request, turn, trace.steps)
+            await _write_trace(request, turn, trace.steps + (retrieved.row,))
             return TurnResponse(outcome="failed")
         if retrieved is not None:
             grounded = grounding.run(retrieved, rules=searcher.rules, position=trace.next_position + 1)

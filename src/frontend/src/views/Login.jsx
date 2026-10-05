@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useToast } from '../components/Toast';
 import { saveSession } from '../lib/session';
+import isotipoDark from '../assets/isotipo-dark.svg';
 
 export default function Login() {
   const [currentView, setCurrentView] = useState('login');
@@ -15,29 +16,29 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     try {
-      // Mock login to test UI if backend is down, or use the real one
-      try {
-        const res = await fetch('/api/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        });
-        
-        if (!res.ok) throw new Error('Credenciales inválidas');
-        const data = await res.json();
-        saveSession({ token: data.token, operator: data.operator });
-      } catch (err) {
-        // Fallback for UI testing
-        console.warn('Backend login failed, using mock token', err);
-        saveSession({ token: 'mock_token', operator: { role: 'admin' } });
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (res.status === 401) {
+        throw new Error('Credenciales inválidas');
       }
-      
+
+      if (!res.ok) {
+        throw new Error('Error de conexión o servidor no disponible');
+      }
+
+      const data = await res.json();
+      saveSession({ token: data.token, operator: data.operator });
+
       addToast('Inicio de sesión exitoso', 'success');
       navigate('/inbox');
     } catch (error) {
-      addToast(error.message, 'error');
+      addToast(error.message || 'Error al iniciar sesión', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -54,12 +55,12 @@ export default function Login() {
         <div className="form-group">
           <label>Correo Electrónico</label>
           <div className="input-wrapper">
-            <input 
-              type="email" 
+            <input
+              type="email"
               placeholder="tu@empresa.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required 
+              required
             />
           </div>
         </div>
@@ -67,15 +68,15 @@ export default function Login() {
         <div className="form-group">
           <label>Contraseña</label>
           <div className="input-wrapper">
-            <input 
-              type={showPassword ? 'text' : 'password'} 
+            <input
+              type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required 
+              required
             />
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toggle-password"
               onClick={() => setShowPassword(!showPassword)}
             >
@@ -104,7 +105,7 @@ export default function Login() {
     <div className="layout">
       <div className="col-brand">
         <div className="brand-content">
-          <h1 className="brand-logo">SONIA</h1>
+          <h1 className="brand-logo">S<img src={isotipoDark} alt="O" className="brand-logo-icon" />NIA</h1>
           <p className="brand-slogan">Potencia tu atención al cliente con orquestación conversacional y agentes de IA avanzados.</p>
         </div>
       </div>

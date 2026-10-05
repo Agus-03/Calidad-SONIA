@@ -16,7 +16,7 @@ export function ToastProvider({ children }) {
     setTimeout(() => remove(id), 5000)
   }, [remove])
 
-  const value = useMemo(() => ({ push, notIntegrated: () => push(NOT_INTEGRATED_MESSAGE, 'warning') }), [push])
+  const value = useMemo(() => ({ push, addToast: push, notIntegrated: () => push(NOT_INTEGRATED_MESSAGE, 'warning') }), [push])
 
   return (
     <ToastContext.Provider value={value}>

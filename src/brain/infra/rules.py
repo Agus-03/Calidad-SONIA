@@ -68,8 +68,8 @@ class RulesFile:
             out.append(item.strip())
         return tuple(out)
 
-    def integer(self, key: str, *, minimum: int) -> int:
-        return _integer(self.name, self.raw, key, minimum=minimum)
+    def integer(self, key: str, *, minimum: int, maximum: int | None = None) -> int:
+        return _integer(self.name, self.raw, key, minimum=minimum, maximum=maximum)
 
 
 # Takes a name and not a path, so no caller repeats the walk up from its own __file__ to find the folder.
@@ -96,8 +96,10 @@ def _load(path: Path) -> RulesFile:
 
 # In one place because the version and every count share the same trap: in Python a bool is an int, so version: true would
 # load, reach pipeline_steps.version as "True" and name a prompt nobody can find again.
-def _integer(where: str, raw: dict[str, Any], key: str, *, minimum: int) -> int:
+def _integer(where: str, raw: dict[str, Any], key: str, *, minimum: int, maximum: int | None = None) -> int:
     value = raw.get(key)
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise RulesFileError(f"rules: {where} needs {key} as an integer of at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise RulesFileError(f"rules: {where} needs {key} as an integer of at most {maximum}")
     return value

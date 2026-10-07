@@ -10,7 +10,7 @@ import pytest
 
 from adapters.llm.base import Completion
 from infra.enums import MessageDirection, PipelineStep, SenderType
-from pipeline.repository import Agent, Message, Turn
+from pipeline.repository.turn import Agent, Message, Turn
 from pipeline.step import Step, StepRequest, StepResult
 
 

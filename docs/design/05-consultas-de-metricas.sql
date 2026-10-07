@@ -3,7 +3,7 @@
 --
 -- Documento : docs/design/05-consultas-de-metricas.sql
 -- Estado    : En curso — Paso 6 (validación cruzada de las métricas)
--- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
+-- Fecha     : 2026-08-10 · S4 de OE7 y el denominador de OE6 enmendados 2026-09-26 (ADR-0046) · la escalada de OE6 alineada 2026-09-26 con ADR-0024 · OE6 con el RAG construido 2026-10-04 (ADR-0075): el not_grounded escala y los agentes sin base salen · la búsqueda y la generación fallidas como no respondidas 2026-10-05 (ADR-0077) · el cambio de intención de OE4 (ADR-0023, ADR-0048) y el instrumento del tono (ADR-0044) alineados 2026-09-26
 -- Base      : docs/SONIA_Anteproyecto.pdf (7.2 OE1–OE7 · Anexo A F34–F38)
 --             docs/design/DER/entidades.md + relaciones.md  ← fuente de verdad
 --             docs/design/02-decisiones/  (ADR-0014, ADR-0015, ADR-0016)
@@ -817,6 +817,33 @@ ORDER  BY te.rubric_version;
 --     como la escalada mueve la CONVERSACIÓN ENTERA, los bloques posteriores a
 --     ella quedan fuera del denominador.
 --
+-- (d) ADR-0075 — con el RAG construido (ADR-0068), dos ajustes:
+--     · Un bloque que el `grounding` cortó por `not_grounded` es una escalada
+--       AUNQUE no haya transferencia: con la política `out_of_domain` apagada el
+--       turno se corta, se avisa y no se transfiere, y el agente igual no
+--       contestó. Sin esto, OE6 lo contaría como respondido.
+--     · Un agente sin base de conocimiento queda FUERA de la medición: no
+--       recupera (ADR-0068, regla 10), ningún bloque suyo puede salir
+--       `not_grounded`, y daría 100 % por construcción. Se toma como "con base" el
+--       agente que, al cerrar el bloque, tenía al menos un documento cargado y no
+--       dado de baja. Es una aproximación: el estado `indexed` de ese momento no
+--       se guarda, así que un documento que falló cuenta como cargado. Y el
+--       agente es el que la conversación tiene hoy, no el de ese momento.
+--
+-- (e) ADR-0077 — un bloque cuya búsqueda falló (Voyage o Qdrant no
+--     respondieron) o cuya generación falló es una consulta NO RESPONDIDA: el
+--     turno falló y el agente no contestó. No es una escalada, porque nadie
+--     transfirió; resta igual. Lo dejan el paso `retrieval` o el `generation`
+--     con `outcome = 'failed'`. Un `failed` no se reintenta; si el núcleo
+--     reintenta el bloque porque falló el salto y el reintento responde, esa
+--     fila se borra con el rastro viejo.
+--
+--     Abierto (README de decisiones, pendiente del Paso 11): una transferencia
+--     marca TODOS los bloques de su conversación, y un `not_grounded` sin
+--     transferencia sólo el suyo, así que apagar la política `out_of_domain`
+--     mejora OE6. Si se cuenta por bloque o por conversación se decide en la
+--     etapa de medición (ADR-0077).
+--
 -- FORMA DE LA CONSULTA
 
 WITH escaladas_del_dominio AS (        -- (c): sólo out_of_domain (ADR-0024)
@@ -833,21 +860,45 @@ consultas_del_dominio AS (             -- (b): unidad = bloque
            mb.closed_at
     FROM   pipeline_steps ps
     JOIN   message_batches mb ON mb.id = ps.message_batch_id
+    JOIN   conversations c ON c.id = mb.conversation_id
     LEFT   JOIN escaladas_del_dominio e ON e.conversation_id = mb.conversation_id
     WHERE  ps.step = 'triage'
       AND  ps.outcome = 'in_domain'    -- (a): veredicto previo a recuperar
       AND  (e.escalada_at IS NULL OR mb.closed_at < e.escalada_at)   -- (c): lo posterior no cuenta
       AND  ps.detail_json->>'mode' IS DISTINCT FROM 'suggestion'   -- ADR-0046: el alcance es el modo autónomo
+      AND  EXISTS (                    -- (d): el agente tenía base con algún documento vivo
+               SELECT 1
+               FROM   knowledge_bases kb
+               JOIN   documents d ON d.knowledge_base_id = kb.id
+               WHERE  kb.ai_agent_id = c.ai_agent_id
+                 AND  (kb.deleted_at IS NULL OR kb.deleted_at > mb.closed_at)
+                 AND  d.created_at < mb.closed_at
+                 AND  (d.deleted_at IS NULL OR d.deleted_at > mb.closed_at))
       AND  mb.closed_at >= :desde AND mb.closed_at < :hasta
 ),
-escaladas AS (                          -- (c): la conversación terminó escalando por fuera de dominio
+no_respondidas AS (                     -- (c): la conversación terminó escalando por fuera de dominio
     SELECT c.message_batch_id
     FROM   consultas_del_dominio c
     JOIN   escaladas_del_dominio e ON e.conversation_id = c.conversation_id
+    UNION                               -- (d): o el grounding cortó este bloque, transfiriera o no
+    SELECT c.message_batch_id
+    FROM   consultas_del_dominio c
+    JOIN   pipeline_steps g ON g.message_batch_id = c.message_batch_id
+    WHERE  g.step = 'grounding' AND g.outcome = 'not_grounded'
+    UNION                               -- (e): o la búsqueda de este bloque falló
+    SELECT c.message_batch_id
+    FROM   consultas_del_dominio c
+    JOIN   pipeline_steps r ON r.message_batch_id = c.message_batch_id
+    WHERE  r.step = 'retrieval' AND r.outcome = 'failed'
+    UNION                               -- (e): o su generación falló
+    SELECT c.message_batch_id
+    FROM   consultas_del_dominio c
+    JOIN   pipeline_steps g ON g.message_batch_id = c.message_batch_id
+    WHERE  g.step = 'generation' AND g.outcome = 'failed'
 )
 SELECT count(*)                                                    AS consultas_del_dominio,
-       count(*) - (SELECT count(*) FROM escaladas)                 AS sin_escalada,
-       round(100.0 * (count(*) - (SELECT count(*) FROM escaladas))
+       count(*) - (SELECT count(*) FROM no_respondidas)            AS respondidas_sin_escalada,
+       round(100.0 * (count(*) - (SELECT count(*) FROM no_respondidas))
              / count(*), 2)                                        AS oe6_pct
 FROM   consultas_del_dominio;
 
@@ -863,8 +914,11 @@ FROM   pipeline_steps ps_triage
 JOIN   message_batches mb          ON mb.id = ps_triage.message_batch_id
 JOIN   pipeline_steps ps_grounding ON ps_grounding.message_batch_id = mb.id
                                   AND ps_grounding.step = 'grounding'
-LEFT   JOIN generations g          ON g.message_batch_id = mb.id
-LEFT   JOIN retrieval_logs rl      ON rl.generation_id = g.id
+-- ADR-0068: retrieval_logs cuelga del paso `retrieval`, así que los bloques que
+-- cortaron por `not_grounded` también traen su similitud.
+LEFT   JOIN pipeline_steps ps_retrieval ON ps_retrieval.message_batch_id = mb.id
+                                       AND ps_retrieval.step = 'retrieval'
+LEFT   JOIN retrieval_logs rl      ON rl.pipeline_step_id = ps_retrieval.id
 WHERE  ps_triage.step = 'triage' AND ps_triage.outcome = 'in_domain'
 GROUP  BY ps_grounding.outcome;
 
@@ -960,7 +1014,7 @@ ORDER  BY conversion_pct DESC NULLS LAST;
 --   OE3  [OK]         · con ADR-0014 (precision, unidad = conversación)
 --   OE4  [OK]         · frustración con ADR-0014; intención con ADR-0023 y ADR-0048
 --   OE5  [NO-SQL]     · cobertura de tests
---   OE6  [OK]         · con ADR-0016 (a) y ADR-0024 (b) y (c)
+--   OE6  [OK]         · con ADR-0016 (a), ADR-0024 (b) y (c), ADR-0075 (d) y ADR-0077 (e)
 --   OE7  [PARCIAL]    · resolución autónoma OK; tono bloqueado por H-22
 --   F34  [OK]
 --   F35  [BLOQUEADA]  · H-25 — regla de atribución

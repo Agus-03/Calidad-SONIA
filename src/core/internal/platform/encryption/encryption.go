@@ -1,4 +1,5 @@
-// Package encryption is the single place the four sensitive columns are turned into bytes and back (ADR-0031, regla 11).
+// Package encryption is the single place the four sensitive columns are turned into bytes and back (ADR-0031, regla 11), and
+// the documents of F06 with another key and the same format (ADR-0064).
 package encryption
 
 import (
@@ -59,7 +60,19 @@ func (c *Cipher) Encrypt(plaintext string) ([]byte, error) {
 	if plaintext == "" {
 		return nil, nil
 	}
+	return c.seal([]byte(plaintext))
+}
 
+// EncryptBytes is Encrypt for a whole file, in the same format, so a document and a column are read by the same Decrypt rules
+// (ADR-0064, regla 1). It takes bytes because a 100 MB PDF converted to a string would be copied once more for nothing.
+func (c *Cipher) EncryptBytes(plaintext []byte) ([]byte, error) {
+	if len(plaintext) == 0 {
+		return nil, nil
+	}
+	return c.seal(plaintext)
+}
+
+func (c *Cipher) seal(plaintext []byte) ([]byte, error) {
 	nonce := make([]byte, nonceBytes)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("encryption: cannot draw a nonce: %w", err)
@@ -69,25 +82,31 @@ func (c *Cipher) Encrypt(plaintext string) ([]byte, error) {
 	out := make([]byte, 0, 1+nonceBytes+len(plaintext)+c.aead.Overhead())
 	out = append(out, version)
 	out = append(out, nonce...)
-	return c.aead.Seal(out, nonce, []byte(plaintext), out[:1]), nil
+	return c.aead.Seal(out, nonce, plaintext, out[:1]), nil
 }
 
 // Decrypt is the mirror: nil in, empty out, because a NULL column means the contact never had the datum.
 func (c *Cipher) Decrypt(stored []byte) (string, error) {
+	plaintext, err := c.DecryptBytes(stored)
+	return string(plaintext), err
+}
+
+// DecryptBytes is the mirror of EncryptBytes, and the one Decrypt rests on: both formats are the same bytes.
+func (c *Cipher) DecryptBytes(stored []byte) ([]byte, error) {
 	if len(stored) == 0 {
-		return "", nil
+		return nil, nil
 	}
 	if len(stored) < 1+nonceBytes+c.aead.Overhead() {
-		return "", ErrCorrupted
+		return nil, ErrCorrupted
 	}
 	if stored[0] != version {
-		return "", fmt.Errorf("%w: unknown format version %#x", ErrCorrupted, stored[0])
+		return nil, fmt.Errorf("%w: unknown format version %#x", ErrCorrupted, stored[0])
 	}
 
 	nonce := stored[1 : 1+nonceBytes]
 	plaintext, err := c.aead.Open(nil, nonce, stored[1+nonceBytes:], stored[:1])
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrCorrupted, err)
+		return nil, fmt.Errorf("%w: %v", ErrCorrupted, err)
 	}
-	return string(plaintext), nil
+	return plaintext, nil
 }

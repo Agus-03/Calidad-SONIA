@@ -29,6 +29,7 @@ sonia/
 ├── contracts/                          fuente única compartida por los dos servicios
 │   ├── brain.openapi.json              contrato del cerebro, generado por FastAPI
 │   ├── enums.yaml                      las 22 enumeraciones · el esquema las aplica con CHECK
+│   ├── fixtures/                       document-cipher.json: el vector cifrado que abren Go y Python (ADR-0064 §4)
 │   └── generate.py                     las baja a Go y a Python · nadie edita lo generado
 │
 ├── deploy/                             context: .. para que los builds vean contracts/
@@ -60,12 +61,14 @@ sonia/
 │   │   ├── pyproject.toml              Poetry · absorbe la config de pytest
 │   │   │
 │   │   ├── adapters/                   los cuatro puertos, menos el canal
-│   │   │   ├── llm/                    base (puerto) · registry (fábrica) · cohere · anthropic · openai · double
-│   │   │   ├── storage/                lee los bytes que subió el núcleo
-│   │   │   └── vectorstore/            base · qdrant
+│   │   │   ├── llm/                    base (puerto, con imágenes desde ADR-0067) · registry (fábrica) · cohere · anthropic · openai · double
+│   │   │   ├── embeddings/             base · voyage (voyage-4, 1024) · double · registry · un proveedor, no un puerto (ADR-0067, ADR-0071)
+│   │   │   ├── storage/                firebase: lee los bytes que subió el núcleo, con google-cloud-storage (ADR-0071)
+│   │   │   └── vectorstore/            qdrant: la API REST con httpx · una colección por agente, coseno (ADR-0010, ADR-0071)
 │   │   │
 │   │   ├── api/                        el contrato interno que consume el núcleo
-│   │   │   ├── routes/                 turns · prompts · models · ingest · health
+│   │   │   ├── routes/                 turns/ · prompts · models · ingest · health
+│   │   │   │   └── turns/              route (POST /turns) · signals (F12) · enrichment (F04, F11, F31: nunca cortan el turno)
 │   │   │   └── schemas/                Pydantic = el contrato
 │   │   │
 │   │   ├── classifiers/                F11, F12, F31
@@ -75,12 +78,16 @@ sonia/
 │   │   │   └── transfer.py
 │   │   │
 │   │   ├── infra/                      config · db · enums (GENERADO) · ids · logging · rules
-│   │   ├── knowledge/                  F06 · chunking · embeddings · search
+│   │   ├── knowledge/                  F06 · chunking (recursivo, tokens estimados por caracteres, ADR-0065, ADR-0071) · search (top_k de documentos indexed, ADR-0073) · repository
 │   │   │
 │   │   ├── pipeline/                   un módulo por valor de PipelineStep
 │   │   │   ├── runner.py               ejecuta los pasos y escribe el rastro
 │   │   │   ├── step.py                 contrato común de un paso
-│   │   │   ├── repository.py           las lecturas del turno: bloque · conversación · mensajes · agente IA · escribe la generación con lo que ensambló (ADR-0039, regla 10)
+│   │   │   ├── repository/             partido por razón de cambio (regla 2)
+│   │   │   │   ├── turn.py             las lecturas del turno: bloque · conversación · mensajes · agente IA
+│   │   │   │   ├── context.py          el contexto de F04 y sus versiones (ADR-0048)
+│   │   │   │   ├── signals.py          las políticas, la racha y las evaluaciones de F12 (ADR-0045)
+│   │   │   │   └── evidence.py         la generación con lo que ensambló (ADR-0039, regla 10) · las intenciones · el rastro
 │   │   │   ├── notices.py              el texto fijo de cada corte (O2) · no es un paso
 │   │   │   ├── blocklist.py            ┐
 │   │   │   ├── guardrail.py            │
@@ -98,14 +105,19 @@ sonia/
 │   │   │
 │   │   ├── rules/                      datos versionados, no código
 │   │   │   ├── blocklist.yaml   ·   profanity.yaml   ·   notices.yaml
-│   │   │   ├── guardrails.yaml  ·   triage.yaml   ·   grounding.yaml
+│   │   │   ├── guardrails.yaml  ·   triage.yaml
 │   │   │   ├── generation.yaml  ·   pricing.yaml  ·   rewriter.yaml
-│   │   │   └── extraction.yaml · frustration.yaml · intent.yaml
+│   │   │   ├── extraction.yaml · frustration.yaml · intent.yaml
+│   │   │   ├── chunking.yaml · image_description.yaml   los dos de la ingesta (ADR-0065, ADR-0067)
+│   │   │   └── retrieval.yaml          top_k de la búsqueda y umbral del grounding (ADR-0068, regla 5; ADR-0073)
 │   │   │                               frustration.yaml no se crea hasta que exista el modelo (ADR-0044)
 │   │   │                               los umbrales por defecto de F12 viven en triage.yaml (ADR-0045)
 │   │   │
-│   │   ├── tests/                      unitarios · conftest.py · factories.py
-│   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código
+│   │   ├── tests/                      unitarios · conftest.py
+│   │   │                               turns/ · triage/: tests partidos, con sus dobles en doubles.py (regla 2)
+│   │   └── worker/                     F06 · ingesta · segundo entrypoint, mismo código (ADR-0064, ADR-0071)
+│   │                                   loop: sondea y barre · ingest: el orden de la regla 7 · repository: status, locked_at y document_chunks
+│   │                                   crypto: abre lo que selló el núcleo · pdf: texto e imágenes con pypdf · images: la descripción
 │   │
 │   ├── core/                           ── DESPLEGABLE 1 · Go · gin ──
 │   │   ├── go.mod   ·   go.sum
@@ -146,11 +158,12 @@ sonia/
 │   │   │   │   ├── scope.go            qué contactos alcanza un operator (ADR-0032, regla 2) · la condición la escribe el dueño de la tabla
 │   │   │   │   └── model.go
 │   │   │   │
-│   │   │   ├── documents/              bases de conocimiento y carga · F06 (ABM)
-│   │   │   │   ├── controller.go       recibe el upload de hasta 100 MB
-│   │   │   │   ├── routes.go
-│   │   │   │   ├── service.go          bytes a platform/storage, fila en pending
-│   │   │   │   ├── repository.go
+│   │   │   ├── documents/              bases de conocimiento y carga · F06 (ABM) · DUEÑO de knowledge_bases y documents
+│   │   │   │   ├── controller.go       el multipart de hasta 100 MB · el aviso vigente · el listado con lo que queda de la base
+│   │   │   │   ├── routes.go           sólo admin: GET /documents/notice · GET, POST y DELETE /ai-agents/:id/documents
+│   │   │   │   ├── service.go          sólo PDF · el objeto cifrado antes que la fila, y borrado si la fila falla (ADR-0064) · el duplicado es un 409 (ADR-0070)
+│   │   │   │   ├── notice.go           el texto del aviso de datos personales y su versión (ADR-0066)
+│   │   │   │   ├── repository.go       el bloqueo de la base serializa el límite y el duplicado · la baja es deleted_at
 │   │   │   │   └── model.go
 │   │   │   │
 │   │   │   ├── inbox/                  bandeja · F13, F22–F27 · exporta Reachable, CanSee y EventRow (ADR-0063)
@@ -200,7 +213,7 @@ sonia/
 │   │   │   │
 │   │   │   ├── platform/               lo transversal · la otra excepción declarada
 │   │   │   │   ├── auth/               emite y verifica el token de sesión · sin gin y sin base (ADR-0030)
-│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles · la llave se inyecta (ADR-0031)
+│   │   │   │   ├── encryption/         AES-256-GCM sobre los cuatro campos sensibles y, con otra llave, los documentos de F06 · la llave se inyecta (ADR-0031, ADR-0064)
 │   │   │   │   ├── config/             se lee del entorno y se valida al arrancar
 │   │   │   │   ├── db/                 db.go (pool) · executor.go (pool | pgx.Tx)
 │   │   │   │   ├── enums/              GENERADO desde contracts/enums.yaml
@@ -208,7 +221,7 @@ sonia/
 │   │   │   │   ├── httpclient/         cliente HTTP con timeouts y reintentos
 │   │   │   │   ├── id/                 uuid v7
 │   │   │   │   ├── logging/
-│   │   │   │   └── storage/            PUERTO · base · supabase · disk
+│   │   │   │   └── storage/            Firebase por la API JSON de Cloud Storage · sube y borra, nunca lee (ADR-0069, ADR-0070) · el puerto lo declara documents/
 │   │   │   │
 │   │   │   ├── quick_replies/          respuestas rápidas · F09 · DUEÑO de quick_replies (ADR-0060) · paquete quickreplies
 │   │   │   │   ├── controller.go       q busca por título y contenido · el operador copia el texto en la caja, no hay ruta de envío

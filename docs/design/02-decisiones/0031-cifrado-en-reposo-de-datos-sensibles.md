@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **§4 enmendada por [ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md)** el 2026-09-12: las dos columnas de `inboxes` también admiten `NULL` |
+| **Estado** | Aceptada · **§4 enmendada por [ADR-0033](0033-secretos-de-bandejas-nullables-y-congelamiento-de-0001.md)** el 2026-09-12: las dos columnas de `inboxes` también admiten `NULL` · **regla 9 y *Lo que queda abierto* enmendadas por [ADR-0064](0064-ingesta-de-documentos.md)** el 2026-10-03: los documentos de F06 se cifran con el mismo mecanismo y una llave propia, `DOCUMENT_ENCRYPTION_KEY`, que también tiene el cerebro en modo `worker`. `ENCRYPTION_KEY` sigue siendo sólo del núcleo, así que la regla 8 no cambia |
 | **Fecha** | 2026-09-09 |
 | **Etapa** | Construcción — Fase 3 (contactos y etiquetas) |
 | **Resuelve** | Con qué se cifran las siete columnas `bytea` que el esquema declara cifradas y nunca dijo cómo |
@@ -41,7 +41,7 @@ La Fase 3 es la que construye `contacts/`, así que es la primera que tiene que 
 | 6 | **La llave sale de `ENCRYPTION_KEY`**, en base64, y son exactamente **32 bytes crudos** al decodificar. Vive en el entorno, nunca en un archivo del repositorio |
 | 7 | **Se valida al arrancar** (regla 10 de `CLAUDE.md`): si falta, si no decodifica de base64 o si no mide 32 bytes, **el proceso no levanta** — igual que `JWT_SECRET` en [ADR-0030](0030-autenticacion-de-operadores.md) |
 | 8 | **La llave la tiene únicamente el núcleo (Go). El cerebro no la recibe y no descifra nada** |
-| 9 | **Alcance: las siete columnas de §1, con el mismo mecanismo.** Un solo camino de cifrado en el sistema, no uno para PII y otro para credenciales |
+| 9 | **Alcance: las siete columnas de §1, con el mismo mecanismo.** Un solo camino de cifrado en el sistema, no uno para PII y otro para credenciales. *(Enmendada por [ADR-0064](0064-ingesta-de-documentos.md): el mecanismo y el formato siguen siendo uno, y alcanzan también a los documentos de F06, pero con una segunda llave, `DOCUMENT_ENCRYPTION_KEY`, porque el que los descifra es el cerebro.)* |
 | 10 | **`messages.content_text` NO se cifra**, ni ninguna otra columna de texto. Lo que se cifra es lo que el sistema guarda **como dato estructurado del contacto**, no lo que el cliente escribió en el chat |
 | 11 | **El código vive en `platform/encryption`**, un solo lugar con dos funciones —cifrar y descifrar—, y ningún paquete de contexto implementa lo suyo |
 
@@ -92,7 +92,7 @@ Cifrar los mensajes rompería tres cosas que el sistema necesita: la búsqueda e
 | **Procedimiento de rotación de la llave** | El formato lo soporta (regla 5) y nada más. Falta decidir si se re-cifra en caliente o por lote, y quién dispara la operación. Ningún requisito lo pide y no hay fase asignada |
 | **Dónde se custodia la llave en producción** | Hoy es una variable de entorno, como `JWT_SECRET`. Si el despliegue termina teniendo un gestor de secretos, cambia el origen y no el mecanismo |
 | **El respaldo de la llave** | Consecuencia directa del punto anterior: sin llave no hay datos, y no hay procedimiento escrito |
-| **El cifrado de los documentos de F06** | Sigue abierto desde [ADR-0019](0019-almacenamiento-de-objetos.md). Son bytes en un almacén de objetos, no una columna: otro problema, misma ley |
+| ~~**El cifrado de los documentos de F06**~~ | ~~Sigue abierto desde [ADR-0019](0019-almacenamiento-de-objetos.md). Son bytes en un almacén de objetos, no una columna: otro problema, misma ley~~ *(Cerrado por [ADR-0064](0064-ingesta-de-documentos.md), reglas 1 a 3.)* |
 | **Qué es un atributo sensible en `contact_attributes`** | La columna es `NOT NULL`, así que **todo** lo que extrae F31 se cifra, incluso lo que no es dato personal. Se cifra de más, que es el lado seguro del error. Definir el criterio es de las Fases 8 y 9, cuando exista el clasificador de extracción |
 | **Registro de quién descifró qué** | Ver [ADR-0032](0032-acceso-a-contactos-y-datos-sensibles.md) §4 y [ADR-0007](0007-alcance-del-registro-de-auditoria.md). El cifrado protege de quien no debería entrar; no dice nada de quien entró con permiso |
 

@@ -1,0 +1,17 @@
+# The retrieval of ADR-0068, versioned as data (regla 5): pipeline_steps.version of the retrieval and grounding steps is this
+# file's version, and top_k and the threshold go into the detail_json of the retrieval step (ADR-0016 §2). Still version 1: no
+# turn searched before the threshold came in, so no measurement was taken with the file as it was.
+version: 1
+
+# How many chunks the search brings back, every one logged with its similarity and no threshold (ADR-0068, regla 3). Three to
+# start, chosen by the group (ADR-0073, regla 1): a provisional number that the retrieval evaluation of ADR-0065, regla 3 validates.
+top_k: 3
+
+# The cosine similarity the best chunk has to reach for the turn to be grounded (ADR-0068, regla 4). Only the chunks that reach it
+# go to the generation. 0.5 to start, chosen by the group (ADR-0074, regla 1): provisional until the evaluation sweeps it.
+threshold: 0.5
+
+# The longest question the search sends to the provider, in characters: the summary of the context and the block together
+# (ADR-0068, regla 2). Past it the summary is cut from its start, and only then the block, so the provider never truncates in
+# silence and what was searched is what the step says (ADR-0074).
+max_query_chars: 4000

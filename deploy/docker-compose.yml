@@ -31,6 +31,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       CORE_HTTP_ADDR: ":8080"
       BRAIN_BASE_URL: http://brain:8000
+    # The Firebase service account is a file (ADR-0069): mounted read-only from secrets/, which git ignores, and never built into
+    # the image. GOOGLE_APPLICATION_CREDENTIALS in the .env names it as /run/secrets/<file>.
+    volumes:
+      - ../secrets:/run/secrets:ro
     ports:
       - "8080:8080"
     depends_on:
@@ -53,11 +57,19 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       BRAIN_HTTP_HOST: 0.0.0.0
       BRAIN_HTTP_PORT: "8000"
+      # Emptied over what the env_file brings: the brain in api mode does not receive the document key (ADR-0064, regla 2).
+      # The worker gets it on its own service.
+      DOCUMENT_ENCRYPTION_KEY: ""
+      # The turn searches the same Qdrant the worker writes to (ADR-0072, ADR-0074).
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      # Started and not healthy, for the reason the worker gives below; a turn before Qdrant answers fails its search.
+      qdrant:
+        condition: service_started
     # slim carries no curl, and urllib is already installed.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -66,5 +78,41 @@ services:
       retries: 5
       start_period: 10s
 
+  # The vector store of F06 (ADR-0010, ADR-0072), local and with its own volume, so the vectors outlive a restart like the rows do.
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    ports:
+      # The loopback only, like the database: the dashboard and the smoke come in from the host, and nothing else should.
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrantdata:/qdrant/storage
+
+  # The ingestion of F06 (ADR-0064): the brain's image with the other flag, the same code as the api (ADR-0017 (g)). It reaches
+  # the qdrant service above unless the .env names another Qdrant in QDRANT_URL.
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/brain.Dockerfile
+    command: ["python", "main.py", "worker"]
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Emptied over what the env_file brings: the worker holds the document key and must not read the sensitive columns,
+      # which is the whole reason the two keys are different (ADR-0064, regla 2).
+      ENCRYPTION_KEY: ""
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+    # The same service account the core mounts: the worker reads what the core wrote (ADR-0069).
+    volumes:
+      - ../secrets:/run/secrets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      # Started and not healthy: the image carries neither curl nor wget for a healthcheck, and a Qdrant still booting only costs
+      # the worker one failed tick, which the next one retries.
+      qdrant:
+        condition: service_started
+
 volumes:
   pgdata:
+  qdrantdata:

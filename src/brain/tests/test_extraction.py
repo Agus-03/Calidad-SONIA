@@ -22,7 +22,7 @@ from infra import rules as rules_module
 from infra.enums import MessageDirection, SenderType
 from infra.rules import RulesFileError
 from pipeline import guardrail
-from pipeline.repository import Message
+from pipeline.repository.turn import Message
 
 
 def said(text: str) -> Message:

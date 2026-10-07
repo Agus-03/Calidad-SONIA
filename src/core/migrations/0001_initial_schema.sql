@@ -340,6 +340,9 @@ CREATE TABLE knowledge_bases (
     deleted_at       timestamptz
 );
 
+-- ADR-0005, ADR-0010 - an AIAgent has at most one knowledge base, so its Qdrant collection is one too.
+CREATE UNIQUE INDEX uq_knowledge_bases_ai_agent_id ON knowledge_bases (ai_agent_id) WHERE deleted_at IS NULL;
+
 -- object_key and not bytea: a 100 MB file in a row inflates every backup and the WAL (ADR-0019).
 CREATE TABLE documents (
     id                     uuid        PRIMARY KEY,
@@ -353,6 +356,8 @@ CREATE TABLE documents (
     locked_at              timestamptz,
     error_message          text,
     uploaded_by_operator_id uuid       NOT NULL REFERENCES operators (id),
+    -- ADR-0066 - the notice accepted in the same request that uploads; who and when are the two columns around it.
+    personal_data_terms_version smallint NOT NULL,
     created_at             timestamptz NOT NULL DEFAULT now(),
     updated_at             timestamptz NOT NULL DEFAULT now(),
     deleted_at             timestamptz
@@ -366,13 +371,27 @@ CREATE TABLE document_chunks (
     content     text        NOT NULL,
     token_count integer     NOT NULL,
     vector_id   varchar,
+    -- ADR-0065 rule 9 - what made the chunk lives on the chunk, which a reindex never overwrites.
+    chunking_version           smallint NOT NULL,
+    -- NULL when the document had no image, so no description prompt ran.
+    description_prompt_version smallint,
+    embedding_model            varchar  NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now(),
     deleted_at  timestamptz
 );
 
+-- ADR-0073 - the search reads a base's live documents and their live chunks on every turn that retrieves, and the worker retires
+-- and sweeps chunks by document; a declared exception to waiting for a slow query (migrations/README.md).
+CREATE INDEX idx_documents_knowledge_base_id ON documents (knowledge_base_id) WHERE deleted_at IS NULL;
+-- ADR-0064 rule 7 - the worker's claim takes the oldest pending document every five seconds, and the sweep looks for the ones
+-- held in processing; both by status, in the order the claim reads. A declared exception (migrations/README.md).
+CREATE INDEX idx_documents_status_created_at_id ON documents (status, created_at, id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_document_chunks_document_id ON document_chunks (document_id) WHERE deleted_at IS NULL;
+
+-- ADR-0068 rule 6 - hangs from the retrieval step and not from generations: a turn cut by not_grounded retrieved and never generated.
 CREATE TABLE retrieval_logs (
     id                uuid        PRIMARY KEY,
-    generation_id     uuid        NOT NULL REFERENCES generations (id),
+    pipeline_step_id  uuid        NOT NULL REFERENCES pipeline_steps (id),
     document_chunk_id uuid        NOT NULL REFERENCES document_chunks (id),
     similarity_score  numeric     NOT NULL,
     rank              smallint    NOT NULL,

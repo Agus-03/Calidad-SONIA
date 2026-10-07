@@ -50,6 +50,14 @@ EXTRACTION_NAME_TRIGGER = "me llamo lucía pérez"
 EXTRACTION_NAME_ANSWER = '{"first_name": "Lucía", "last_name": "Pérez", "email": null, "confidence": 0.9}'
 
 
+# The heading the description of a document's images opens its system prompt with (ADR-0067), held here for the same reason as
+# the others: without it the doubled worker would write the echo of the prompt into every page that has an image.
+DESCRIPTION_MARKER = "[DESCRIPCIÓN DE IMAGEN]"
+
+# Announces itself, because it is the text that reaches document_chunks and, through them, the answers of a doubled stack.
+DESCRIPTION_ANSWER = "[doblado] una imagen del documento."
+
+
 class DoubleClient:
     provider = PROVIDER
 
@@ -66,6 +74,14 @@ class DoubleClient:
         last = next((m.text for m in reversed(messages) if m.role == "user"), "")
         if not last:
             raise LLMUnavailable(f"{PROVIDER}: the turn reached the model with nothing to answer")
+
+        if system and DESCRIPTION_MARKER in system:
+            return Completion(
+                text=DESCRIPTION_ANSWER,
+                model=model,
+                prompt_tokens=sum(len(m.text.split()) for m in messages),
+                completion_tokens=len(DESCRIPTION_ANSWER.split()),
+            )
 
         if system and TRIAGE_MARKER in system:
             answer = TRIAGE_PERSON_ANSWER if TRIAGE_PERSON_TRIGGER in last.lower() else TRIAGE_ANSWER

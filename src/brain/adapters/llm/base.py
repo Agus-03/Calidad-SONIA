@@ -1,6 +1,7 @@
 # The port of one of the four declared boundaries (regla 11), and the only one OE2 turns into an instrument.
 
 import asyncio
+import base64
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,12 +15,28 @@ SDK_RETRIES = 0
 DEFAULT_MAX_TOKENS = 1024
 
 
+# An image a message carries, as the bytes and their type: the description of a document's images is the one caller (ADR-0067,
+# regla 8), and each adapter turns it into its provider's own block, so no module outside adapters/ learns any of the three.
+@dataclass(frozen=True)
+class LLMImage:
+    media_type: str
+    data: bytes
+
+    def base64(self) -> str:
+        return base64.b64encode(self.data).decode("ascii")
+
+    def data_url(self) -> str:
+        return f"data:{self.media_type};base64,{self.base64()}"
+
+
 # Frozen because a port is data and not state: the same decision as the turn's dataclasses.
 @dataclass(frozen=True)
 class LLMMessage:
     # The two roles a conversation has here; the operator's messages reach the model as the assistant's own voice.
     role: Literal["user", "assistant"]
     text: str
+    # Empty for every message of a turn, which keeps the text-only shape the providers have always been sent.
+    images: tuple[LLMImage, ...] = ()
 
 
 # What generations needs and nothing more: the text to send, plus the two counts task 13 turns into cost.

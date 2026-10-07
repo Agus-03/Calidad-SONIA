@@ -80,7 +80,7 @@ erDiagram
     knowledge_bases ||--o{ documents       : knowledge_base_id
     operators       ||--o{ documents       : uploaded_by_operator_id
     documents       ||--o{ document_chunks : document_id
-    generations     ||--o{ retrieval_logs  : generation_id
+    pipeline_steps  ||--o{ retrieval_logs  : pipeline_step_id
     document_chunks ||--o{ retrieval_logs  : document_chunk_id
 
     %% === BLOQUE 5 — Operación ==============================================

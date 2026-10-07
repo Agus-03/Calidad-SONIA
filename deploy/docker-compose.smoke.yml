@@ -1,4 +1,4 @@
-# The two doubles the Fase 1 smoke test runs on, apart from the main compose so nothing deploys a fake sender by accident.
+# The doubles the smoke test runs on, apart from the main compose so nothing deploys a fake sender or a fake store by accident.
 
 services:
   core:
@@ -6,8 +6,46 @@ services:
       # Declared here and not left to the .env, because both configs refuse a double outside development and test (regla 10).
       ENVIRONMENT: test
       WHATSAPP_USE_DOUBLE: "true"
+      # The documents go to the fake-gcs-server below and not to Firebase, without a credential (ADR-0070).
+      STORAGE_EMULATOR_HOST: http://storage:4443
+      FIREBASE_STORAGE_BUCKET: sonia-smoke
+      GOOGLE_APPLICATION_CREDENTIALS: ""
 
   brain:
     environment:
       ENVIRONMENT: test
       LLM_USE_DOUBLE: "true"
+      # The turn searches with the same doubled embeddings the worker indexed with, or the two would not be comparable (ADR-0073).
+      EMBEDDINGS_USE_DOUBLE: "true"
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ""
+
+  # The worker on the same doubles, plus the embeddings one, so the smoke indexes without a key and no document leaves for Voyage
+  # (ADR-0071). It reads from the fake store below and writes to the compose's own Qdrant, whatever the .env names.
+  worker:
+    environment:
+      ENVIRONMENT: test
+      LLM_USE_DOUBLE: "true"
+      EMBEDDINGS_USE_DOUBLE: "true"
+      STORAGE_EMULATOR_HOST: http://storage:4443
+      FIREBASE_STORAGE_BUCKET: sonia-smoke
+      GOOGLE_APPLICATION_CREDENTIALS: ""
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ""
+      # Every second and not every five, so the smoke waits for the ingestion and not for the poller.
+      WORKER_POLL_INTERVAL_SECONDS: "1"
+
+  # The JSON API of Cloud Storage in memory: Google's clients reach it through STORAGE_EMULATOR_HOST, so the adapter that runs is
+  # the real one (ADR-0070). It starts empty, and the smoke creates its bucket.
+  storage:
+    image: fsouza/fake-gcs-server:1.56.1
+    command: ["-scheme", "http", "-port", "4443", "-backend", "memory", "-public-host", "storage:4443"]
+    ports:
+      # The loopback only, like the database: the smoke reads the objects back from the host.
+      - "127.0.0.1:4443:4443"
+    # So `up --wait` returns with the store listening, and the smoke's first call to create its bucket does not race its boot.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:4443/_internal/healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

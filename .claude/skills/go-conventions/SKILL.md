@@ -62,7 +62,7 @@ Cada regla de abajo está en el código. Si una deja de ser cierta, es que el id
 
 ## 6. Llamadas salientes
 
-- Timeout por llamada con `context.WithTimeout`, y **distinto según quién espera**: 3 s la previsualización porque hay un administrador tipeando, 10 s el turno.
+- Timeout por llamada con `context.WithTimeout`, y **distinto según quién espera**: 3 s la previsualización porque hay un administrador tipeando, 15 s el turno (ADR-0074).
 - Reintentos acotados, configurables por entorno, y **sólo sobre 5xx**: un 4xx no mejora si se pregunta otra vez.
 - Backoff lineal, esperando en un `select` que también escucha `ctx.Done()`.
 - Cuerpo de respuesta acotado con `io.LimitReader`: un servicio que responde mal no llena la memoria del núcleo.

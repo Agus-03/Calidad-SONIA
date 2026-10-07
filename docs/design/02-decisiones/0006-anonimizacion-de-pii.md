@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| **Estado** | Aceptada · **§2 enmendado por [ADR-0042](0042-pipeline-de-decision-del-turno.md)** (decisión D6): los marcadores que recibe el LLM son **tres** y no cuatro, porque el patrón de once dígitos emite el genérico `[CUIT/CUIL]` —la primera de las dos salidas que la nota de este ADR dejó abiertas—. La otra mitad de esa nota, desambiguar al persistir, sigue abierta |
+| **Estado** | Aceptada · **§2 enmendado por [ADR-0042](0042-pipeline-de-decision-del-turno.md)** (decisión D6): los marcadores que recibe el LLM son **tres** y no cuatro, porque el patrón de once dígitos emite el genérico `[CUIT/CUIL]` —la primera de las dos salidas que la nota de este ADR dejó abiertas—. La otra mitad de esa nota, desambiguar al persistir, sigue abierta · **§2 y §3 acotados por [ADR-0066](0066-datos-personales-en-los-documentos.md)** (2026-10-03): la redacción cubre la conversación con la clienta; el contenido de los documentos de la base de conocimiento sale sin redactar, bajo un aviso que acepta quien los sube |
 | **Fecha** | 2026-08-06 · §2 enmendado 2026-09-25 (Fase 8) |
 | **Etapa** | Diseño — Paso 3 |
 | **Resuelve** | Contradicción entre la sección 5.2 y el modelo de datos |
@@ -24,6 +24,8 @@ El trabajo estaría denunciando en la página 4 exactamente la fuga que producir
 
 **Se resuelve en el diseño.** Antes de que cualquier texto salga hacia el proveedor de LLM externo, los datos personales identificables se reemplazan por un **marcador de tipo**.
 
+> **Acotado por [ADR-0066](0066-datos-personales-en-los-documentos.md) el 2026-10-03.** *"Cualquier texto"* se lee como el texto de la conversación con la clienta, que es lo que denuncia la sección 5.2. El contenido de los documentos de la base de conocimiento no se redacta: viaja al proveedor de embeddings y al del LLM tal como viene, y quien sube cada documento acepta un aviso que lo dice.
+
 - **Datos alcanzados: DNI, CUIT, CUIL y CBU.** Los cuatro se almacenan cifrados.
 - **El LLM nunca recibe el valor.** Recibe el marcador: `[DNI]`, `[CUIT]`, `[CUIL]`, `[CBU]`.
 - **El valor real se cifra y persiste del lado propio** (F31), asociado al contacto.
@@ -42,7 +44,7 @@ Te paso mi CBU [CBU] para la seña.
 - **Es un diferenciador real** frente a Chatwoot y Respond.io, y la sección 6.3 lo declara parte del gap tecnológico que define el aporte original.
 - **El modelo no pierde capacidad.** Para entender la intención —"te paso mi CBU para la seña"— el marcador alcanza y sobra. El número no aporta nada al razonamiento del agente.
 - **Cifrar no es anonimizar**, y conviene no confundirlos: F31 ya cifra en reposo (`dni_encrypted`, `cbu_encrypted`), lo que protege la base de datos. Esto protege el dato **en tránsito hacia un tercero**, que es un problema distinto y es el que denuncia 5.2.
-- **`prompt_rendered` debe guardar lo redactado** o el registro de auditoría se convertiría en el mayor repositorio de datos sensibles del sistema — el peor resultado posible partiendo de una buena intención.
+- **`prompt_rendered` debe guardar lo redactado** o el registro de auditoría se convertiría en el mayor repositorio de datos sensibles del sistema — el peor resultado posible partiendo de una buena intención. *(Acotado por [ADR-0066](0066-datos-personales-en-los-documentos.md): vale para lo que escribió la clienta. Los fragmentos de documentos que recupera el RAG entran a `prompt_rendered` tal como vienen.)*
 
 ## 4. Consecuencias
 

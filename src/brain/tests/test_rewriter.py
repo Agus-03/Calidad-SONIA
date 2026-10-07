@@ -16,7 +16,7 @@ from adapters.llm.double import REWRITER_ANSWER, REWRITER_MARKER, DoubleClient
 from classifiers.intent import Intent
 from infra import rules as rules_module
 from infra.rules import RulesFileError
-from pipeline.repository import Context, content_of
+from pipeline.repository.context import Context, content_of
 from prompts import rewriter
 
 PREVIOUS = Context(

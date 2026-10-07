@@ -94,6 +94,8 @@ El porqué de esta separación por dueño ya está justificado en [DER/entidades
 
 ### Regla 4 — Punto exacto de redacción de PII
 
+> **Acotada el 2026-10-03** por [ADR-0066](02-decisiones/0066-datos-personales-en-los-documentos.md). La regla redacta lo que escribió la clienta. Los fragmentos que recupera el RAG no pasan por el *checkpoint*: entran al prompt tal como vienen en el documento, así que la promesa de la justificación —*"ninguna llamada a un modelo (…) ve el dato crudo"*— vale para el texto de la conversación y no para el de los documentos.
+
 **Decisión.** Un único checkpoint, inmediatamente después de que el `message_batch` cierra:
 
 1. Se extrae el dato personal del texto crudo del bloque (F31). **El *checkpoint* no lo persiste**: viaja en la respuesta del turno y el núcleo lo cifra y lo escribe en `contact_attributes` (con `source_message_id`) en la transacción que cierra el turno, **sólo si el contacto tiene consentimiento vigente** ([ADR-0047](02-decisiones/0047-extraccion-de-datos-del-contacto.md) §2.6).
@@ -243,7 +245,7 @@ y quiero saber si todavía está disponible, mi presupuesto es hasta 350mil.
 
 - `generations`: `conversation_context_version_id` → la de `turn_number = 5` · `prompt_rendered` = el bloque 4.7 (ya redactado) · `completion_text` = *"¡Hola! Sí, el departamento de 2 ambientes en zona centro de Jesús María está disponible, a $320.000 + expensas — dentro de tu presupuesto. Para alquilarlo se necesita recibo de sueldo y garantía propietaria o seguro de caución, más un depósito de un mes. ¿Querés que coordine una visita?"* · `status = auto_sent` (modo autónomo).
 - `generation_components`: 6 filas, una por cada `prompt_component_version_id` vigente (la **v2** de `tone`, no la v1), con su `position` 1–6.
-- `retrieval_logs`: las 2 filas de 4.6, con `generation_id` de esta generación.
+- `retrieval_logs`: las 2 filas de 4.6, con ~~`generation_id` de esta generación~~ `pipeline_step_id` de la fila del paso `retrieval` de este bloque *(enmendado por [ADR-0068](02-decisiones/0068-recuperacion-y-grounding.md), regla 6)*.
 
 Esto es lo que el criterio de cierre del Paso 4 pedía poder señalar: el mensaje de Lucía se generó con estos seis componentes, en estas versiones, con este contexto y estos fragmentos — cuatro saltos completos, sin ningún hueco.
 

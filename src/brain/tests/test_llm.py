@@ -12,13 +12,14 @@ from adapters.llm.base import (
     DEFAULT_MAX_TOKENS,
     SDK_RETRIES,
     LLMError,
+    LLMImage,
     LLMMessage,
     LLMRefusal,
     LLMTimeout,
     LLMUnavailable,
     calling,
 )
-from adapters.llm.double import PREFIX, DoubleClient
+from adapters.llm.double import DESCRIPTION_ANSWER, DESCRIPTION_MARKER, PREFIX, DoubleClient
 from adapters.llm.registry import UnavailableClient, clear_clients, resolve
 from infra.config import Settings
 
@@ -312,3 +313,55 @@ async def test_no_provider_retries_on_its_own(
 
     assert sdk.built_with["max_retries"] == SDK_RETRIES
     assert sdk.built_with["timeout"] == 3
+
+
+# --- imágenes (ADR-0067, regla 8) ----------------------------------------------
+
+PNG = LLMImage(media_type="image/png", data=b"\x89PNG-bytes")
+WITH_IMAGE = (LLMMessage(role="user", text="Describí esta imagen.", images=(PNG,)),)
+
+
+# Each provider gets the image in its own block, before the text, and nothing about it leaks into a message without images.
+@pytest.mark.parametrize("provider", sorted(BUILDERS))
+async def test_each_provider_carries_an_image_in_its_own_block(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
+    build, response = BUILDERS[provider]
+    client, sdk = build(monkeypatch, response())
+
+    await client.complete(model="un-modelo", system="sistema", messages=WITH_IMAGE)
+    sent = [m for m in sdk.called_with["messages"] if m["role"] == "user"][0]["content"]
+
+    assert isinstance(sent, list) and sent[-1] == {"type": "text", "text": "Describí esta imagen."}
+    if provider == "anthropic":
+        assert sent[0] == {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": PNG.base64()}}
+    else:
+        assert sent[0] == {"type": "image_url", "image_url": {"url": "data:image/png;base64," + PNG.base64()}}
+
+    await client.complete(model="un-modelo", system=None, messages=MESSAGES)
+    assert [m["content"] for m in sdk.called_with["messages"] if m["role"] == "user"] == ["hola, tienen turno?"]
+
+
+async def test_the_double_describes_an_image_without_echoing_the_prompt() -> None:
+    completion = await DoubleClient().complete(
+        model="m", system=f"{DESCRIPTION_MARKER}\nDescribí.", messages=WITH_IMAGE
+    )
+    assert completion.text == DESCRIPTION_ANSWER
+
+
+# The worker describes with a longer timeout than a turn's, and asks for it without touching the turn's own clients.
+def test_resolve_takes_a_timeout_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    from adapters.llm import registry
+
+    built: list[float] = []
+    monkeypatch.setitem(
+        registry._PROVIDERS,
+        "anthropic",
+        registry._Provider(lambda api_key, timeout: built.append(timeout) or object(), "anthropic_api_key"),
+    )
+    settings = configured(anthropic_api_key="k")
+    clear_clients()
+    try:
+        resolve("anthropic", settings, timeout=60.0)
+        resolve("anthropic", settings)
+    finally:
+        clear_clients()
+    assert built == [60.0, settings.llm_timeout_seconds]

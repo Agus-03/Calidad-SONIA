@@ -39,7 +39,9 @@ def _client(provider: str, api_key: str, timeout: float) -> LLMClient:
     return _PROVIDERS[provider].build(api_key, timeout)
 
 
-def resolve(provider: str, settings: Settings) -> LLMClient:
+# timeout replaces the turn's for a caller nobody is waiting on: describing an image while ingesting takes longer than the 8 s a
+# customer's turn can afford, and the worker has no customer (ADR-0067).
+def resolve(provider: str, settings: Settings, *, timeout: float | None = None) -> LLMClient:
     # Wins over the row on purpose: development and CI have no key, and the guard against production is in Settings.
     if settings.llm_use_double:
         return double.DoubleClient()
@@ -52,7 +54,7 @@ def resolve(provider: str, settings: Settings) -> LLMClient:
     if not api_key:
         return UnavailableClient(provider, f"{entry.credential.upper()} is not configured")
 
-    return _client(provider, api_key, settings.llm_timeout_seconds)
+    return _client(provider, api_key, timeout if timeout is not None else settings.llm_timeout_seconds)
 
 
 def _known() -> str:

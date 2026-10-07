@@ -107,6 +107,8 @@ dbhub-down:
 
 # The same suites with the variable that turns the skipped tests on, so the stack has to be up first.
 test-integration: export SONIA_TEST_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)
+# The compose's own Qdrant, so the search of F06 is tested against the vectors it will really read (ADR-0072, ADR-0073).
+test-integration: export SONIA_TEST_QDRANT_URL := http://localhost:6333
 # The 80% of ADR-0028 is enforced here and nowhere else: this is the only target where every line of the core actually gets a chance to run.
 test-integration: test
 	cd src/core && go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $$3); if ($$3 + 0 < 80) { printf "core coverage %s%% is below the 80%% of ADR-0028\n", $$3; exit 1 } }'
@@ -117,6 +119,11 @@ smoke: export SONIA_SMOKE_CORE_URL := http://localhost:8080
 smoke: export SONIA_SMOKE_BRAIN_URL := http://localhost:8000
 # The core's own key, so the smoke can encrypt the demo inbox's app secret and sign its webhooks with it (ADR-0031, F20).
 smoke: export SONIA_SMOKE_ENCRYPTION_KEY := $(ENCRYPTION_KEY)
+# The document key and the fake store, so the smoke can read the uploaded object back and prove it left sealed (ADR-0064, ADR-0070).
+smoke: export SONIA_SMOKE_DOCUMENT_ENCRYPTION_KEY := $(DOCUMENT_ENCRYPTION_KEY)
+smoke: export SONIA_SMOKE_STORAGE_URL := http://localhost:4443
+# The Qdrant of the smoke, so it can count the points the worker wrote for a document (ADR-0071).
+smoke: export SONIA_SMOKE_QDRANT_URL := http://localhost:6333
 smoke:
 	@mkdir -p $(GOTMPDIR)
 	$(COMPOSE_SMOKE) up -d --build --wait

@@ -1,6 +1,9 @@
 # Environment Variables
 .env
 
+# The Firebase service account the core mounts (ADR-0069)
+/secrets/
+
 # Help Files
 z_helps/
 

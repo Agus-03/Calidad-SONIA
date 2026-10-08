@@ -49,6 +49,8 @@ export default function CreateWhatsAppChannel() {
       console.error(err);
       if (err.code === 'phone_number_in_use') {
         setErrors({ phoneNumberId: 'This Phone number ID is already registered.' });
+      } else if (err.code === 'invalid_credentials') {
+        setErrors({ form: 'The provided Phone number ID or API key are invalid. Please check your Meta credentials.' });
       } else {
         setErrors({ form: 'An error occurred while creating the channel.' });
       }

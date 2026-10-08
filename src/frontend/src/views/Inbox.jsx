@@ -6,20 +6,55 @@ import { IconChat, IconUser, IconHistory } from '../components/icons';
 import isotipoDark from '../assets/isotipo-dark.svg';
 import './Inbox.css';
 
-const mockConversations = [
-  { id: '1', name: 'Juan Pérez', lastMessage: 'Hola, necesito ayuda con...', time: '15:40', avatar: 'J', muted: true },
-  { id: '2', name: 'María Gómez', lastMessage: 'Gracias por la info.', time: '15:39', avatar: 'M', muted: false },
-  { id: '3', name: 'Carlos López', lastMessage: '¿A qué hora abren?', time: '15:16', avatar: 'C', muted: true },
-  { id: '4', name: 'Soporte Técnico', lastMessage: 'Su ticket ha sido resuelto.', time: '15:11', avatar: 'S', muted: true },
-  { id: '5', name: 'Ana Silva', lastMessage: 'Perfecto, nos vemos.', time: '14:49', avatar: 'A', muted: false },
-];
-
 export default function Inbox() {
   const navigate = useNavigate();
-  const [conversations, setConversations] = useState(mockConversations);
+  const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
 
-  const mockContactId = '123e4567-e89b-12d3-a456-426614174001';
+  useEffect(() => {
+    const fetchConversations = async () => {
+      try {
+        const response = await api.get('/conversations');
+        if (response && response.items) {
+          const mapped = response.items.map(item => ({
+            id: item.id,
+            contactId: item.contact.id,
+            name: item.contact.name ? `${item.contact.name} ${item.contact.lastname}`.trim() : item.contact.phone_whatsapp,
+            lastMessage: item.last_message?.content_text || '',
+            time: new Date(item.last_activity_at || item.last_message?.sent_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            avatar: (item.contact.name || item.contact.phone_whatsapp || '?').charAt(0).toUpperCase(),
+            muted: item.mode === 'off', // Just mapping to something
+          }));
+          setConversations(mapped);
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversations', err);
+      }
+    };
+    fetchConversations();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversation) {
+      setMessages([]);
+      return;
+    }
+    const fetchMessages = async () => {
+      try {
+        const response = await api.get(`/conversations/${selectedConversation}/messages`);
+        if (response && response.items) {
+          // The backend returns ThreadPage newest first, so we reverse it to display chronologically (oldest top, newest bottom)
+          setMessages([...response.items].reverse());
+        }
+      } catch (err) {
+        console.error('Failed to fetch messages', err);
+      }
+    };
+    fetchMessages();
+  }, [selectedConversation]);
+
+  const currentConversation = conversations.find(c => c.id === selectedConversation);
 
   return (
     <div className="inbox-layout">
@@ -95,13 +130,16 @@ export default function Inbox() {
           <div className="chat-content">
             <div className="chat-header">
               <div className="item-avatar" style={{ width: 40, height: 40, marginRight: 16 }}>
-                {conversations.find(c => c.id === selectedConversation)?.avatar}
+                {currentConversation?.avatar}
               </div>
-              <h3>{conversations.find(c => c.id === selectedConversation)?.name}</h3>
+              <h3>{currentConversation?.name}</h3>
             </div>
             <div className="chat-messages">
-              <div className="message incoming">Hola, necesito ayuda con mi factura.</div>
-              <div className="message outgoing">¡Hola! Claro, ¿me puedes indicar el número de factura?</div>
+              {messages.map(msg => (
+                <div key={msg.id} className={`message ${msg.direction === 'inbound' ? 'incoming' : 'outgoing'}`}>
+                  {msg.content_text}
+                </div>
+              ))}
             </div>
           </div>
         ) : (
@@ -113,7 +151,7 @@ export default function Inbox() {
 
       {/* Contact Panel */}
       <ContactPanel
-        contactId={selectedConversation ? mockContactId : null}
+        contactId={currentConversation?.contactId || null}
         conversationId={selectedConversation}
       />
     </div>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -84,6 +85,38 @@ func (c *SettingsController) create(gc *gin.Context) {
 	var req createInboxRequest
 	if err := gc.ShouldBindJSON(&req); err != nil {
 		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "invalid payload").WithCause(err))
+		return
+	}
+
+	// Verify credentials with Meta API before creating
+	// WhatsApp Cloud API endpoints usually respond to GET /<PHONE_NUMBER_ID> with basic info if the token is valid.
+	c.log.Info("Executing Meta API validation", "phone_number_id", req.PhoneNumberID)
+	verifyURL := "https://graph.facebook.com/v19.0/" + req.PhoneNumberID
+	httpReq, err := http.NewRequestWithContext(gc.Request.Context(), http.MethodGet, verifyURL, nil)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.InternalServerError("verification_failed", "could not create verification request").WithCause(err))
+		return
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.InternalServerError("verification_failed", "could not reach meta api").WithCause(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_credentials", "the provided phone number ID or API key are invalid"))
+		return
+	}
+
+	var metaResp struct {
+		ID                 string `json:"id"`
+		DisplayPhoneNumber string `json:"display_phone_number"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&metaResp); err != nil || metaResp.DisplayPhoneNumber == "" {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_credentials", "the provided ID is not a valid WhatsApp Phone Number ID"))
 		return
 	}
 

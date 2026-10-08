@@ -138,6 +138,33 @@ func (r *Repository) ListSettings(ctx context.Context, accountID uuid.UUID) ([]I
 	return out, rows.Err()
 }
 
+// CAMBIADO POR TOBI
+const inboxCreateSettings = `
+INSERT INTO inboxes (
+	id, account_id, phone_number_id, waba_id, display_name, 
+	verify_token, access_token_encrypted, status
+) VALUES (
+	$1, $2, $3, $4, $5, 
+	$6, $7, 'active'
+) RETURNING id, account_id, display_name, phone_number_id, status, default_ai_agent_id`
+
+// CreateSettings inserts a new inbox from the UI.
+func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
+	inboxID := uuid.New()
+	
+	var encryptedToken []byte
+	var err error
+	if accessToken != "" {
+		encryptedToken, err = r.cipher.Encrypt(accessToken)
+		if err != nil {
+			return InboxSettings{}, fmt.Errorf("whatsapp: encrypt the access token: %w", err)
+		}
+	}
+
+	return scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings, 
+		inboxID, accountID, phoneNumberID, wabaID, displayName, verifyToken, encryptedToken))
+}
+
 // SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.
 func (r *Repository) SettingsForUpdate(ctx context.Context, accountID, inboxID uuid.UUID) (InboxSettings, error) {
 	return scanSettings(r.exec.QueryRow(ctx, settingsSelect+" AND id = $2 FOR UPDATE", accountID, inboxID))

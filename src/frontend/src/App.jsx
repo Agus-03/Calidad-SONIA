@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { ToastProvider } from './components/Toast';
 import Login from './views/Login';
 import Inbox from './views/Inbox';
+import CreateWhatsAppChannel from './views/CreateWhatsAppChannel';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/inbox" element={<Inbox />} />
+          <Route path="/inboxes/new" element={<CreateWhatsAppChannel />} />
         </Routes>
       </BrowserRouter>
     </ToastProvider>

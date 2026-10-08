@@ -142,3 +142,24 @@ func TestNullIsAnsweredAsANumberWithoutAI(t *testing.T) {
 		t.Fatalf("got %d %s, want 200 with the default null", rec.Code, rec.Body)
 	}
 }
+
+// CAMBIADO POR TOBI
+func TestCreateInbox(t *testing.T) {
+	settings, _, _, _, _ := numbersOver(nil)
+	engine := mountSettings(enums.OperatorRoleAdmin, settings)
+
+	// Valid payload
+	payload := `{"inbox_name":"Test Inbox","phone_number_id":"12345","business_account_id":"67890","api_key":"secret"}`
+	rec := callSettings(engine, http.MethodPost, "/inboxes", payload)
+	
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("Create inbox failed. Code: %d, Body: %s", rec.Code, rec.Body)
+	}
+
+	// Missing required fields
+	payloadMissing := `{"inbox_name":"Test Inbox"}`
+	recMissing := callSettings(engine, http.MethodPost, "/inboxes", payloadMissing)
+	if recMissing.Code != http.StatusBadRequest {
+		t.Fatalf("Expected 400 for missing fields, got %d", recMissing.Code)
+	}
+}

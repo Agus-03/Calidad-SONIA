@@ -66,6 +66,46 @@ func (c *SettingsController) list(gc *gin.Context) {
 	soniahttp.OK(gc, inboxListResponse{Items: items})
 }
 
+// CAMBIADO POR TOBI
+type createInboxRequest struct {
+	InboxName         string `json:"inbox_name" binding:"required"`
+	PhoneNumber       string `json:"phone_number"` // May not be mapped to DB
+	PhoneNumberID     string `json:"phone_number_id" binding:"required"`
+	BusinessAccountID string `json:"business_account_id" binding:"required"`
+	APIKey            string `json:"api_key" binding:"required"`
+}
+
+func (c *SettingsController) create(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+
+	var req createInboxRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "invalid payload").WithCause(err))
+		return
+	}
+
+	// Generate a verification token for Meta webhook
+	verifyToken := uuid.New().String()
+
+	inbox, err := c.settings.Create(
+		gc.Request.Context(), 
+		actor.AccountID, 
+		req.InboxName, 
+		req.PhoneNumberID, 
+		req.BusinessAccountID, 
+		req.APIKey, 
+		verifyToken,
+	)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	soniahttp.Created(gc, presentInbox(inbox))
+}
+
 // setDefault reads the body as raw keys, because null is the value that leaves the number without AI and a struct cannot tell it
 // from a field nobody sent.
 func (c *SettingsController) setDefault(gc *gin.Context) {

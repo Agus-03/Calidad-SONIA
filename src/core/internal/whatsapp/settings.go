@@ -15,6 +15,7 @@ var ErrAIAgentNotAssignable = errors.New("whatsapp: the ai agent does not exist 
 // settingsReader is the pool-bound read of the admin panel, which needs no transaction of its own.
 type settingsReader interface {
 	ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error)
+	CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error)
 }
 
 // SettingsStore is what the settings write inside the transaction they conduct. Exported because internal/app/deps.go binds it to
@@ -53,6 +54,11 @@ func NewSettings(opts SettingsOptions) *Settings {
 
 func (s *Settings) List(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error) {
 	return s.opts.Repo.ListSettings(ctx, accountID)
+}
+
+// CAMBIADO POR TOBI
+func (s *Settings) Create(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
+	return s.opts.Repo.CreateSettings(ctx, accountID, displayName, phoneNumberID, wabaID, accessToken, verifyToken)
 }
 
 // SetDefaultAIAgent names the agent that answers the conversations born in this inbox from now on, or none with nil. A save that

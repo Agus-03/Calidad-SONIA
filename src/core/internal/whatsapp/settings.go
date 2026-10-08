@@ -19,6 +19,8 @@ var ErrPhoneNumberIDInUse = errors.New("whatsapp: the phone number id is already
 type settingsReader interface {
 	ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error)
 	CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error)
+	RemoveSettings(ctx context.Context, accountID, inboxID uuid.UUID) error
+	SetInboxOperators(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error
 }
 
 // SettingsStore is what the settings write inside the transaction they conduct. Exported because internal/app/deps.go binds it to
@@ -62,6 +64,14 @@ func (s *Settings) List(ctx context.Context, accountID uuid.UUID) ([]InboxSettin
 // CAMBIADO POR TOBI
 func (s *Settings) Create(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
 	return s.opts.Repo.CreateSettings(ctx, accountID, displayName, phoneNumberID, wabaID, accessToken, verifyToken)
+}
+
+func (s *Settings) Remove(ctx context.Context, accountID, inboxID uuid.UUID) error {
+	return s.opts.Repo.RemoveSettings(ctx, accountID, inboxID)
+}
+
+func (s *Settings) SetAgents(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	return s.opts.Repo.SetInboxOperators(ctx, accountID, inboxID, operatorIDs)
 }
 
 // SetDefaultAIAgent names the agent that answers the conversations born in this inbox from now on, or none with nil. A save that

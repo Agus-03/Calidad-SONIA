@@ -206,6 +206,72 @@ func defaultAIAgentFrom(gc *gin.Context) (*uuid.UUID, error) {
 	return &aiAgentID, nil
 }
 
+func (c *SettingsController) remove(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+	inboxID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_inbox_id", "the inbox id is not a uuid").WithCause(err))
+		return
+	}
+
+	err = c.settings.Remove(gc.Request.Context(), actor.AccountID, inboxID)
+	if errors.Is(err, ErrInboxNotFound) {
+		soniahttp.Fail(gc, c.log, soniahttp.NotFound("inbox_not_found", "no such inbox").WithCause(err))
+		return
+	}
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	gc.Status(http.StatusNoContent)
+}
+
+type setAgentsRequest struct {
+	AgentIDs []string `json:"agent_ids" binding:"required"`
+}
+
+func (c *SettingsController) setAgents(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+	inboxID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_inbox_id", "the inbox id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req setAgentsRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "invalid payload").WithCause(err))
+		return
+	}
+
+	operatorIDs := make([]uuid.UUID, 0, len(req.AgentIDs))
+	for _, a := range req.AgentIDs {
+		id, err := uuid.Parse(a)
+		if err != nil {
+			soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_agent_id", "agent id is not a uuid: "+a).WithCause(err))
+			return
+		}
+		operatorIDs = append(operatorIDs, id)
+	}
+
+	err = c.settings.SetAgents(gc.Request.Context(), actor.AccountID, inboxID, operatorIDs)
+	if errors.Is(err, ErrInboxNotFound) {
+		soniahttp.Fail(gc, c.log, soniahttp.NotFound("inbox_not_found", "no such inbox").WithCause(err))
+		return
+	}
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	gc.Status(http.StatusNoContent)
+}
+
 func (c *SettingsController) actor(gc *gin.Context) (soniahttp.Actor, bool) {
 	actor, ok := soniahttp.ActorFrom(gc)
 	if !ok {

@@ -176,6 +176,62 @@ func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, di
 	return settings, nil
 }
 
+const inboxRemoveSettings = `
+UPDATE inboxes
+SET    deleted_at = now(), updated_at = now(), status = 'inactive'
+WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL`
+
+func (r *Repository) RemoveSettings(ctx context.Context, accountID, inboxID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, inboxRemoveSettings, accountID, inboxID)
+	if err != nil {
+		return fmt.Errorf("whatsapp: remove inbox: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrInboxNotFound
+	}
+	return nil
+}
+
+func (r *Repository) SetInboxOperators(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	// First ensure inbox exists
+	var dummy int
+	err := r.exec.QueryRow(ctx, "SELECT 1 FROM inboxes WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL", inboxID, accountID).Scan(&dummy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInboxNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("whatsapp: check inbox: %w", err)
+	}
+
+	// Delete existing
+	_, err = r.exec.Exec(ctx, "DELETE FROM inbox_operators WHERE inbox_id = $1", inboxID)
+	if err != nil {
+		return fmt.Errorf("whatsapp: delete old inbox operators: %w", err)
+	}
+
+	if len(operatorIDs) == 0 {
+		return nil
+	}
+
+	// Insert new ones
+	var b pgx.Batch
+	for _, opID := range operatorIDs {
+		id := uuid.New()
+		b.Queue("INSERT INTO inbox_operators (id, inbox_id, operator_id) VALUES ($1, $2, $3)", id, inboxID, opID)
+	}
+	
+	br := r.exec.SendBatch(ctx, &b)
+	defer br.Close()
+
+	for i := 0; i < len(operatorIDs); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("whatsapp: insert inbox operator: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.
 func (r *Repository) SettingsForUpdate(ctx context.Context, accountID, inboxID uuid.UUID) (InboxSettings, error) {
 	return scanSettings(r.exec.QueryRow(ctx, settingsSelect+" AND id = $2 FOR UPDATE", accountID, inboxID))

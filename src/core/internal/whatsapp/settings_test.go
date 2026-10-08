@@ -49,6 +49,26 @@ func (s *stubSettings) SettingsForUpdate(_ context.Context, accountID, inboxID u
 	return in, nil
 }
 
+func (s *stubSettings) RemoveSettings(_ context.Context, accountID, inboxID uuid.UUID) error {
+	in, ok := s.inboxes[inboxID]
+	if !ok || in.AccountID != accountID {
+		return ErrInboxNotFound
+	}
+	in.Status = enums.InboxStatusInactive
+	s.inboxes[inboxID] = in
+	s.writes = append(s.writes, "inbox_remove")
+	return nil
+}
+
+func (s *stubSettings) SetInboxOperators(_ context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	in, ok := s.inboxes[inboxID]
+	if !ok || in.AccountID != accountID {
+		return ErrInboxNotFound
+	}
+	s.writes = append(s.writes, "inbox_operators")
+	return nil
+}
+
 func (s *stubSettings) AIAgentAssignable(_ context.Context, _, aiAgentID uuid.UUID) error {
 	if !s.assignable[aiAgentID] {
 		return ErrAIAgentNotAssignable

@@ -76,7 +76,7 @@ export default function Inbox() {
           <h2>Bandeja de entrada</h2>
           <div className="header-actions">
             <button className="icon-btn">⋮</button>
-            <button className="icon-btn" onClick={() => navigate('/inboxes/new')} title="Add WhatsApp Channel">+</button>
+            <button className="icon-btn" onClick={() => navigate('/inboxes')} title="Add WhatsApp Channel">+</button>
           </div>
         </div>
 

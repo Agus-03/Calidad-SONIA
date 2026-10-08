@@ -2,8 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: var(--color-bg-surface);
-  border-left: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-left: 1px solid var(--border-color);
   width: 320px;
   flex-shrink: 0;
   overflow: hidden;
@@ -13,7 +15,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--spacing-lg);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -29,20 +31,21 @@
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
   padding-bottom: var(--spacing-md);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .profile-avatar {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+  color: var(--interactive-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: var(--font-size-xl);
   font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
 }
 
 .profile-details {
@@ -54,7 +57,7 @@
 .profile-name {
   margin: 0;
   font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -62,7 +65,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
 
@@ -78,7 +81,7 @@
 .panel-section h3 {
   margin: 0 0 var(--spacing-sm) 0;
   font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -93,12 +96,12 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
 
 .info-icon {
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
   display: flex;
   align-items: center;
 }
@@ -110,9 +113,9 @@
 
 /* Bottom Tabs */
 .contact-panel-footer {
-  border-top: 1px solid var(--color-border);
-  background-color: var(--color-bg-subtle);
-  height: 35vh; /* Takes roughly lower third */
+  border-top: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 20%, transparent);
+  height: 35vh;
   min-height: 250px;
   display: flex;
   flex-direction: column;
@@ -126,8 +129,8 @@
 
 .tabs-header {
   display: flex;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background-color: var(--color-bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 10%, transparent);
 }
 
 .tab-btn {
@@ -136,7 +139,7 @@
   border: none;
   background: none;
   font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
@@ -144,13 +147,13 @@
 }
 
 .tab-btn:hover {
-  color: var(--color-text-primary);
-  background: var(--color-bg-hover);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .tab-btn.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
 }
 
 .tabs-content {
@@ -177,22 +180,22 @@
 
 .no-notes, .placeholder-text {
   text-align: center;
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
   font-size: var(--font-size-sm);
   margin-top: var(--spacing-lg);
 }
 
 .note-item {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
+  background: color-mix(in srgb, var(--bg-surface) 50%, transparent);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .note-text {
   font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   margin-bottom: var(--spacing-xs);
   white-space: pre-wrap;
 }
@@ -205,24 +208,25 @@
 
 .note-date {
   font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
 }
 
 .delete-note-btn {
   background: none;
   border: none;
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
   cursor: pointer;
-  padding: 2px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
+  transition: all 0.2s;
 }
 
 .delete-note-btn:hover {
-  color: var(--color-danger);
-  background: var(--color-danger-light);
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 20%, transparent);
 }
 
 .delete-note-btn svg {
@@ -232,8 +236,8 @@
 
 .note-input-area {
   padding: var(--spacing-sm);
-  background: var(--color-bg-surface);
-  border-top: 1px solid var(--color-border-subtle);
+  background: color-mix(in srgb, var(--bg-surface) 30%, transparent);
+  border-top: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -242,24 +246,37 @@
 .note-input-area textarea {
   width: 100%;
   resize: none;
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: var(--spacing-sm);
   font-size: var(--font-size-sm);
   font-family: inherit;
   min-height: 60px;
+  color: var(--text-primary);
 }
 
 .note-input-area textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-light);
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
 }
 
 .note-input-area button {
   align-self: flex-end;
-  padding: 6px 12px;
+  padding: 8px 16px;
   font-size: var(--font-size-sm);
+  background: var(--gradient-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.note-input-area button:hover {
+  box-shadow: var(--shadow-aurora);
 }
 
 /* Quick Actions */
@@ -277,22 +294,22 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-surface);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 50%, transparent);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .action-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-primary);
-  border-color: var(--color-primary-light);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--interactive-accent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
 }
 
 .action-btn.success:hover {
-  color: var(--color-success);
-  border-color: var(--color-success);
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
 }
 
 .action-btn svg {

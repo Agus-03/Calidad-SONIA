@@ -44,10 +44,14 @@ export default function CreateWhatsAppChannel() {
       // Optionally navigate to step 3 (Add Agents) when prepared
       // navigate('/inboxes/add-agents');
       console.log('Inbox created successfully');
+      navigate('/inbox');
     } catch (err) {
       console.error(err);
-      // Fallback error handling
-      setErrors({ form: 'An error occurred while creating the channel.' });
+      if (err.code === 'phone_number_in_use') {
+        setErrors({ phoneNumberId: 'This Phone number ID is already registered.' });
+      } else {
+        setErrors({ form: 'An error occurred while creating the channel.' });
+      }
     } finally {
       setIsSubmitting(false);
     }

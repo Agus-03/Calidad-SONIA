@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
@@ -161,8 +162,18 @@ func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, di
 		}
 	}
 
-	return scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings, 
+	settings, err := scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings, 
 		inboxID, accountID, phoneNumberID, wabaID, displayName, verifyToken, encryptedToken))
+	
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_inboxes_phone_number_id" {
+			return InboxSettings{}, ErrPhoneNumberIDInUse
+		}
+		return InboxSettings{}, err
+	}
+	
+	return settings, nil
 }
 
 // SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.

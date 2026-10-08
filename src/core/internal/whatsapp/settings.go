@@ -12,6 +12,9 @@ import (
 // answer the conversations of a number (ADR-0038). A paused agent is assignable, and the turn skips it until it is resumed.
 var ErrAIAgentNotAssignable = errors.New("whatsapp: the ai agent does not exist or was removed")
 
+// ErrPhoneNumberIDInUse is returned when trying to create an inbox with a phone number ID that already exists.
+var ErrPhoneNumberIDInUse = errors.New("whatsapp: the phone number id is already in use")
+
 // settingsReader is the pool-bound read of the admin panel, which needs no transaction of its own.
 type settingsReader interface {
 	ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error)

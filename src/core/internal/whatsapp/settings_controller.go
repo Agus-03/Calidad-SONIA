@@ -100,6 +100,10 @@ func (c *SettingsController) create(gc *gin.Context) {
 		verifyToken,
 	)
 	if err != nil {
+		if errors.Is(err, ErrPhoneNumberIDInUse) {
+			soniahttp.Fail(gc, c.log, soniahttp.Conflict("phone_number_in_use", "this phone number ID is already registered").WithCause(err))
+			return
+		}
 		soniahttp.Fail(gc, c.log, err)
 		return
 	}

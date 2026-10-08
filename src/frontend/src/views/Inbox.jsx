@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { ContactPanel } from '../features/contact/ContactPanel';
 import { api } from '../lib/api';
 import { IconChat, IconUser, IconHistory } from '../components/icons';
@@ -14,6 +15,7 @@ const mockConversations = [
 ];
 
 export default function Inbox() {
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState(mockConversations);
   const [selectedConversation, setSelectedConversation] = useState(null);
 
@@ -39,7 +41,7 @@ export default function Inbox() {
           <h2>Bandeja de entrada</h2>
           <div className="header-actions">
             <button className="icon-btn">⋮</button>
-            <button className="icon-btn">+</button>
+            <button className="icon-btn" onClick={() => navigate('/inboxes/new')} title="Add WhatsApp Channel">+</button>
           </div>
         </div>
 

@@ -10,14 +10,25 @@ import (
 
 	"github.com/google/uuid"
 
+	"io"
+
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 )
 
+type mockDoer struct {
+	fn func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockDoer) Do(req *http.Request) (*http.Response, error) {
+	return m.fn(req)
+}
+
 // mountSettings builds the real router, because the roles these cases assert are declared in routes.go and exist nowhere else.
-func mountSettings(role enums.OperatorRole, settings *Settings) http.Handler {
+func mountSettings(role enums.OperatorRole, settings *Settings, httpDoer httpclient.Doer) http.Handler {
 	return soniahttp.NewRouter(soniahttp.RouterOptions{
-		Controllers:   []soniahttp.Controller{NewSettingsController(settings, nil)},
+		Controllers:   []soniahttp.Controller{NewSettingsController(settings, nil, httpDoer)},
 		TokenVerifier: func(string) (uuid.UUID, error) { return settingsOperator, nil },
 		ActorLookup: func(context.Context, uuid.UUID) (soniahttp.Actor, error) {
 			return soniahttp.Actor{OperatorID: settingsOperator, AccountID: settingsAccount, Role: role}, nil
@@ -53,7 +64,7 @@ func TestOnlyTheAdminConfiguresTheNumbers(t *testing.T) {
 	for _, role := range enums.OperatorRoleValues {
 		t.Run(string(role), func(t *testing.T) {
 			settings, _, _, inbox, agent := numbersOver(nil)
-			engine := mountSettings(role, settings)
+			engine := mountSettings(role, settings, nil)
 
 			list := callSettings(engine, http.MethodGet, "/inboxes", "")
 			patch := callSettings(engine, http.MethodPatch, "/inboxes/"+inbox.ID.String(),
@@ -75,7 +86,7 @@ func TestOnlyTheAdminConfiguresTheNumbers(t *testing.T) {
 func TestTheNumberIsAnsweredWithoutItsSecrets(t *testing.T) {
 	settings, _, _, inbox, _ := numbersOver(nil)
 
-	rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings), http.MethodGet, "/inboxes", "")
+	rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings, nil), http.MethodGet, "/inboxes", "")
 	var got struct {
 		Items []map[string]any `json:"items"`
 	}
@@ -123,7 +134,7 @@ func TestTheDefaultIsReadFromTheBody(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			settings, _, _, inbox, _ := numbersOver(nil)
 
-			rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings), http.MethodPatch, "/inboxes/"+tc.path(inbox), tc.body)
+			rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings, nil), http.MethodPatch, "/inboxes/"+tc.path(inbox), tc.body)
 			if rec.Code != tc.wantCode || settingsCode(t, rec) != tc.want {
 				t.Fatalf("got %d %q, want %d %q - %s", rec.Code, settingsCode(t, rec), tc.wantCode, tc.want, rec.Body)
 			}
@@ -136,7 +147,7 @@ func TestNullIsAnsweredAsANumberWithoutAI(t *testing.T) {
 	previous := uuid.New()
 	settings, _, _, inbox, _ := numbersOver(&previous)
 
-	rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings), http.MethodPatch, "/inboxes/"+inbox.ID.String(),
+	rec := callSettings(mountSettings(enums.OperatorRoleAdmin, settings, nil), http.MethodPatch, "/inboxes/"+inbox.ID.String(),
 		`{"default_ai_agent_id":null}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"default_ai_agent_id":null`) {
 		t.Fatalf("got %d %s, want 200 with the default null", rec.Code, rec.Body)
@@ -146,7 +157,18 @@ func TestNullIsAnsweredAsANumberWithoutAI(t *testing.T) {
 // CAMBIADO POR TOBI
 func TestCreateInbox(t *testing.T) {
 	settings, _, _, _, _ := numbersOver(nil)
-	engine := mountSettings(enums.OperatorRoleAdmin, settings)
+
+	mockHTTP := &mockDoer{
+		fn: func(req *http.Request) (*http.Response, error) {
+			body := `{"id":"12345","display_phone_number":"555-1234"}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		},
+	}
+
+	engine := mountSettings(enums.OperatorRoleAdmin, settings, mockHTTP)
 
 	// Valid payload
 	payload := `{"inbox_name":"Test Inbox","phone_number_id":"12345","business_account_id":"67890","api_key":"secret"}`

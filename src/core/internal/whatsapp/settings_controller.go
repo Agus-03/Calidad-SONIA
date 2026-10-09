@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -20,13 +21,17 @@ const fieldDefaultAIAgentID = "default_ai_agent_id"
 type SettingsController struct {
 	settings *Settings
 	log      *slog.Logger
+	http     httpclient.Doer
 }
 
-func NewSettingsController(settings *Settings, log *slog.Logger) *SettingsController {
+func NewSettingsController(settings *Settings, log *slog.Logger, httpDoer httpclient.Doer) *SettingsController {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &SettingsController{settings: settings, log: log}
+	if httpDoer == nil {
+		httpDoer = &http.Client{}
+	}
+	return &SettingsController{settings: settings, log: log, http: httpDoer}
 }
 
 type inboxResponse struct {
@@ -99,7 +104,7 @@ func (c *SettingsController) create(gc *gin.Context) {
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		soniahttp.Fail(gc, c.log, soniahttp.InternalServerError("verification_failed", "could not reach meta api").WithCause(err))
 		return

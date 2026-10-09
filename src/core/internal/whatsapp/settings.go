@@ -12,9 +12,15 @@ import (
 // answer the conversations of a number (ADR-0038). A paused agent is assignable, and the turn skips it until it is resumed.
 var ErrAIAgentNotAssignable = errors.New("whatsapp: the ai agent does not exist or was removed")
 
+// ErrPhoneNumberIDInUse is returned when trying to create an inbox with a phone number ID that already exists.
+var ErrPhoneNumberIDInUse = errors.New("whatsapp: the phone number id is already in use")
+
 // settingsReader is the pool-bound read of the admin panel, which needs no transaction of its own.
 type settingsReader interface {
 	ListSettings(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error)
+	CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error)
+	RemoveSettings(ctx context.Context, accountID, inboxID uuid.UUID) error
+	SetInboxOperators(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error
 }
 
 // SettingsStore is what the settings write inside the transaction they conduct. Exported because internal/app/deps.go binds it to
@@ -53,6 +59,19 @@ func NewSettings(opts SettingsOptions) *Settings {
 
 func (s *Settings) List(ctx context.Context, accountID uuid.UUID) ([]InboxSettings, error) {
 	return s.opts.Repo.ListSettings(ctx, accountID)
+}
+
+// CAMBIADO POR TOBI
+func (s *Settings) Create(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
+	return s.opts.Repo.CreateSettings(ctx, accountID, displayName, phoneNumberID, wabaID, accessToken, verifyToken)
+}
+
+func (s *Settings) Remove(ctx context.Context, accountID, inboxID uuid.UUID) error {
+	return s.opts.Repo.RemoveSettings(ctx, accountID, inboxID)
+}
+
+func (s *Settings) SetAgents(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	return s.opts.Repo.SetInboxOperators(ctx, accountID, inboxID, operatorIDs)
 }
 
 // SetDefaultAIAgent names the agent that answers the conversations born in this inbox from now on, or none with nil. A save that

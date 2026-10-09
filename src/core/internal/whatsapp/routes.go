@@ -28,6 +28,11 @@ func (c *SettingsController) Routes() []soniahttp.Route {
 
 	return []soniahttp.Route{
 		{Method: http.MethodGet, Path: settingsBase, Roles: admin, Handler: c.list},
+		// CAMBIADO POR TOBI
+		{Method: http.MethodPost, Path: settingsBase, Roles: admin, Handler: c.create},
 		{Method: http.MethodPatch, Path: settingsBase + "/:id", Roles: admin, Handler: c.setDefault},
+		{Method: http.MethodDelete, Path: settingsBase + "/:id", Roles: admin, Handler: c.remove},
+		{Method: http.MethodPost, Path: settingsBase + "/:id/agents", Roles: admin, Handler: c.setAgents},
+		{Method: http.MethodPut, Path: settingsBase + "/:id/agents", Roles: admin, Handler: c.setAgents},
 	}
 }

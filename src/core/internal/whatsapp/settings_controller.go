@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
 )
 
@@ -19,13 +21,17 @@ const fieldDefaultAIAgentID = "default_ai_agent_id"
 type SettingsController struct {
 	settings *Settings
 	log      *slog.Logger
+	http     httpclient.Doer
 }
 
-func NewSettingsController(settings *Settings, log *slog.Logger) *SettingsController {
+func NewSettingsController(settings *Settings, log *slog.Logger, httpDoer httpclient.Doer) *SettingsController {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &SettingsController{settings: settings, log: log}
+	if httpDoer == nil {
+		httpDoer = &http.Client{}
+	}
+	return &SettingsController{settings: settings, log: log, http: httpDoer}
 }
 
 type inboxResponse struct {
@@ -64,6 +70,82 @@ func (c *SettingsController) list(gc *gin.Context) {
 		items = append(items, presentInbox(s))
 	}
 	soniahttp.OK(gc, inboxListResponse{Items: items})
+}
+
+// CAMBIADO POR TOBI
+type createInboxRequest struct {
+	InboxName         string `json:"inbox_name" binding:"required"`
+	PhoneNumber       string `json:"phone_number"` // May not be mapped to DB
+	PhoneNumberID     string `json:"phone_number_id" binding:"required"`
+	BusinessAccountID string `json:"business_account_id" binding:"required"`
+	APIKey            string `json:"api_key" binding:"required"`
+}
+
+func (c *SettingsController) create(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+
+	var req createInboxRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "invalid payload").WithCause(err))
+		return
+	}
+
+	// Verify credentials with Meta API before creating
+	// WhatsApp Cloud API endpoints usually respond to GET /<PHONE_NUMBER_ID> with basic info if the token is valid.
+	c.log.Info("Executing Meta API validation", "phone_number_id", req.PhoneNumberID)
+	verifyURL := "https://graph.facebook.com/v19.0/" + req.PhoneNumberID
+	httpReq, err := http.NewRequestWithContext(gc.Request.Context(), http.MethodGet, verifyURL, nil)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.InternalServerError("verification_failed", "could not create verification request").WithCause(err))
+		return
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.InternalServerError("verification_failed", "could not reach meta api").WithCause(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_credentials", "the provided phone number ID or API key are invalid"))
+		return
+	}
+
+	var metaResp struct {
+		ID                 string `json:"id"`
+		DisplayPhoneNumber string `json:"display_phone_number"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&metaResp); err != nil || metaResp.DisplayPhoneNumber == "" {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_credentials", "the provided ID is not a valid WhatsApp Phone Number ID"))
+		return
+	}
+
+	// Generate a verification token for Meta webhook
+	verifyToken := uuid.New().String()
+
+	inbox, err := c.settings.Create(
+		gc.Request.Context(), 
+		actor.AccountID, 
+		req.InboxName, 
+		req.PhoneNumberID, 
+		req.BusinessAccountID, 
+		req.APIKey, 
+		verifyToken,
+	)
+	if err != nil {
+		if errors.Is(err, ErrPhoneNumberIDInUse) {
+			soniahttp.Fail(gc, c.log, soniahttp.Conflict("phone_number_in_use", "this phone number ID is already registered").WithCause(err))
+			return
+		}
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	soniahttp.Created(gc, presentInbox(inbox))
 }
 
 // setDefault reads the body as raw keys, because null is the value that leaves the number without AI and a struct cannot tell it
@@ -127,6 +209,72 @@ func defaultAIAgentFrom(gc *gin.Context) (*uuid.UUID, error) {
 		return nil, soniahttp.BadRequest("invalid_ai_agent_id", "default_ai_agent_id is not a uuid").WithCause(err)
 	}
 	return &aiAgentID, nil
+}
+
+func (c *SettingsController) remove(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+	inboxID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_inbox_id", "the inbox id is not a uuid").WithCause(err))
+		return
+	}
+
+	err = c.settings.Remove(gc.Request.Context(), actor.AccountID, inboxID)
+	if errors.Is(err, ErrInboxNotFound) {
+		soniahttp.Fail(gc, c.log, soniahttp.NotFound("inbox_not_found", "no such inbox").WithCause(err))
+		return
+	}
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	gc.Status(http.StatusNoContent)
+}
+
+type setAgentsRequest struct {
+	AgentIDs []string `json:"agent_ids" binding:"required"`
+}
+
+func (c *SettingsController) setAgents(gc *gin.Context) {
+	actor, ok := c.actor(gc)
+	if !ok {
+		return
+	}
+	inboxID, err := uuid.Parse(gc.Param("id"))
+	if err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_inbox_id", "the inbox id is not a uuid").WithCause(err))
+		return
+	}
+
+	var req setAgentsRequest
+	if err := gc.ShouldBindJSON(&req); err != nil {
+		soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_body", "invalid payload").WithCause(err))
+		return
+	}
+
+	operatorIDs := make([]uuid.UUID, 0, len(req.AgentIDs))
+	for _, a := range req.AgentIDs {
+		id, err := uuid.Parse(a)
+		if err != nil {
+			soniahttp.Fail(gc, c.log, soniahttp.BadRequest("invalid_agent_id", "agent id is not a uuid: "+a).WithCause(err))
+			return
+		}
+		operatorIDs = append(operatorIDs, id)
+	}
+
+	err = c.settings.SetAgents(gc.Request.Context(), actor.AccountID, inboxID, operatorIDs)
+	if errors.Is(err, ErrInboxNotFound) {
+		soniahttp.Fail(gc, c.log, soniahttp.NotFound("inbox_not_found", "no such inbox").WithCause(err))
+		return
+	}
+	if err != nil {
+		soniahttp.Fail(gc, c.log, err)
+		return
+	}
+	gc.Status(http.StatusNoContent)
 }
 
 func (c *SettingsController) actor(gc *gin.Context) (soniahttp.Actor, bool) {

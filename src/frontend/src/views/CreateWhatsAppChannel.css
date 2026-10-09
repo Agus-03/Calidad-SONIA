@@ -1,0 +1,354 @@
+.wizard-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.wizard-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 40%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.back-btn:hover {
+  color: var(--interactive-accent);
+}
+
+.wizard-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar Stepper */
+.wizard-sidebar {
+  width: 320px;
+  padding: 40px 32px;
+  border-right: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-surface) 10%, transparent);
+  overflow-y: auto;
+}
+
+.stepper {
+  display: flex;
+  flex-direction: column;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  position: relative;
+}
+
+.step-connector {
+  width: 2px;
+  height: 32px;
+  background: var(--border-color);
+  margin-left: 15px; /* (32px / 2) - 1 */
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.step-indicator {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.step-content {
+  padding-top: 4px;
+}
+
+.step-content h3 {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.step-content p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Completed Step */
+.step.completed .step-indicator {
+  background: var(--bg-surface-accent);
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.step.completed + .step-connector {
+  background: var(--brand-primary);
+}
+
+/* Active Step */
+.step.active .step-indicator {
+  background: var(--gradient-accent);
+  border-color: transparent;
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-aurora);
+}
+
+.step.active .step-content h3 {
+  color: var(--interactive-accent);
+}
+
+/* Pending Step */
+.step.pending .step-indicator {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.step.pending .step-content h3,
+.step.pending .step-content p {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+/* Main Form Area */
+.wizard-form-container {
+  flex: 1;
+  padding: 40px 64px;
+  overflow-y: auto;
+  display: flex;
+}
+
+.wizard-form {
+  max-width: 600px;
+  width: 100%;
+  background: color-mix(in srgb, var(--bg-surface) 50%, transparent);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md);
+  height: fit-content;
+}
+
+.wizard-form .form-group {
+  margin-bottom: 24px;
+}
+
+.wizard-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wizard-form .input-wrapper input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  transition: all 0.3s ease;
+}
+
+.wizard-form .input-wrapper input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.wizard-form .input-wrapper input.error-input {
+  border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error);
+}
+
+.error-message {
+  display: block;
+  margin-top: 6px;
+  color: var(--error);
+  font-size: var(--font-size-sm);
+}
+
+.form-error {
+  margin-bottom: 16px;
+}
+
+.form-actions {
+  margin-top: 32px;
+}
+
+.form-actions .btn-primary {
+  width: auto;
+  padding: 12px 24px;
+}
+
+/* Step 3: Agents */
+.wizard-intro {
+  margin-bottom: 24px;
+}
+
+.wizard-intro h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.wizard-intro p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.combobox-wrapper {
+  position: relative;
+}
+
+.combobox-wrapper input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  transition: all 0.3s ease;
+}
+
+.combobox-wrapper input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.dropdown-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-app);
+}
+
+.agent-option {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.agent-email {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.selected-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.chip button {
+  background: none;
+  border: none;
+  margin-left: 6px;
+  padding: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.chip button:hover {
+  color: var(--error);
+}
+
+/* Step 4: Success */
+.success-state {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.success-icon {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.success-state h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.success-state p {
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  line-height: 1.5;
+}
+
+.success-state .form-actions {
+  display: flex;
+  justify-content: center;
+}

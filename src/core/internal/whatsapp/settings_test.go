@@ -28,12 +28,45 @@ func (s *stubSettings) ListSettings(_ context.Context, accountID uuid.UUID) ([]I
 	return out, nil
 }
 
+func (s *stubSettings) CreateSettings(_ context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
+	in := InboxSettings{
+		ID:            uuid.New(),
+		AccountID:     accountID,
+		DisplayName:   displayName,
+		PhoneNumberID: phoneNumberID,
+		Status:        enums.InboxStatusActive,
+	}
+	s.inboxes[in.ID] = in
+	s.writes = append(s.writes, "inbox_create")
+	return in, nil
+}
+
 func (s *stubSettings) SettingsForUpdate(_ context.Context, accountID, inboxID uuid.UUID) (InboxSettings, error) {
 	in, ok := s.inboxes[inboxID]
 	if !ok || in.AccountID != accountID {
 		return InboxSettings{}, ErrInboxNotFound
 	}
 	return in, nil
+}
+
+func (s *stubSettings) RemoveSettings(_ context.Context, accountID, inboxID uuid.UUID) error {
+	in, ok := s.inboxes[inboxID]
+	if !ok || in.AccountID != accountID {
+		return ErrInboxNotFound
+	}
+	in.Status = enums.InboxStatusInactive
+	s.inboxes[inboxID] = in
+	s.writes = append(s.writes, "inbox_remove")
+	return nil
+}
+
+func (s *stubSettings) SetInboxOperators(_ context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	in, ok := s.inboxes[inboxID]
+	if !ok || in.AccountID != accountID {
+		return ErrInboxNotFound
+	}
+	s.writes = append(s.writes, "inbox_operators")
+	return nil
 }
 
 func (s *stubSettings) AIAgentAssignable(_ context.Context, _, aiAgentID uuid.UUID) error {

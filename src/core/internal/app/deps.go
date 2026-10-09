@@ -287,7 +287,7 @@ func wire(cfg config.Config, pool db.Pool, log *slog.Logger) (wiring, error) {
 			agents.NewController(identity, log),
 			agents.NewComponentsController(blocks, log),
 			agents.NewPreviewController(previews, log),
-			whatsapp.NewSettingsController(numbers, log),
+			whatsapp.NewSettingsController(numbers, log, nil),
 			reminders.NewController(reminders.NewService(reminderRepo, book, log), log),
 			sales.NewController(sales.NewService(sales.NewRepository(pool), desk, log), log),
 			quickreplies.NewController(quickreplies.NewService(quickreplies.NewRepository(pool), log), log),

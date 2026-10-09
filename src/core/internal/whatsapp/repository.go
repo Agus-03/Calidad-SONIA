@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/db"
 	"github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption"
@@ -136,6 +137,99 @@ func (r *Repository) ListSettings(ctx context.Context, accountID uuid.UUID) ([]I
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// CAMBIADO POR TOBI
+const inboxCreateSettings = `
+INSERT INTO inboxes (
+	id, account_id, phone_number_id, waba_id, display_name, 
+	verify_token, access_token_encrypted, status
+) VALUES (
+	$1, $2, $3, $4, $5, 
+	$6, $7, 'active'
+) RETURNING id, account_id, display_name, phone_number_id, status, default_ai_agent_id`
+
+// CreateSettings inserts a new inbox from the UI.
+func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
+	inboxID := uuid.New()
+	
+	var encryptedToken []byte
+	var err error
+	if accessToken != "" {
+		encryptedToken, err = r.cipher.Encrypt(accessToken)
+		if err != nil {
+			return InboxSettings{}, fmt.Errorf("whatsapp: encrypt the access token: %w", err)
+		}
+	}
+
+	settings, err := scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings, 
+		inboxID, accountID, phoneNumberID, wabaID, displayName, verifyToken, encryptedToken))
+	
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_inboxes_phone_number_id" {
+			return InboxSettings{}, ErrPhoneNumberIDInUse
+		}
+		return InboxSettings{}, err
+	}
+	
+	return settings, nil
+}
+
+const inboxRemoveSettings = `
+UPDATE inboxes
+SET    deleted_at = now(), updated_at = now(), status = 'inactive'
+WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL`
+
+func (r *Repository) RemoveSettings(ctx context.Context, accountID, inboxID uuid.UUID) error {
+	tag, err := r.exec.Exec(ctx, inboxRemoveSettings, accountID, inboxID)
+	if err != nil {
+		return fmt.Errorf("whatsapp: remove inbox: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrInboxNotFound
+	}
+	return nil
+}
+
+func (r *Repository) SetInboxOperators(ctx context.Context, accountID, inboxID uuid.UUID, operatorIDs []uuid.UUID) error {
+	// First ensure inbox exists
+	var dummy int
+	err := r.exec.QueryRow(ctx, "SELECT 1 FROM inboxes WHERE id = $1 AND account_id = $2 AND deleted_at IS NULL", inboxID, accountID).Scan(&dummy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInboxNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("whatsapp: check inbox: %w", err)
+	}
+
+	// Delete existing
+	_, err = r.exec.Exec(ctx, "DELETE FROM inbox_operators WHERE inbox_id = $1", inboxID)
+	if err != nil {
+		return fmt.Errorf("whatsapp: delete old inbox operators: %w", err)
+	}
+
+	if len(operatorIDs) == 0 {
+		return nil
+	}
+
+	// Insert new ones
+	var b pgx.Batch
+	for _, opID := range operatorIDs {
+		id := uuid.New()
+		b.Queue("INSERT INTO inbox_operators (id, inbox_id, operator_id) VALUES ($1, $2, $3)", id, inboxID, opID)
+	}
+	
+	br := r.exec.SendBatch(ctx, &b)
+	defer br.Close()
+
+	for i := 0; i < len(operatorIDs); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("whatsapp: insert inbox operator: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // SettingsForUpdate locks the inbox for the transaction that edits it, so the audit's before is the one this edit replaced.

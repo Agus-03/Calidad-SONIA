@@ -33,6 +33,7 @@ func (c *RosterController) Routes() []soniahttp.Route {
 
 	return []soniahttp.Route{
 		{Method: http.MethodGet, Path: "/operators", Roles: readers, Handler: c.list},
+		{Method: http.MethodGet, Path: "/agents", Roles: readers, Handler: c.list},
 		{Method: http.MethodPost, Path: "/operators", Roles: admin, Handler: c.create},
 		{Method: http.MethodPatch, Path: "/operators/:id", Roles: admin, Handler: c.update},
 		{Method: http.MethodDelete, Path: "/operators/:id", Roles: admin, Handler: c.remove},

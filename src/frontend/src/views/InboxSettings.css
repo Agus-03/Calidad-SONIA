@@ -1,0 +1,208 @@
+.inbox-settings-container {
+  padding: 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.settings-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 50vh;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+}
+
+.settings-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+.btn-back-nav {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-back-nav:hover {
+  color: var(--text-primary);
+}
+
+.nav-title {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.settings-header {
+  margin-bottom: 24px;
+}
+
+.settings-header h2 {
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0 0 4px 0;
+}
+
+.settings-header .phone-number {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 13px;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 32px;
+  overflow-x: auto;
+}
+
+.settings-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-tabs .tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 0 0 12px 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.settings-tabs .tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.settings-tabs .tab-btn.active {
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 900px;
+}
+
+.setting-row {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.setting-info {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.setting-info label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.setting-control {
+  flex: 1;
+}
+
+.copy-field {
+  display: flex;
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  height: 40px;
+}
+
+.copy-field input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.btn-copy {
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  border: none;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-copy:hover {
+  background: color-mix(in srgb, var(--bg-surface) 100%, transparent);
+}
+
+.update-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.update-control input {
+  flex: 1;
+  min-width: 250px;
+  height: 40px;
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.update-control input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.update-control .btn-update,
+.btn-sync {
+  height: 40px;
+  background: var(--interactive-accent);
+  color: #01111D; /* High contrast text on turquoise */
+  border: none;
+  border-radius: 6px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 10px rgba(63, 208, 213, 0.2);
+}
+
+.update-control .btn-update:hover,
+.btn-sync:hover {
+  opacity: 0.9;
+  box-shadow: 0 4px 15px rgba(63, 208, 213, 0.4);
+}
+
+.update-control .btn-update:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.help-text {
+  width: 100%;
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--text-secondary) 80%, transparent);
+}

@@ -25,3 +25,6 @@ __pycache__/
 htmlcov/
 coverage.out
 coverage.filtered.out
+cobertura.out
+cobertura.txt
+coverage-details.txt

@@ -1,0 +1,7 @@
+NAME              IMAGE                           COMMAND                  SERVICE   CREATED          STATUS                    PORTS
+sonia-brain-1     sonia-brain                     "python main.py api"     brain     19 minutes ago   Up 19 minutes (healthy)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+sonia-core-1      sonia-core                      "core"                   core      22 minutes ago   Up 22 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+sonia-db-1        postgres:17-alpine              "docker-entrypoint.s…"   db        2 hours ago      Up 2 hours (healthy)      127.0.0.1:5432->5432/tcp
+sonia-qdrant-1    qdrant/qdrant:v1.19.1           "./entrypoint.sh"        qdrant    2 hours ago      Up 2 hours                127.0.0.1:6333->6333/tcp
+sonia-storage-1   fsouza/fake-gcs-server:1.56.1   "/bin/fake-gcs-serve…"   storage   22 minutes ago   Up 22 minutes (healthy)   127.0.0.1:4443->4443/tcp
+sonia-worker-1    sonia-worker                    "python main.py work…"   worker    17 minutes ago   Up 17 minutes             8000/tcp

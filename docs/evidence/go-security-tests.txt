@@ -1,0 +1,54 @@
+=== RUN   TestTheTokenCarriesWhoAndWhenAndNothingElse
+--- PASS: TestTheTokenCarriesWhoAndWhenAndNothingElse (0.00s)
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_token_with_no_signature,_which_is_what_alg_none_means
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_well_formed_token_signed_with_somebody_else's_secret
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_token_this_core_signed,_naming_an_operator_that_cannot_exist
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_string_that_is_not_a_token_at_all
+=== RUN   TestVerifyRefusesEveryTokenThisCoreDidNotIssue/nothing,_which_is_what_a_missing_header_sends
+--- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue (0.00s)
+    --- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_token_with_no_signature,_which_is_what_alg_none_means (0.00s)
+    --- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_well_formed_token_signed_with_somebody_else's_secret (0.00s)
+    --- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_token_this_core_signed,_naming_an_operator_that_cannot_exist (0.00s)
+    --- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue/a_string_that_is_not_a_token_at_all (0.00s)
+    --- PASS: TestVerifyRefusesEveryTokenThisCoreDidNotIssue/nothing,_which_is_what_a_missing_header_sends (0.00s)
+=== RUN   TestAnExpiredTokenIsToldApart
+--- PASS: TestAnExpiredTokenIsToldApart (0.00s)
+PASS
+ok  	github.com/mateo-velasquez/sonia/src/core/internal/platform/auth	(cached)
+=== RUN   TestWhatGoesInComesBack
+--- PASS: TestWhatGoesInComesBack (0.00s)
+=== RUN   TestTheSameNumberEncryptsDifferentlyEveryTime
+--- PASS: TestTheSameNumberEncryptsDifferentlyEveryTime (0.00s)
+=== RUN   TestAnEmptyValueStoresNothing
+--- PASS: TestAnEmptyValueStoresNothing (0.00s)
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/un_bit_del_ciphertext
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/un_bit_del_nonce
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/el_byte_de_version
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/truncado
+=== RUN   TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/demasiado_corto_para_tener_forma
+--- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse (0.00s)
+    --- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/un_bit_del_ciphertext (0.00s)
+    --- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/un_bit_del_nonce (0.00s)
+    --- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/el_byte_de_version (0.00s)
+    --- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/truncado (0.00s)
+    --- PASS: TestATamperedValueRefusesInsteadOfAnsweringSomethingElse/demasiado_corto_para_tener_forma (0.00s)
+=== RUN   TestAKeyFromAnotherDeploymentCannotRead
+--- PASS: TestAKeyFromAnotherDeploymentCannotRead (0.00s)
+=== RUN   TestNewRefusesAKeyThatIsNotAes256
+--- PASS: TestNewRefusesAKeyThatIsNotAes256 (0.00s)
+=== RUN   TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong
+=== RUN   TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/no_es_base64
+=== RUN   TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/base64_valido_pero_corto
+=== RUN   TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/vacio
+--- PASS: TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong (0.00s)
+    --- PASS: TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/no_es_base64 (0.00s)
+    --- PASS: TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/base64_valido_pero_corto (0.00s)
+    --- PASS: TestDecodeKeyRefusesWhatTheEnvironmentCanGetWrong/vacio (0.00s)
+=== RUN   TestAFileGoesInAndComesBackInTheColumnFormat
+--- PASS: TestAFileGoesInAndComesBackInTheColumnFormat (0.00s)
+=== RUN   TestTheSharedVectorOpensWithTheGoReader
+--- PASS: TestTheSharedVectorOpensWithTheGoReader (0.00s)
+PASS
+ok  	github.com/mateo-velasquez/sonia/src/core/internal/platform/encryption	(cached)

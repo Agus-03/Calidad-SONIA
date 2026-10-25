@@ -1,0 +1,15 @@
+PRUEBA DE CARGA SOSTENIDA - SONIA
+Fecha: 2026-10-25
+Endpoint: GET /health
+Duracion objetivo: 60 segundos
+Duracion real: 60.14 segundos
+Concurrencia maxima: 5
+Solicitudes completadas: 31236
+HTTP 200: 31236
+Fallidas: 0
+Tasa de exito: 100%%
+Ritmo observado: 519.36 solicitudes/segundo
+Latencia media: 9.29 ms
+Latencia p95: 20.69 ms
+Resultado: PASS para disponibilidad sostenida del endpoint de salud
+Limitacion: no mide el procesamiento de conversaciones ni la carga de proveedores externos

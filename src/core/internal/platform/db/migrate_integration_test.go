@@ -84,8 +84,8 @@ func TestTheInitialSchemaApplies(t *testing.T) {
 	}
 
 	// 37 entities of entidades.md plus schema_migrations, which is the runner's own bookkeeping.
-	if tables != 38 {
-		t.Fatalf("tables in public: got %d, want 38", tables)
+	if tables != 39 {
+		t.Fatalf("tables in public: got %d, want 39", tables)
 	}
 }
 
@@ -150,7 +150,18 @@ func TestAppliedListsWhatRan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Applied: got %v, want no error", err)
 	}
-	if len(after) != 1 || after[0] != "0001_initial_schema.sql" {
-		t.Fatalf("Applied: got %v, want the initial schema", after)
+	want := []string{
+		"0001_initial_schema.sql",
+		"0002_inbox_operators.sql",
+	}
+
+	if len(after) != len(want) {
+		t.Fatalf("Applied: got %v, want %v", after, want)
+	}
+
+	for i := range want {
+		if after[i] != want[i] {
+			t.Fatalf("Applied: got %v, want %v", after, want)
+		}
 	}
 }

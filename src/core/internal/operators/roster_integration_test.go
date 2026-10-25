@@ -56,13 +56,34 @@ func TestTheRosterAgainstRealDDL(t *testing.T) {
 			t.Fatalf("the create's audit: %d rows, a hash in it %v, %v; want one and no hash", audited, leaked, err)
 		}
 
-		var contact, inbox, agent uuid.UUID
-		if err := exec.QueryRow(ctx, `SELECT c.id, i.id, g.id FROM contacts c, inboxes i, ai_agents g LIMIT 1`).Scan(&contact, &inbox, &agent); err != nil {
+		var inbox, agent uuid.UUID
+		if err := exec.QueryRow(ctx, `
+    SELECT i.id, g.id
+    FROM inboxes i
+    CROSS JOIN ai_agents g
+    LIMIT 1
+`).Scan(&inbox, &agent); err != nil {
 			t.Skip("the demo rows are missing: load src/core/seeds/0001_demo.sql first")
 		}
+
+		contact := id.New()
+		if _, err := exec.Exec(ctx, `
+    INSERT INTO contacts (
+        id, account_id, phone_whatsapp, name, lastname, type, source_channel
+    )
+    VALUES ($1, $2, $3, $4, $5, 'client', 'direct')
+`, contact, account, "test-"+contact.String(), "Prueba", "Integracion"); err != nil {
+			t.Fatalf("seed a test contact: %v", err)
+		}
+
 		for _, status := range []string{"active", "resolved"} {
-			if _, err := exec.Exec(ctx, `INSERT INTO conversations (id, contact_id, inbox_id, ai_agent_id, operator_id, status, mode, last_inbound_at, window_expires_at)
-				VALUES ($1, $2, $3, $4, $5, $6, 'off', now(), now() + interval '24 hours')`, id.New(), contact, inbox, agent, vendor.ID, status); err != nil {
+			if _, err := exec.Exec(ctx, `
+        INSERT INTO conversations (
+            id, contact_id, inbox_id, ai_agent_id, operator_id, status,
+            mode, last_inbound_at, window_expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'off', now(), now() + interval '24 hours')
+    `, id.New(), contact, inbox, agent, vendor.ID, status); err != nil {
 				t.Fatalf("seed a %s conversation: %v", status, err)
 			}
 		}

@@ -1,0 +1,78 @@
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_modelo_sin_tarifa_se_rechaza_al_guardar
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_pausa_conserva_la_configuracion_y_queda_auditada
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_agente_pausado_se_asigna_a_un_numero_y_el_numero_no_muestra_secretos
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_pausa_apaga_el_bot_y_la_bandeja_muestra_que_no_se_puede_prender
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_componente_se_versiona_en_cada_cambio_y_su_historial_dice_quien
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_previsualizacion_arma_lo_que_esta_en_pantalla_con_el_ensamblador_del_cerebro
+=== RUN   TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_baja_la_saca_de_toda_lectura_y_del_numero_que_la_tenia
+--- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess (2.74s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_modelo_sin_tarifa_se_rechaza_al_guardar (0.00s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_pausa_conserva_la_configuracion_y_queda_auditada (0.02s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_agente_pausado_se_asigna_a_un_numero_y_el_numero_no_muestra_secretos (0.01s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_pausa_apaga_el_bot_y_la_bandeja_muestra_que_no_se_puede_prender (0.03s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/un_componente_se_versiona_en_cada_cambio_y_su_historial_dice_quien (0.02s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_previsualizacion_arma_lo_que_esta_en_pantalla_con_el_ensamblador_del_cerebro (0.01s)
+    --- PASS: TestTheAdminManagesAnAIAgentThroughTheRealProcess/la_baja_la_saca_de_toda_lectura_y_del_numero_que_la_tenia (0.02s)
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/el_turno_responde_con_el_prompt_que_el_admin_previsualizo
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/una_edicion_aparece_en_el_turno_siguiente_con_su_version
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/un_componente_apagado_sale_del_prompt
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/el_admin_ve_con_que_componentes_se_armo_la_respuesta
+=== RUN   TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/OE1_da_100_por_ciento_sobre_los_turnos_del_cierre
+--- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt (33.72s)
+    --- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/el_turno_responde_con_el_prompt_que_el_admin_previsualizo (11.04s)
+    --- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/una_edicion_aparece_en_el_turno_siguiente_con_su_version (10.98s)
+    --- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/un_componente_apagado_sale_del_prompt (10.92s)
+    --- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/el_admin_ve_con_que_componentes_se_armo_la_respuesta (0.01s)
+    --- PASS: TestAnAIAgentTheAdminConfiguresAnswersWithItsOwnPrompt/OE1_da_100_por_ciento_sobre_los_turnos_del_cierre (0.01s)
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/los_cuatro_campos_no_viajan_al_operador
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/el_operador_alcanza_solo_los_contactos_de_sus_conversaciones
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/el_operador_edita_dos_campos_y_el_resto_se_le_niega_por_nombre
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/etiquetar_y_segmentar
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/las_rutas_que_un_rol_entero_tiene_negadas
+=== RUN   TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/sin_token_no_se_entra
+--- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess (1.56s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/los_cuatro_campos_no_viajan_al_operador (0.01s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/el_operador_alcanza_solo_los_contactos_de_sus_conversaciones (0.01s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/el_operador_edita_dos_campos_y_el_resto_se_le_niega_por_nombre (0.01s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/etiquetar_y_segmentar (0.02s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/las_rutas_que_un_rol_entero_tiene_negadas (0.00s)
+    --- PASS: TestTheThreeRolesWalkTheContactBookThroughTheRealProcess/sin_token_no_se_entra (0.00s)
+=== RUN   TestAnAnswerNobodyMaySendIsKeptUnsentAndTheTurnWaitsForAPerson
+--- PASS: TestAnAnswerNobodyMaySendIsKeptUnsentAndTheTurnWaitsForAPerson (10.51s)
+=== RUN   TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker
+=== RUN   TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/el_worker_lo_fragmenta,_lo_vectoriza_y_lo_deja_indexed
+=== RUN   TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/el_mismo_archivo_otra_vez_se_rechaza
+=== RUN   TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/la_baja_marca_la_fila,_devuelve_el_tamaño_y_deja_el_objeto
+--- PASS: TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker (3.24s)
+    --- PASS: TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/el_worker_lo_fragmenta,_lo_vectoriza_y_lo_deja_indexed (2.03s)
+    --- PASS: TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/el_mismo_archivo_otra_vez_se_rechaza (0.00s)
+    --- PASS: TestAnUploadedDocumentIsKeptSealedAndWaitsForTheWorker/la_baja_marca_la_fila,_devuelve_el_tamaño_y_deja_el_objeto (0.52s)
+=== RUN   TestWhatTheCustomerSaysAboutHerselfIsKeptEncrypted
+--- PASS: TestWhatTheCustomerSaysAboutHerselfIsKeptEncrypted (10.80s)
+=== RUN   TestAnOperatorTakesThePoolByAnsweringThroughTheRealProcess
+--- PASS: TestAnOperatorTakesThePoolByAnsweringThroughTheRealProcess (0.97s)
+=== RUN   TestAStarIsSharedThroughTheRealProcess
+--- PASS: TestAStarIsSharedThroughTheRealProcess (0.97s)
+=== RUN   TestTheInboxFiltersThroughTheRealProcess
+--- PASS: TestTheInboxFiltersThroughTheRealProcess (0.68s)
+=== RUN   TestReadingClearsTheUnreadThroughTheRealProcess
+--- PASS: TestReadingClearsTheUnreadThroughTheRealProcess (0.94s)
+=== RUN   TestTheVendorGivenTheConversationSwitchesItsBotThroughTheRealProcess
+--- PASS: TestTheVendorGivenTheConversationSwitchesItsBotThroughTheRealProcess (25.28s)
+=== RUN   TestAWebhookReachesTheOpenInboxThroughTheRealProcess
+--- PASS: TestAWebhookReachesTheOpenInboxThroughTheRealProcess (12.10s)
+=== RUN   TestAStreamTicketOpensOneSocketOnce
+--- PASS: TestAStreamTicketOpensOneSocketOnce (0.93s)
+=== RUN   TestAPersonAskedForIsHandedOverAndTheBotGoesOff
+--- PASS: TestAPersonAskedForIsHandedOverAndTheBotGoesOff (11.03s)
+=== RUN   TestASuggestionIsADraftTheOperatorCopiesAndSends
+--- PASS: TestASuggestionIsADraftTheOperatorCopiesAndSends (10.98s)
+=== RUN   TestAWebhookBecomesAnAnsweredTurnWithItsEvidence
+--- PASS: TestAWebhookBecomesAnAnsweredTurnWithItsEvidence (11.04s)
+=== RUN   TestAWebhookNobodySignedIsKeptAndNeverAnswered
+--- PASS: TestAWebhookNobodySignedIsKeptAndNeverAnswered (0.06s)
+PASS
+ok  	github.com/mateo-velasquez/sonia/src/core/smoke	139.997s

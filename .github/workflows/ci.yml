@@ -45,6 +45,12 @@ jobs:
           grep -v -E "enums_gen.go|/src/core/main.go" coverage.out > coverage.filtered.out || true
           go tool cover -func=coverage.filtered.out
 
+      - name: Enforce Core coverage threshold (80%)
+        run: |
+          coverage=$(go tool cover -func=coverage.filtered.out | awk '/^total:/ { gsub("%", "", $3); print $3 }')
+          echo "Core coverage: ${coverage}%"
+          awk -v coverage="$coverage" 'BEGIN { if (coverage == "" || coverage + 0 < 80) { printf "ERROR: core coverage %s%% is below the required 80%%\n", coverage; exit 1 } }'
+
   brain:
     name: Brain Unit Tests & Contracts (Python)
     runs-on: ubuntu-latest
@@ -84,4 +90,4 @@ jobs:
       - name: Run Brain unit tests with coverage
         # Enforces the >=80% coverage threshold per ADR-0028 declared in pyproject.toml.
         # Integration tests requiring a live PostgreSQL skip automatically when SONIA_TEST_DATABASE_URL is unset.
-        run: poetry run pytest
+        run: poetry run pytest

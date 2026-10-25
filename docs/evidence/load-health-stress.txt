@@ -1,0 +1,31 @@
+PRUEBA DE ESTRES ESCALONADA - SONIA
+Fecha: 2026-10-25
+Endpoint: GET /health
+Duracion por nivel: 10 segundos
+
+Concurrencia: 5
+Solicitudes: 6347
+HTTP 200: 6347
+Fallidas: 0
+Ritmo: 628.11 req/s
+Latencia media: 7.72 ms
+Latencia p95: 22.23 ms
+
+Concurrencia: 10
+Solicitudes: 10343
+HTTP 200: 10343
+Fallidas: 0
+Ritmo: 1027.51 req/s
+Latencia media: 9.52 ms
+Latencia p95: 21.82 ms
+
+Concurrencia: 20
+Solicitudes: 10090
+HTTP 200: 10090
+Fallidas: 0
+Ritmo: 995.00 req/s
+Latencia media: 19.80 ms
+Latencia p95: 26.95 ms
+
+Resultado: PASS para disponibilidad del endpoint de salud en los niveles ensayados.
+Limitacion: no evalua el procesamiento de conversaciones ni la carga de proveedores externos.

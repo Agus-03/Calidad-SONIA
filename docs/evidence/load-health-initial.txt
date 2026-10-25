@@ -1,0 +1,15 @@
+PRUEBA DE CARGA INICIAL - SONIA
+Fecha: 2026-10-25
+Endpoint: GET /health
+Solicitudes: 50
+Concurrencia maxima: 5
+HTTP 200: 50
+Fallidas: 0
+Tasa de exito: 100%%
+Tiempo total: 0.37 segundos
+Ritmo observado: 135.42 solicitudes/segundo
+Latencia media: 36.05 ms
+Latencia p95: 186.5 ms
+Resultado: PASS para disponibilidad del endpoint de salud
+Limitacion: no mide procesamiento de conversaciones ni carga sostenida
+Limitacion: no mide procesamiento de conversaciones ni carga sostenida

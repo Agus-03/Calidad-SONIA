@@ -138,26 +138,26 @@ func TestCreateInboxSettingsIntegration(t *testing.T) {
 	ctx := context.Background()
 	pool := integrationPool(t)
 	account := seededAccount(t, pool)
-	
+
 	err := db.InTx(ctx, pool, func(exec db.Executor) error {
 		repo := NewRepository(exec, testCipher(t))
 		settings := NewSettings(SettingsOptions{Repo: repo})
-		
+
 		inbox, err := settings.Create(ctx, account, "Test Create", "999", "888", "my-access-token", "my-verify-token")
 		if err != nil {
 			t.Fatalf("Create failed: %v", err)
 		}
-		
+
 		if inbox.DisplayName != "Test Create" {
 			t.Fatalf("got %q, want Test Create", inbox.DisplayName)
 		}
-		
+
 		// Ensure it appears in List
 		listed, err := settings.List(ctx, account)
 		if err != nil {
 			t.Fatalf("List failed: %v", err)
 		}
-		
+
 		found := false
 		for _, in := range listed {
 			if in.ID == inbox.ID {
@@ -168,10 +168,10 @@ func TestCreateInboxSettingsIntegration(t *testing.T) {
 		if !found {
 			t.Fatalf("Created inbox not found in list")
 		}
-		
+
 		return errors.New("rollback")
 	})
-	
+
 	if err != nil && err.Error() != "rollback" {
 		t.Fatalf("transaction failed: %v", err)
 	}

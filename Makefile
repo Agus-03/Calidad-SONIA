@@ -15,9 +15,15 @@ COMPOSE_SMOKE := $(COMPOSE) -f deploy/docker-compose.smoke.yml
 export GOTMPDIR := $(CURDIR)/.gotmp
 
 .DEFAULT_GOAL := help
+.PHONY: quality
+
+# Cross-platform runner; on Windows invoke it with src/brain/.venv/Scripts/python.exe.
+quality:
+	cd src/brain && poetry run python ../../scripts/quality.py
 .PHONY: help up down logs build test test-core test-brain test-integration smoke contracts contracts-check migrate migrate-status seed seed-admin connect-inbox pgadmin pgadmin-down dbhub dbhub-down
 
 help:
+	@echo "quality    despliegue aislado, integracion sin omisiones, smoke, carga y quality gates"
 	@echo "up         levanta la base, el nucleo y el cerebro"
 	@echo "down       los baja y borra los contenedores"
 	@echo "logs       sigue la salida de los tres servicios"

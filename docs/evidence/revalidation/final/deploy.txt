@@ -1,0 +1,192 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.73kB done
+#1 DONE 0.0s
+
+#2 [worker internal] load build definition from brain.Dockerfile
+#2 transferring dockerfile: 729B 0.0s done
+#2 DONE 0.0s
+
+#3 [core internal] load build definition from core.Dockerfile
+#3 transferring dockerfile: 701B done
+#3 DONE 0.1s
+
+#4 [worker internal] load metadata for docker.io/library/python:3.14-slim
+#4 ...
+
+#5 [core internal] load metadata for docker.io/library/golang:1.27-alpine
+#5 DONE 1.4s
+
+#4 [brain internal] load metadata for docker.io/library/python:3.14-slim
+#4 DONE 1.4s
+
+#6 [core internal] load metadata for docker.io/library/alpine:3.22
+#6 DONE 1.4s
+
+#7 [core internal] load .dockerignore
+#7 transferring context: 498B done
+#7 DONE 0.0s
+
+#8 [worker internal] load build context
+#8 DONE 0.0s
+
+#9 [core internal] load build context
+#9 DONE 0.0s
+
+#10 [worker 1/7] FROM docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+#10 resolve docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 0.1s done
+#10 resolve docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 0.1s done
+#10 DONE 0.1s
+
+#11 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#11 resolve docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c 0.1s done
+#11 DONE 0.1s
+
+#12 [core stage-1 1/3] FROM docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+#12 resolve docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f 0.1s done
+#12 DONE 0.1s
+
+#8 [brain internal] load build context
+#8 transferring context: 9.15kB 0.0s done
+#8 DONE 0.0s
+
+#9 [core internal] load build context
+#9 transferring context: 52.26kB 0.0s done
+#9 DONE 0.1s
+
+#13 [worker 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#13 CACHED
+
+#14 [worker 5/7] RUN poetry install --only main --no-interaction
+#14 CACHED
+
+#15 [worker 3/7] WORKDIR /app
+#15 CACHED
+
+#16 [worker 4/7] COPY src/brain/pyproject.toml src/brain/poetry.lock ./
+#16 CACHED
+
+#17 [worker 6/7] COPY src/brain ./
+#17 CACHED
+
+#18 [worker 7/7] RUN useradd --uid 10001 --create-home sonia
+#18 CACHED
+
+#19 [core build 3/6] COPY src/core/go.mod src/core/go.sum ./
+#19 CACHED
+
+#20 [core build 2/6] WORKDIR /src
+#20 CACHED
+
+#21 [core build 4/6] RUN go mod download
+#21 CACHED
+
+#22 [worker] exporting to image
+#22 exporting layers done
+#22 exporting manifest sha256:0096c9d8c29b7fb7fbd918ad6a9ce45f8d04cdf358828f6a6d0b6ad67a3d7c0d
+#22 exporting manifest sha256:0096c9d8c29b7fb7fbd918ad6a9ce45f8d04cdf358828f6a6d0b6ad67a3d7c0d 0.0s done
+#22 exporting config sha256:f3dac623583295c11d8a89b2fbed553f59ea6373673f55bf8f79b8b6baa75521 0.0s done
+#22 exporting attestation manifest sha256:55d907a31cd7bc65c9b528082eee8818ab5e57758a08a3bc1ef1e13d38b8db3a
+#22 ...
+
+#23 [core build 5/6] COPY src/core ./
+#23 DONE 0.4s
+
+#22 [worker] exporting to image
+#22 exporting attestation manifest sha256:55d907a31cd7bc65c9b528082eee8818ab5e57758a08a3bc1ef1e13d38b8db3a 0.3s done
+#22 exporting manifest list sha256:6a3b3aef84efa228a6ef0bdad48bc0247c8599f689bcb6f4c71986d4e7f2abe9 0.1s done
+#22 naming to docker.io/library/sonia-quality-worker:latest
+#22 naming to docker.io/library/sonia-quality-worker:latest 0.0s done
+#22 unpacking to docker.io/library/sonia-quality-worker:latest 0.0s done
+#22 DONE 0.6s
+
+#24 [brain] exporting to image
+#24 exporting layers done
+#24 exporting manifest sha256:d8fe553ef3a518328a7bb006994ca5cdcb8f479daf83500b3bd96e049d694a0c 0.0s done
+#24 exporting config sha256:0f176fc0bfd76b8db81ad90014c6d5100bccf615f0a29a099c5eecfc8f3e8fb9 0.0s done
+#24 exporting attestation manifest sha256:fce615cf7096f730c322241fe03dc46219e8355fc12a92aa3fe268e1416a7c7f 0.3s done
+#24 exporting manifest list sha256:930038714fa40101bdb70a687eb775c00982998c79405e18641c1b9f51a84acf 0.1s done
+#24 naming to docker.io/library/sonia-quality-brain:latest 0.0s done
+#24 unpacking to docker.io/library/sonia-quality-brain:latest 0.0s done
+#24 DONE 0.7s
+
+#25 [core build 6/6] RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/core .
+#25 ...
+
+#26 [worker] resolving provenance for metadata file
+#26 DONE 0.0s
+
+#27 [brain] resolving provenance for metadata file
+#27 DONE 0.0s
+
+#25 [core build 6/6] RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/core .
+#25 DONE 26.7s
+
+#28 [core stage-1 2/3] RUN apk add --no-cache ca-certificates     && adduser -D -u 10001 sonia
+#28 CACHED
+
+#29 [core stage-1 3/3] COPY --from=build /out/core /usr/local/bin/core
+#29 CACHED
+
+#30 [core] exporting to image
+#30 exporting layers done
+#30 exporting manifest sha256:5839410f536d7567fffb3b80f725b918ac7e557d7f0f76a5671a0341e0664c24 done
+#30 exporting config sha256:a5c745b933a13a5b02f75106f34504c18fd29491c066b42c52ccb1c995f75309 done
+#30 exporting attestation manifest sha256:796b0bc291b39d8f048a99bf955c60899b74d9ba0a1a27fc6b7b16a4c60d0ea2
+#30 exporting attestation manifest sha256:796b0bc291b39d8f048a99bf955c60899b74d9ba0a1a27fc6b7b16a4c60d0ea2 0.1s done
+#30 exporting manifest list sha256:ce803b326c98fdf2675412fc00e4af8aa827fcd9d71838109026018fbcaa0e19 0.0s done
+#30 naming to docker.io/library/sonia-quality-core:latest
+#30 naming to docker.io/library/sonia-quality-core:latest done
+#30 unpacking to docker.io/library/sonia-quality-core:latest 0.0s done
+#30 DONE 0.2s
+
+#31 [core] resolving provenance for metadata file
+#31 DONE 0.0s
+ sonia-quality-core  Built
+ sonia-quality-brain  Built
+ sonia-quality-worker  Built
+ Network sonia-quality_default  Creating
+ Network sonia-quality_default  Created
+ Container sonia-quality-storage-1  Creating
+ Container sonia-quality-db-1  Creating
+ Container sonia-quality-qdrant-1  Creating
+ Container sonia-quality-storage-1  Created
+ Container sonia-quality-qdrant-1  Created
+ Container sonia-quality-db-1  Created
+ Container sonia-quality-core-1  Creating
+ Container sonia-quality-brain-1  Creating
+ Container sonia-quality-core-1  Created
+ Container sonia-quality-worker-1  Creating
+ Container sonia-quality-brain-1  Created
+ Container sonia-quality-worker-1  Created
+ Container sonia-quality-qdrant-1  Starting
+ Container sonia-quality-db-1  Starting
+ Container sonia-quality-storage-1  Starting
+ Container sonia-quality-qdrant-1  Started
+ Container sonia-quality-storage-1  Started
+ Container sonia-quality-db-1  Started
+ Container sonia-quality-storage-1  Waiting
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-storage-1  Healthy
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-brain-1  Starting
+ Container sonia-quality-core-1  Starting
+ Container sonia-quality-core-1  Started
+ Container sonia-quality-core-1  Waiting
+ Container sonia-quality-brain-1  Started
+ Container sonia-quality-core-1  Healthy
+ Container sonia-quality-worker-1  Starting
+ Container sonia-quality-worker-1  Started
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-qdrant-1  Waiting
+ Container sonia-quality-storage-1  Waiting
+ Container sonia-quality-core-1  Waiting
+ Container sonia-quality-brain-1  Waiting
+ Container sonia-quality-worker-1  Waiting
+ Container sonia-quality-worker-1  Healthy
+ Container sonia-quality-core-1  Healthy
+ Container sonia-quality-qdrant-1  Healthy
+ Container sonia-quality-storage-1  Healthy
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-brain-1  Healthy

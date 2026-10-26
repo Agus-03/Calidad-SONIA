@@ -55,6 +55,7 @@ asyncio_mode = "auto"
 addopts = "--cov --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
+branch = true
 source = ["."]
 # The tests are not what is being measured, and enums.py is generated code that runs whole on import.
 omit = ["tests/*", "infra/enums.py"]

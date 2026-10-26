@@ -1,0 +1,3565 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 27,
+          "line": 39,
+          "position": 1028
+        },
+        "name": "adapters\\llm\\anthropic.py",
+        "start": 26,
+        "startLoc": {
+          "column": 37,
+          "line": 26,
+          "position": 618
+        }
+      },
+      "format": "python",
+      "fragment": "        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=SDK_RETRIES)\n        self._timeout = timeout\n\n    async def complete(\n        self,\n        *,\n        model: str,\n        system: str | None,\n        messages: tuple[LLMMessage, ...],\n        temperature: float | None = None,\n        max_tokens: int | None = None,\n    ) -> Completion:\n        payload: dict[str, Any] = {\n            \"model\": model,",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 27,
+          "line": 40,
+          "position": 1131
+        },
+        "name": "adapters\\llm\\cohere.py",
+        "start": 27,
+        "startLoc": {
+          "column": 36,
+          "line": 27,
+          "position": 721
+        }
+      },
+      "tokens": 82
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 27,
+          "line": 39,
+          "position": 1028
+        },
+        "name": "adapters\\llm\\anthropic.py",
+        "start": 26,
+        "startLoc": {
+          "column": 37,
+          "line": 26,
+          "position": 618
+        }
+      },
+      "format": "python",
+      "fragment": "        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=SDK_RETRIES)\n        self._timeout = timeout\n\n    async def complete(\n        self,\n        *,\n        model: str,\n        system: str | None,\n        messages: tuple[LLMMessage, ...],\n        temperature: float | None = None,\n        max_tokens: int | None = None,\n    ) -> Completion:\n        payload: dict[str, Any] = {\n            \"model\": model,",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 27,
+          "line": 39,
+          "position": 1050
+        },
+        "name": "adapters\\llm\\openai.py",
+        "start": 26,
+        "startLoc": {
+          "column": 34,
+          "line": 26,
+          "position": 640
+        }
+      },
+      "tokens": 82
+    },
+    {
+      "firstFile": {
+        "end": 37,
+        "endLoc": {
+          "column": 20,
+          "line": 37,
+          "position": 962
+        },
+        "name": "adapters\\llm\\anthropic.py",
+        "start": 29,
+        "startLoc": {
+          "column": 4,
+          "line": 29,
+          "position": 718
+        }
+      },
+      "format": "python",
+      "fragment": "    async def complete(\n        self,\n        *,\n        model: str,\n        system: str | None,\n        messages: tuple[LLMMessage, ...],\n        temperature: float | None = None,\n        max_tokens: int | None = None,\n    ) -> Completion:",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 9,
+      "secondFile": {
+        "end": 82,
+        "endLoc": {
+          "column": 20,
+          "line": 82,
+          "position": 2730
+        },
+        "name": "adapters\\llm\\base.py",
+        "start": 74,
+        "startLoc": {
+          "column": 4,
+          "line": 74,
+          "position": 2486
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 37,
+        "endLoc": {
+          "column": 20,
+          "line": 37,
+          "position": 962
+        },
+        "name": "adapters\\llm\\anthropic.py",
+        "start": 29,
+        "startLoc": {
+          "column": 4,
+          "line": 29,
+          "position": 718
+        }
+      },
+      "format": "python",
+      "fragment": "    async def complete(\n        self,\n        *,\n        model: str,\n        system: str | None,\n        messages: tuple[LLMMessage, ...],\n        temperature: float | None = None,\n        max_tokens: int | None = None,\n    ) -> Completion:",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 9,
+      "secondFile": {
+        "end": 72,
+        "endLoc": {
+          "column": 20,
+          "line": 72,
+          "position": 4100
+        },
+        "name": "adapters\\llm\\double.py",
+        "start": 64,
+        "startLoc": {
+          "column": 4,
+          "line": 64,
+          "position": 3856
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 41,
+        "endLoc": {
+          "column": 52,
+          "line": 41,
+          "position": 1185
+        },
+        "name": "adapters\\llm\\cohere.py",
+        "start": 34,
+        "startLoc": {
+          "column": 20,
+          "line": 34,
+          "position": 910
+        }
+      },
+      "format": "python",
+      "fragment": "        system: str | None,\n        messages: tuple[LLMMessage, ...],\n        temperature: float | None = None,\n        max_tokens: int | None = None,\n    ) -> Completion:\n        payload: dict[str, Any] = {\n            \"model\": model,\n            \"messages\": _messages(system, messages),",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 8,
+      "secondFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 52,
+          "line": 40,
+          "position": 1104
+        },
+        "name": "adapters\\llm\\openai.py",
+        "start": 33,
+        "startLoc": {
+          "column": 20,
+          "line": 33,
+          "position": 829
+        }
+      },
+      "tokens": 58
+    },
+    {
+      "firstFile": {
+        "end": 68,
+        "endLoc": {
+          "column": 121,
+          "line": 68,
+          "position": 2434
+        },
+        "name": "adapters\\llm\\cohere.py",
+        "start": 63,
+        "startLoc": {
+          "column": 0,
+          "line": 63,
+          "position": 2039
+        }
+      },
+      "format": "python",
+      "fragment": "def _messages(system: str | None, messages: tuple[LLMMessage, ...]) -> list[dict[str, Any]]:\n    prefix: list[dict[str, Any]] = [{\"role\": \"system\", \"content\": system}] if system else []\n    return prefix + [{\"role\": m.role, \"content\": _content(m)} for m in messages]\n\n\n# The same parts as OpenAI's, which is what Cohere's vision models take; a message without images keeps the plain string.",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 68,
+        "endLoc": {
+          "column": 115,
+          "line": 68,
+          "position": 2473
+        },
+        "name": "adapters\\llm\\openai.py",
+        "start": 63,
+        "startLoc": {
+          "column": 0,
+          "line": 63,
+          "position": 2084
+        }
+      },
+      "tokens": 83
+    },
+    {
+      "firstFile": {
+        "end": 76,
+        "endLoc": {
+          "column": 120,
+          "line": 76,
+          "position": 2871
+        },
+        "name": "adapters\\llm\\cohere.py",
+        "start": 69,
+        "startLoc": {
+          "column": 0,
+          "line": 69,
+          "position": 2436
+        }
+      },
+      "format": "python",
+      "fragment": "def _content(message: LLMMessage) -> str | list[dict[str, Any]]:\n    if not message.images:\n        return message.text\n    parts: list[dict[str, Any]] = [{\"type\": \"image_url\", \"image_url\": {\"url\": image.data_url()}} for image in message.images]\n    return [*parts, {\"type\": \"text\", \"text\": message.text}]\n\n\n# Content is a list of blocks and only the text ones are the answer: a thinking block is not what gets sent to WhatsApp.",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 8,
+      "secondFile": {
+        "end": 76,
+        "endLoc": {
+          "column": 3,
+          "line": 76,
+          "position": 2793
+        },
+        "name": "adapters\\llm\\openai.py",
+        "start": 69,
+        "startLoc": {
+          "column": 0,
+          "line": 69,
+          "position": 2475
+        }
+      },
+      "tokens": 85
+    },
+    {
+      "firstFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 13,
+          "line": 60,
+          "position": 2046
+        },
+        "name": "classifiers\\intent.py",
+        "start": 50,
+        "startLoc": {
+          "column": 0,
+          "line": 50,
+          "position": 1688
+        }
+      },
+      "format": "python",
+      "fragment": "# Read once per process: the file is versioned data, so it changes with a deploy and never between two turns.\n@lru_cache(maxsize=1)\ndef rules() -> Rules:\n    return _load(_RULES_FILE)\n\n\ndef _load(path: Path) -> Rules:\n    try:\n        raw = yaml.safe_load(path.read_text(encoding=\"utf-8\"))\n    except (OSError, yaml.YAMLError) as err:\n        raise IntentRulesError(f\"intent: {path.name} cannot be read: {err}\") from err",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 11,
+      "secondFile": {
+        "end": 63,
+        "endLoc": {
+          "column": 13,
+          "line": 63,
+          "position": 2163
+        },
+        "name": "prompts\\assembler.py",
+        "start": 53,
+        "startLoc": {
+          "column": 0,
+          "line": 53,
+          "position": 1805
+        }
+      },
+      "tokens": 61
+    },
+    {
+      "firstFile": {
+        "end": 148,
+        "endLoc": {
+          "column": 2,
+          "line": 148,
+          "position": 4310
+        },
+        "name": "agents\\components_controller.go",
+        "start": 139,
+        "startLoc": {
+          "column": 37,
+          "line": 139,
+          "position": 4122
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *ComponentsController) update(gc *gin.Context) {\n\tactor, agentID, ok := c.scope(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcomponentID, err := componentIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 190,
+        "endLoc": {
+          "column": 2,
+          "line": 190,
+          "position": 5537
+        },
+        "name": "agents\\components_controller.go",
+        "start": 181,
+        "startLoc": {
+          "column": 37,
+          "line": 181,
+          "position": 5349
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 148,
+        "endLoc": {
+          "column": 2,
+          "line": 148,
+          "position": 4310
+        },
+        "name": "agents\\components_controller.go",
+        "start": 139,
+        "startLoc": {
+          "column": 37,
+          "line": 139,
+          "position": 4122
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *ComponentsController) update(gc *gin.Context) {\n\tactor, agentID, ok := c.scope(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcomponentID, err := componentIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 207,
+        "endLoc": {
+          "column": 2,
+          "line": 207,
+          "position": 5987
+        },
+        "name": "agents\\components_controller.go",
+        "start": 198,
+        "startLoc": {
+          "column": 39,
+          "line": 198,
+          "position": 5799
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 191,
+        "endLoc": {
+          "column": 92,
+          "line": 191,
+          "position": 5631
+        },
+        "name": "agents\\components_controller.go",
+        "start": 186,
+        "startLoc": {
+          "column": 36,
+          "line": 186,
+          "position": 5467
+        }
+      },
+      "format": "go",
+      "fragment": "\tcomponentID, err := componentIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\tif err := c.service.Delete(gc.Request.Context(), actor.AccountID, actor.OperatorID, agentID, componentID); err != nil {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 181,
+        "endLoc": {
+          "column": 92,
+          "line": 181,
+          "position": 5135
+        },
+        "name": "agents\\controller.go",
+        "start": 176,
+        "startLoc": {
+          "column": 28,
+          "line": 176,
+          "position": 4971
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 256,
+        "endLoc": {
+          "column": 11,
+          "line": 256,
+          "position": 7724
+        },
+        "name": "agents\\components_controller.go",
+        "start": 247,
+        "startLoc": {
+          "column": 18,
+          "line": 247,
+          "position": 7543
+        }
+      },
+      "format": "go",
+      "fragment": "func positiveQuery(raw string, fallback int) (int, error) {\n\tif raw == \"\" {\n\t\treturn fallback, nil\n\t}\n\tn, err := strconv.Atoi(raw)\n\tif err != nil {\n\t\treturn 0, err\n\t}\n\tif n < 1 {\n\t\treturn 0, errNotPositive",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 11,
+          "line": 71,
+          "position": 2579
+        },
+        "name": "contacts\\params.go",
+        "start": 62,
+        "startLoc": {
+          "column": 13,
+          "line": 62,
+          "position": 2398
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 298,
+        "endLoc": {
+          "column": 2,
+          "line": 298,
+          "position": 9312
+        },
+        "name": "agents\\components_controller.go",
+        "start": 291,
+        "startLoc": {
+          "column": 68,
+          "line": 291,
+          "position": 9082
+        }
+      },
+      "format": "go",
+      "fragment": "func optional(raw map[string]json.RawMessage, field string, into any) error {\n\tvalue, sent := raw[field]\n\tif !sent {\n\t\treturn nil\n\t}\n\tif err := json.Unmarshal(value, into); err != nil {\n\t\treturn soniahttp.BadRequest(\"invalid_body\", \"the field \"+field+\" has the wrong type\").WithCause(err)\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 8,
+      "secondFile": {
+        "end": 238,
+        "endLoc": {
+          "column": 3,
+          "line": 238,
+          "position": 7145
+        },
+        "name": "agents\\controller.go",
+        "start": 231,
+        "startLoc": {
+          "column": 59,
+          "line": 231,
+          "position": 6908
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 1,
+          "line": 44,
+          "position": 1319
+        },
+        "name": "agents\\controller.go",
+        "start": 32,
+        "startLoc": {
+          "column": 0,
+          "line": 32,
+          "position": 1075
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 1,
+          "line": 36,
+          "position": 952
+        },
+        "name": "contacts\\controller.go",
+        "start": 24,
+        "startLoc": {
+          "column": 0,
+          "line": 24,
+          "position": 708
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 4,
+          "line": 46,
+          "position": 1327
+        },
+        "name": "agents\\controller.go",
+        "start": 32,
+        "startLoc": {
+          "column": 0,
+          "line": 32,
+          "position": 1075
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype agentResponse struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 15,
+      "secondFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 4,
+          "line": 32,
+          "position": 645
+        },
+        "name": "inbox\\controller.go",
+        "start": 18,
+        "startLoc": {
+          "column": 0,
+          "line": 18,
+          "position": 393
+        }
+      },
+      "tokens": 58
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 1,
+          "line": 44,
+          "position": 1319
+        },
+        "name": "agents\\controller.go",
+        "start": 32,
+        "startLoc": {
+          "column": 0,
+          "line": 32,
+          "position": 1075
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 34,
+        "endLoc": {
+          "column": 1,
+          "line": 34,
+          "position": 821
+        },
+        "name": "labels\\controller.go",
+        "start": 22,
+        "startLoc": {
+          "column": 53,
+          "line": 22,
+          "position": 577
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 4,
+          "line": 46,
+          "position": 1327
+        },
+        "name": "agents\\controller.go",
+        "start": 32,
+        "startLoc": {
+          "column": 0,
+          "line": 32,
+          "position": 1075
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype agentResponse struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 15,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 512
+        },
+        "name": "notes\\controller.go",
+        "start": 13,
+        "startLoc": {
+          "column": 0,
+          "line": 13,
+          "position": 260
+        }
+      },
+      "tokens": 58
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 4,
+          "line": 46,
+          "position": 1327
+        },
+        "name": "agents\\controller.go",
+        "start": 34,
+        "startLoc": {
+          "column": 0,
+          "line": 34,
+          "position": 1080
+        }
+      },
+      "format": "go",
+      "fragment": "type Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype agentResponse struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 33,
+        "endLoc": {
+          "column": 4,
+          "line": 33,
+          "position": 644
+        },
+        "name": "documents\\controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 0,
+          "line": 21,
+          "position": 397
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 1,
+          "line": 44,
+          "position": 1319
+        },
+        "name": "agents\\controller.go",
+        "start": 34,
+        "startLoc": {
+          "column": 0,
+          "line": 34,
+          "position": 1080
+        }
+      },
+      "format": "go",
+      "fragment": "type Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 11,
+      "secondFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 1,
+          "line": 36,
+          "position": 812
+        },
+        "name": "operators\\controller.go",
+        "start": 26,
+        "startLoc": {
+          "column": 0,
+          "line": 26,
+          "position": 573
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 54,
+        "endLoc": {
+          "column": 37,
+          "line": 54,
+          "position": 1679
+        },
+        "name": "agents\\controller.go",
+        "start": 48,
+        "startLoc": {
+          "column": 1,
+          "line": 48,
+          "position": 1388
+        }
+      },
+      "format": "go",
+      "fragment": "\tName        string   `json:\"name\"`\n\tDescription *string  `json:\"description\"`\n\tLLMProvider string   `json:\"llm_provider\"`\n\tLLMModel    string   `json:\"llm_model\"`\n\tTemperature *float64 `json:\"temperature\"`\n\tMaxTokens   *int     `json:\"max_tokens\"`\n\tActive      bool     `json:\"active\"`",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 42,
+        "endLoc": {
+          "column": 37,
+          "line": 42,
+          "position": 1746
+        },
+        "name": "agents\\model.go",
+        "start": 36,
+        "startLoc": {
+          "column": 1,
+          "line": 36,
+          "position": 1455
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 99,
+        "endLoc": {
+          "column": 2,
+          "line": 99,
+          "position": 2992
+        },
+        "name": "agents\\controller.go",
+        "start": 90,
+        "startLoc": {
+          "column": 25,
+          "line": 90,
+          "position": 2821
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tactor, ok := c.actor(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tagentID, err := agentIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 151,
+        "endLoc": {
+          "column": 2,
+          "line": 151,
+          "position": 4420
+        },
+        "name": "agents\\controller.go",
+        "start": 142,
+        "startLoc": {
+          "column": 27,
+          "line": 142,
+          "position": 4249
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 99,
+        "endLoc": {
+          "column": 2,
+          "line": 99,
+          "position": 2992
+        },
+        "name": "agents\\controller.go",
+        "start": 90,
+        "startLoc": {
+          "column": 25,
+          "line": 90,
+          "position": 2821
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tactor, ok := c.actor(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tagentID, err := agentIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 180,
+        "endLoc": {
+          "column": 2,
+          "line": 180,
+          "position": 5041
+        },
+        "name": "agents\\controller.go",
+        "start": 171,
+        "startLoc": {
+          "column": 27,
+          "line": 171,
+          "position": 4870
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 194,
+        "endLoc": {
+          "column": 1,
+          "line": 194,
+          "position": 5502
+        },
+        "name": "agents\\controller.go",
+        "start": 188,
+        "startLoc": {
+          "column": 19,
+          "line": 188,
+          "position": 5261
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) actor(gc *gin.Context) (soniahttp.Actor, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t}\n\treturn actor, ok\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 286,
+        "endLoc": {
+          "column": 1,
+          "line": 286,
+          "position": 9448
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 280,
+        "startLoc": {
+          "column": 27,
+          "line": 280,
+          "position": 9207
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 202,
+        "endLoc": {
+          "column": 25,
+          "line": 202,
+          "position": 5933
+        },
+        "name": "agents\\controller.go",
+        "start": 197,
+        "startLoc": {
+          "column": 72,
+          "line": 197,
+          "position": 5705
+        }
+      },
+      "format": "go",
+      "fragment": "func body(gc *gin.Context, allowed []string) (map[string]json.RawMessage, error) {\n\tvar raw map[string]json.RawMessage\n\tif err := gc.ShouldBindJSON(&raw); err != nil {\n\t\treturn nil, soniahttp.BadRequest(\"invalid_body\", \"the body is not a json object\").WithCause(err)\n\t}\n\tfor field := range raw {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 190,
+        "endLoc": {
+          "column": 25,
+          "line": 190,
+          "position": 6501
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 185,
+        "startLoc": {
+          "column": 52,
+          "line": 185,
+          "position": 6273
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 24,
+        "endLoc": {
+          "column": 5,
+          "line": 24,
+          "position": 729
+        },
+        "name": "agents\\repository.go",
+        "start": 15,
+        "startLoc": {
+          "column": 0,
+          "line": 15,
+          "position": 340
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Repository struct{ exec db.Executor }\n\nfunc NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }\n\n// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).\nfunc (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }\n\nconst agentColumns = `id, account_id, name, description, llm_provider, llm_model, temperature, max_tokens, active, extraction_enabled,",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 23,
+        "endLoc": {
+          "column": 5,
+          "line": 23,
+          "position": 660
+        },
+        "name": "conversations\\repository.go",
+        "start": 14,
+        "startLoc": {
+          "column": 0,
+          "line": 14,
+          "position": 271
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 98,
+          "line": 22,
+          "position": 720
+        },
+        "name": "agents\\repository.go",
+        "start": 15,
+        "startLoc": {
+          "column": 0,
+          "line": 15,
+          "position": 340
+        }
+      },
+      "format": "go",
+      "fragment": ")\n\ntype Repository struct{ exec db.Executor }\n\nfunc NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }\n\n// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).\nfunc (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 8,
+      "secondFile": {
+        "end": 19,
+        "endLoc": {
+          "column": 98,
+          "line": 19,
+          "position": 568
+        },
+        "name": "operators\\repository.go",
+        "start": 12,
+        "startLoc": {
+          "column": 0,
+          "line": 12,
+          "position": 188
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 98,
+          "line": 22,
+          "position": 720
+        },
+        "name": "agents\\repository.go",
+        "start": 17,
+        "startLoc": {
+          "column": 0,
+          "line": 17,
+          "position": 345
+        }
+      },
+      "format": "go",
+      "fragment": "type Repository struct{ exec db.Executor }\n\nfunc NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }\n\n// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).\nfunc (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 23,
+        "endLoc": {
+          "column": 98,
+          "line": 23,
+          "position": 766
+        },
+        "name": "labels\\repository.go",
+        "start": 18,
+        "startLoc": {
+          "column": 0,
+          "line": 18,
+          "position": 391
+        }
+      },
+      "tokens": 55
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 19,
+          "line": 36,
+          "position": 1051
+        },
+        "name": "app\\app.go",
+        "start": 28,
+        "startLoc": {
+          "column": 1,
+          "line": 28,
+          "position": 849
+        }
+      },
+      "format": "go",
+      "fragment": "\tpool, err := db.Open(ctx, db.Options{\n\t\tDatabaseURL: cfg.DatabaseURL,\n\t\tMinSize:     cfg.DBPoolMinSize,\n\t\tMaxSize:     cfg.DBPoolMaxSize,\n\t})\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer pool.Close()",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 9,
+      "secondFile": {
+        "end": 49,
+        "endLoc": {
+          "column": 19,
+          "line": 49,
+          "position": 1814
+        },
+        "name": "app\\connect.go",
+        "start": 41,
+        "startLoc": {
+          "column": 1,
+          "line": 41,
+          "position": 1612
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 49,
+        "endLoc": {
+          "column": 19,
+          "line": 49,
+          "position": 1814
+        },
+        "name": "app\\connect.go",
+        "start": 38,
+        "startLoc": {
+          "column": 100,
+          "line": 38,
+          "position": 1602
+        }
+      },
+      "format": "go",
+      "fragment": "\t\treturn fmt.Errorf(\"app: the encryption key config accepted is not one the cipher can use: %w\", err)\n\t}\n\n\tpool, err := db.Open(ctx, db.Options{\n\t\tDatabaseURL: cfg.DatabaseURL,\n\t\tMinSize:     cfg.DBPoolMinSize,\n\t\tMaxSize:     cfg.DBPoolMaxSize,\n\t})\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer pool.Close()",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 19,
+          "line": 50,
+          "position": 1577
+        },
+        "name": "app\\seed.go",
+        "start": 39,
+        "startLoc": {
+          "column": 103,
+          "line": 39,
+          "position": 1365
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 148,
+        "endLoc": {
+          "column": 2,
+          "line": 148,
+          "position": 5319
+        },
+        "name": "contacts\\controller.go",
+        "start": 134,
+        "startLoc": {
+          "column": 0,
+          "line": 134,
+          "position": 5089
+        }
+      },
+      "format": "go",
+      "fragment": "}\n\nfunc rfc3339(t *time.Time) *string {\n\tif t == nil {\n\t\treturn nil\n\t}\n\ts := t.UTC().Format(time.RFC3339)\n\treturn &s\n}\n\nfunc (c *Controller) list(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 15,
+      "secondFile": {
+        "end": 145,
+        "endLoc": {
+          "column": 2,
+          "line": 145,
+          "position": 4759
+        },
+        "name": "inbox\\controller.go",
+        "start": 131,
+        "startLoc": {
+          "column": 0,
+          "line": 131,
+          "position": 4529
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 154,
+        "endLoc": {
+          "column": 2,
+          "line": 154,
+          "position": 5426
+        },
+        "name": "contacts\\controller.go",
+        "start": 144,
+        "startLoc": {
+          "column": 0,
+          "line": 144,
+          "position": 5219
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) list(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\n\tpage, perPage, err := pagination(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 11,
+      "secondFile": {
+        "end": 77,
+        "endLoc": {
+          "column": 2,
+          "line": 77,
+          "position": 2131
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 68,
+        "startLoc": {
+          "column": 0,
+          "line": 68,
+          "position": 1926
+        }
+      },
+      "tokens": 63
+    },
+    {
+      "firstFile": {
+        "end": 159,
+        "endLoc": {
+          "column": 2,
+          "line": 159,
+          "position": 5524
+        },
+        "name": "contacts\\controller.go",
+        "start": 150,
+        "startLoc": {
+          "column": 33,
+          "line": 150,
+          "position": 5356
+        }
+      },
+      "format": "go",
+      "fragment": "\tpage, perPage, err := pagination(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\tfilter, err := filterFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 161,
+        "endLoc": {
+          "column": 2,
+          "line": 161,
+          "position": 5052
+        },
+        "name": "inbox\\controller.go",
+        "start": 152,
+        "startLoc": {
+          "column": 25,
+          "line": 152,
+          "position": 4884
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 6275
+        },
+        "name": "contacts\\controller.go",
+        "start": 175,
+        "startLoc": {
+          "column": 25,
+          "line": 175,
+          "position": 6096
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 239,
+        "endLoc": {
+          "column": 2,
+          "line": 239,
+          "position": 7846
+        },
+        "name": "contacts\\controller.go",
+        "start": 230,
+        "startLoc": {
+          "column": 27,
+          "line": 230,
+          "position": 7667
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 6275
+        },
+        "name": "contacts\\controller.go",
+        "start": 175,
+        "startLoc": {
+          "column": 25,
+          "line": 175,
+          "position": 6096
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 77,
+        "endLoc": {
+          "column": 2,
+          "line": 77,
+          "position": 2634
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 68,
+        "startLoc": {
+          "column": 27,
+          "line": 68,
+          "position": 2455
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 6275
+        },
+        "name": "contacts\\controller.go",
+        "start": 175,
+        "startLoc": {
+          "column": 25,
+          "line": 175,
+          "position": 6096
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 190,
+        "endLoc": {
+          "column": 2,
+          "line": 190,
+          "position": 6223
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 181,
+        "startLoc": {
+          "column": 35,
+          "line": 181,
+          "position": 6044
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 6275
+        },
+        "name": "contacts\\controller.go",
+        "start": 175,
+        "startLoc": {
+          "column": 25,
+          "line": 175,
+          "position": 6096
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 25,
+        "endLoc": {
+          "column": 2,
+          "line": 25,
+          "position": 717
+        },
+        "name": "contacts\\labels_controller.go",
+        "start": 16,
+        "startLoc": {
+          "column": 32,
+          "line": 16,
+          "position": 538
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 6275
+        },
+        "name": "contacts\\controller.go",
+        "start": 175,
+        "startLoc": {
+          "column": 25,
+          "line": 175,
+          "position": 6096
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) show(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 55,
+        "endLoc": {
+          "column": 2,
+          "line": 55,
+          "position": 1653
+        },
+        "name": "contacts\\labels_controller.go",
+        "start": 46,
+        "startLoc": {
+          "column": 34,
+          "line": 46,
+          "position": 1474
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 197,
+        "endLoc": {
+          "column": 1,
+          "line": 197,
+          "position": 6523
+        },
+        "name": "contacts\\controller.go",
+        "start": 186,
+        "startLoc": {
+          "column": 1,
+          "line": 186,
+          "position": 6280
+        }
+      },
+      "format": "go",
+      "fragment": "\tcontact, err := c.service.ByID(gc.Request.Context(), scope, contactID)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, translate(err))\n\t\treturn\n\t}\n\n\tbody, ok := c.card(gc, scope, contact)\n\tif !ok {\n\t\treturn\n\t}\n\tsoniahttp.OK(gc, body)\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 213,
+        "endLoc": {
+          "column": 1,
+          "line": 213,
+          "position": 7017
+        },
+        "name": "contacts\\controller.go",
+        "start": 202,
+        "startLoc": {
+          "column": 1,
+          "line": 202,
+          "position": 6774
+        }
+      },
+      "tokens": 76
+    },
+    {
+      "firstFile": {
+        "end": 197,
+        "endLoc": {
+          "column": 1,
+          "line": 197,
+          "position": 6523
+        },
+        "name": "contacts\\controller.go",
+        "start": 186,
+        "startLoc": {
+          "column": 70,
+          "line": 186,
+          "position": 6349
+        }
+      },
+      "format": "go",
+      "fragment": "\tcontact, err := c.service.ByID(gc.Request.Context(), scope, contactID)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, translate(err))\n\t\treturn\n\t}\n\n\tbody, ok := c.card(gc, scope, contact)\n\tif !ok {\n\t\treturn\n\t}\n\tsoniahttp.OK(gc, body)\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 116,
+        "endLoc": {
+          "column": 1,
+          "line": 116,
+          "position": 3661
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 105,
+        "startLoc": {
+          "column": 77,
+          "line": 105,
+          "position": 3487
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 197,
+        "endLoc": {
+          "column": 1,
+          "line": 197,
+          "position": 6523
+        },
+        "name": "contacts\\controller.go",
+        "start": 186,
+        "startLoc": {
+          "column": 70,
+          "line": 186,
+          "position": 6349
+        }
+      },
+      "format": "go",
+      "fragment": "\tcontact, err := c.service.ByID(gc.Request.Context(), scope, contactID)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, translate(err))\n\t\treturn\n\t}\n\n\tbody, ok := c.card(gc, scope, contact)\n\tif !ok {\n\t\treturn\n\t}\n\tsoniahttp.OK(gc, body)\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 210,
+        "endLoc": {
+          "column": 1,
+          "line": 210,
+          "position": 6764
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 199,
+        "startLoc": {
+          "column": 71,
+          "line": 199,
+          "position": 6590
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 255,
+        "endLoc": {
+          "column": 70,
+          "line": 255,
+          "position": 8468
+        },
+        "name": "contacts\\controller.go",
+        "start": 249,
+        "startLoc": {
+          "column": 0,
+          "line": 249,
+          "position": 8139
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 208,
+        "endLoc": {
+          "column": 70,
+          "line": 208,
+          "position": 8019
+        },
+        "name": "documents\\controller.go",
+        "start": 202,
+        "startLoc": {
+          "column": 0,
+          "line": 202,
+          "position": 7690
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 256,
+        "endLoc": {
+          "column": 1,
+          "line": 256,
+          "position": 8496
+        },
+        "name": "contacts\\controller.go",
+        "start": 249,
+        "startLoc": {
+          "column": 0,
+          "line": 249,
+          "position": 8139
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 8,
+      "secondFile": {
+        "end": 382,
+        "endLoc": {
+          "column": 1,
+          "line": 382,
+          "position": 14458
+        },
+        "name": "inbox\\controller.go",
+        "start": 375,
+        "startLoc": {
+          "column": 0,
+          "line": 375,
+          "position": 14101
+        }
+      },
+      "tokens": 85
+    },
+    {
+      "firstFile": {
+        "end": 255,
+        "endLoc": {
+          "column": 70,
+          "line": 255,
+          "position": 8468
+        },
+        "name": "contacts\\controller.go",
+        "start": 249,
+        "startLoc": {
+          "column": 19,
+          "line": 249,
+          "position": 8158
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 278,
+        "endLoc": {
+          "column": 70,
+          "line": 278,
+          "position": 9511
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 272,
+        "startLoc": {
+          "column": 25,
+          "line": 272,
+          "position": 9201
+        }
+      },
+      "tokens": 70
+    },
+    {
+      "firstFile": {
+        "end": 256,
+        "endLoc": {
+          "column": 1,
+          "line": 256,
+          "position": 8496
+        },
+        "name": "contacts\\controller.go",
+        "start": 250,
+        "startLoc": {
+          "column": 23,
+          "line": 250,
+          "position": 8227
+        }
+      },
+      "format": "go",
+      "fragment": "\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 178,
+        "endLoc": {
+          "column": 1,
+          "line": 178,
+          "position": 5414
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 172,
+        "startLoc": {
+          "column": 23,
+          "line": 172,
+          "position": 5145
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 256,
+        "endLoc": {
+          "column": 1,
+          "line": 256,
+          "position": 8496
+        },
+        "name": "contacts\\controller.go",
+        "start": 250,
+        "startLoc": {
+          "column": 23,
+          "line": 250,
+          "position": 8227
+        }
+      },
+      "format": "go",
+      "fragment": "\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 224,
+        "endLoc": {
+          "column": 1,
+          "line": 224,
+          "position": 6502
+        },
+        "name": "reminders\\controller.go",
+        "start": 218,
+        "startLoc": {
+          "column": 23,
+          "line": 218,
+          "position": 6233
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 256,
+        "endLoc": {
+          "column": 1,
+          "line": 256,
+          "position": 8496
+        },
+        "name": "contacts\\controller.go",
+        "start": 250,
+        "startLoc": {
+          "column": 23,
+          "line": 250,
+          "position": 8227
+        }
+      },
+      "format": "go",
+      "fragment": "\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 163,
+        "endLoc": {
+          "column": 1,
+          "line": 163,
+          "position": 4626
+        },
+        "name": "sales\\controller.go",
+        "start": 157,
+        "startLoc": {
+          "column": 23,
+          "line": 157,
+          "position": 4357
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 39,
+          "line": 36,
+          "position": 1009
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 25,
+        "startLoc": {
+          "column": 0,
+          "line": 25,
+          "position": 756
+        }
+      },
+      "format": "go",
+      "fragment": "}\n\nfunc (c *Controller) create(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\n\tvar req createRequest\n\tif err := gc.ShouldBindJSON(&req); err != nil {\n\t\tsoniahttp.Fail(gc, c.log,\n\t\t\tsoniahttp.BadRequest(\"invalid_body\", \"a phone, a name, a lastname, a type and a source channel are required\").WithCause(err))",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 97,
+        "endLoc": {
+          "column": 64,
+          "line": 97,
+          "position": 2774
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 88,
+        "startLoc": {
+          "column": 0,
+          "line": 88,
+          "position": 2527
+        }
+      },
+      "tokens": 69
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 39,
+          "line": 36,
+          "position": 1009
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 27,
+        "startLoc": {
+          "column": 19,
+          "line": 27,
+          "position": 780
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) create(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\n\tvar req createRequest\n\tif err := gc.ShouldBindJSON(&req); err != nil {\n\t\tsoniahttp.Fail(gc, c.log,\n\t\t\tsoniahttp.BadRequest(\"invalid_body\", \"a phone, a name, a lastname, a type and a source channel are required\").WithCause(err))",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 118,
+        "endLoc": {
+          "column": 64,
+          "line": 118,
+          "position": 3513
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 111,
+        "startLoc": {
+          "column": 25,
+          "line": 111,
+          "position": 3290
+        }
+      },
+      "tokens": 63
+    },
+    {
+      "firstFile": {
+        "end": 79,
+        "endLoc": {
+          "column": 4,
+          "line": 79,
+          "position": 2642
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 68,
+        "startLoc": {
+          "column": 36,
+          "line": 68,
+          "position": 2464
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) update(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\n\tvar raw map[string]json.RawMessage",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 192,
+        "endLoc": {
+          "column": 4,
+          "line": 192,
+          "position": 6231
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 181,
+        "startLoc": {
+          "column": 44,
+          "line": 181,
+          "position": 6053
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 79,
+        "endLoc": {
+          "column": 4,
+          "line": 79,
+          "position": 2642
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 68,
+        "startLoc": {
+          "column": 36,
+          "line": 68,
+          "position": 2464
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) update(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\n\tvar raw map[string]json.RawMessage",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 725
+        },
+        "name": "contacts\\labels_controller.go",
+        "start": 16,
+        "startLoc": {
+          "column": 41,
+          "line": 16,
+          "position": 547
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 192,
+        "endLoc": {
+          "column": 8,
+          "line": 192,
+          "position": 6235
+        },
+        "name": "contacts\\edit_controller.go",
+        "start": 181,
+        "startLoc": {
+          "column": 51,
+          "line": 181,
+          "position": 6060
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) writeSensitive(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tcontactID, err := contactIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\n\tvar req sensitiveRequest",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 8,
+          "line": 27,
+          "position": 729
+        },
+        "name": "contacts\\labels_controller.go",
+        "start": 16,
+        "startLoc": {
+          "column": 48,
+          "line": 16,
+          "position": 554
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 23,
+          "line": 71,
+          "position": 2591
+        },
+        "name": "contacts\\params.go",
+        "start": 43,
+        "startLoc": {
+          "column": 90,
+          "line": 43,
+          "position": 1700
+        }
+      },
+      "format": "go",
+      "fragment": "\treturn Filter{LabelIDs: ids, Match: Match(gc.Query(\"match\")), Search: gc.Query(\"search\")}, nil\n}\n\n// A page past the end answers an empty list with the real total, because \"there is nothing here\" is not the same as \"this does not exist\".\nfunc pagination(gc *gin.Context) (page, perPage int, err error) {\n\tpage, err = positive(gc.Query(\"page\"), 1)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_page\", \"page must be a positive whole number\").WithCause(err)\n\t}\n\tperPage, err = positive(gc.Query(\"per_page\"), defaultPerPage)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_per_page\", \"per_page must be a positive whole number\").WithCause(err)\n\t}\n\tif perPage > maxPerPage {\n\t\tperPage = maxPerPage\n\t}\n\treturn page, perPage, nil\n}\n\nfunc positive(raw string, fallback int) (int, error) {\n\tif raw == \"\" {\n\t\treturn fallback, nil\n\t}\n\tn, err := strconv.Atoi(raw)\n\tif err != nil {\n\t\treturn 0, err\n\t}\n\tif n < 1 {\n\t\treturn 0, errors.New(\"contacts: not a positive whole number\")",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 29,
+      "secondFile": {
+        "end": 229,
+        "endLoc": {
+          "column": 23,
+          "line": 229,
+          "position": 6777
+        },
+        "name": "labels\\controller.go",
+        "start": 201,
+        "startLoc": {
+          "column": 15,
+          "line": 201,
+          "position": 5886
+        }
+      },
+      "tokens": 179
+    },
+    {
+      "firstFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 23,
+          "line": 71,
+          "position": 2591
+        },
+        "name": "contacts\\params.go",
+        "start": 47,
+        "startLoc": {
+          "column": 0,
+          "line": 47,
+          "position": 1853
+        }
+      },
+      "format": "go",
+      "fragment": "func pagination(gc *gin.Context) (page, perPage int, err error) {\n\tpage, err = positive(gc.Query(\"page\"), 1)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_page\", \"page must be a positive whole number\").WithCause(err)\n\t}\n\tperPage, err = positive(gc.Query(\"per_page\"), defaultPerPage)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_per_page\", \"per_page must be a positive whole number\").WithCause(err)\n\t}\n\tif perPage > maxPerPage {\n\t\tperPage = maxPerPage\n\t}\n\treturn page, perPage, nil\n}\n\nfunc positive(raw string, fallback int) (int, error) {\n\tif raw == \"\" {\n\t\treturn fallback, nil\n\t}\n\tn, err := strconv.Atoi(raw)\n\tif err != nil {\n\t\treturn 0, err\n\t}\n\tif n < 1 {\n\t\treturn 0, errors.New(\"contacts: not a positive whole number\")",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 25,
+      "secondFile": {
+        "end": 306,
+        "endLoc": {
+          "column": 23,
+          "line": 306,
+          "position": 10345
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 282,
+        "startLoc": {
+          "column": 0,
+          "line": 282,
+          "position": 9607
+        }
+      },
+      "tokens": 175
+    },
+    {
+      "firstFile": {
+        "end": 31,
+        "endLoc": {
+          "column": 1,
+          "line": 31,
+          "position": 1034
+        },
+        "name": "contacts\\repository.go",
+        "start": 19,
+        "startLoc": {
+          "column": 0,
+          "line": 19,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "type Repository struct {\n\texec   db.Executor\n\tcipher *encryption.Cipher\n}\n\nfunc NewRepository(exec db.Executor, cipher *encryption.Cipher) *Repository {\n\treturn &Repository{exec: exec, cipher: cipher}\n}\n\n// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).\nfunc (r *Repository) WithExecutor(exec db.Executor) *Repository {\n\treturn &Repository{exec: exec, cipher: r.cipher}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 1,
+          "line": 32,
+          "position": 1118
+        },
+        "name": "whatsapp\\repository.go",
+        "start": 20,
+        "startLoc": {
+          "column": 0,
+          "line": 20,
+          "position": 642
+        }
+      },
+      "tokens": 76
+    },
+    {
+      "firstFile": {
+        "end": 21,
+        "endLoc": {
+          "column": 98,
+          "line": 21,
+          "position": 651
+        },
+        "name": "conversations\\repository.go",
+        "start": 5,
+        "startLoc": {
+          "column": 1,
+          "line": 5,
+          "position": 48
+        }
+      },
+      "format": "go",
+      "fragment": "\t\"errors\"\n\t\"fmt\"\n\t\"time\"\n\n\t\"github.com/google/uuid\"\n\t\"github.com/jackc/pgx/v5\"\n\n\t\"github.com/mateo-velasquez/sonia/src/core/internal/platform/db\"\n\t\"github.com/mateo-velasquez/sonia/src/core/internal/platform/enums\"\n)\n\ntype Repository struct{ exec db.Executor }\n\nfunc NewRepository(exec db.Executor) *Repository { return &Repository{exec: exec} }\n\n// WithExecutor returns the same repository bound to a transaction, so the caller that conducts owns it and this one never opens it (regla 5).\nfunc (r *Repository) WithExecutor(exec db.Executor) *Repository { return &Repository{exec: exec} }",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 17,
+      "secondFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 98,
+          "line": 22,
+          "position": 661
+        },
+        "name": "inbox\\repository.go",
+        "start": 6,
+        "startLoc": {
+          "column": 1,
+          "line": 6,
+          "position": 58
+        }
+      },
+      "tokens": 63
+    },
+    {
+      "firstFile": {
+        "end": 54,
+        "endLoc": {
+          "column": 9,
+          "line": 54,
+          "position": 2892
+        },
+        "name": "conversations\\service.go",
+        "start": 49,
+        "startLoc": {
+          "column": 71,
+          "line": 49,
+          "position": 2521
+        }
+      },
+      "format": "go",
+      "fragment": "\tSetStarred(ctx context.Context, conversationID uuid.UUID, starred bool) error\n\tResolve(ctx context.Context, conversationID, operatorID uuid.UUID, turnBudget time.Duration) error\n\tScore(ctx context.Context, conversationID, operatorID uuid.UUID, score int) error\n\tReassign(ctx context.Context, conversationID uuid.UUID, from *uuid.UUID, to uuid.UUID) error\n\tHandOver(ctx context.Context, from, to uuid.UUID) ([]uuid.UUID, error)\n\tMarkRead(ctx context.Context, conversationID uuid.UUID) error",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 114,
+        "endLoc": {
+          "column": 1,
+          "line": 114,
+          "position": 7226
+        },
+        "name": "inbox\\service.go",
+        "start": 109,
+        "startLoc": {
+          "column": 55,
+          "line": 109,
+          "position": 6863
+        }
+      },
+      "tokens": 87
+    },
+    {
+      "firstFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 1,
+          "line": 71,
+          "position": 3479
+        },
+        "name": "conversations\\service.go",
+        "start": 58,
+        "startLoc": {
+          "column": 70,
+          "line": 58,
+          "position": 3259
+        }
+      },
+      "format": "go",
+      "fragment": "\tMarkFailed(ctx context.Context, messageID uuid.UUID, errorCode string) error\n}\n\ntype Service struct {\n\trepo store\n\tlog  *slog.Logger\n}\n\nfunc NewService(repo store, log *slog.Logger) *Service {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Service{repo: repo, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 1,
+          "line": 36,
+          "position": 1053
+        },
+        "name": "labels\\service.go",
+        "start": 23,
+        "startLoc": {
+          "column": 61,
+          "line": 23,
+          "position": 833
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 208,
+        "endLoc": {
+          "column": 70,
+          "line": 208,
+          "position": 8019
+        },
+        "name": "documents\\controller.go",
+        "start": 196,
+        "startLoc": {
+          "column": 62,
+          "line": 196,
+          "position": 7614
+        }
+      },
+      "format": "go",
+      "fragment": "\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(code, message).WithCause(err))\n\t\treturn uuid.Nil, false\n\t}\n\treturn parsed, true\n}\n\nfunc (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID}, true",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 177,
+        "endLoc": {
+          "column": 70,
+          "line": 177,
+          "position": 5386
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 165,
+        "startLoc": {
+          "column": 97,
+          "line": 165,
+          "position": 4981
+        }
+      },
+      "tokens": 94
+    },
+    {
+      "firstFile": {
+        "end": 208,
+        "endLoc": {
+          "column": 70,
+          "line": 208,
+          "position": 8019
+        },
+        "name": "documents\\controller.go",
+        "start": 196,
+        "startLoc": {
+          "column": 62,
+          "line": 196,
+          "position": 7614
+        }
+      },
+      "format": "go",
+      "fragment": "\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(code, message).WithCause(err))\n\t\treturn uuid.Nil, false\n\t}\n\treturn parsed, true\n}\n\nfunc (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID}, true",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 162,
+        "endLoc": {
+          "column": 70,
+          "line": 162,
+          "position": 4598
+        },
+        "name": "sales\\controller.go",
+        "start": 150,
+        "startLoc": {
+          "column": 77,
+          "line": 150,
+          "position": 4193
+        }
+      },
+      "tokens": 94
+    },
+    {
+      "firstFile": {
+        "end": 208,
+        "endLoc": {
+          "column": 70,
+          "line": 208,
+          "position": 8019
+        },
+        "name": "documents\\controller.go",
+        "start": 199,
+        "startLoc": {
+          "column": 14,
+          "line": 199,
+          "position": 7677
+        }
+      },
+      "format": "go",
+      "fragment": "\treturn parsed, true\n}\n\nfunc (c *Controller) scopeFrom(gc *gin.Context) (Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID}, true",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 223,
+        "endLoc": {
+          "column": 70,
+          "line": 223,
+          "position": 6474
+        },
+        "name": "reminders\\controller.go",
+        "start": 214,
+        "startLoc": {
+          "column": 10,
+          "line": 214,
+          "position": 6132
+        }
+      },
+      "tokens": 78
+    },
+    {
+      "firstFile": {
+        "end": 209,
+        "endLoc": {
+          "column": 1,
+          "line": 209,
+          "position": 8029
+        },
+        "name": "documents\\controller.go",
+        "start": 203,
+        "startLoc": {
+          "column": 23,
+          "line": 203,
+          "position": 7778
+        }
+      },
+      "format": "go",
+      "fragment": "\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 279,
+        "endLoc": {
+          "column": 1,
+          "line": 279,
+          "position": 9521
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 273,
+        "startLoc": {
+          "column": 23,
+          "line": 273,
+          "position": 9270
+        }
+      },
+      "tokens": 53
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 847
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 56,
+        "endLoc": {
+          "column": 2,
+          "line": 56,
+          "position": 1755
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 47,
+        "startLoc": {
+          "column": 29,
+          "line": 47,
+          "position": 1466
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 847
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 74,
+        "endLoc": {
+          "column": 2,
+          "line": 74,
+          "position": 2357
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 65,
+        "startLoc": {
+          "column": 28,
+          "line": 65,
+          "position": 2068
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 8,
+          "line": 32,
+          "position": 859
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}\n\n\tvar req modeRequest",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 104,
+        "endLoc": {
+          "column": 8,
+          "line": 104,
+          "position": 3290
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 93,
+        "startLoc": {
+          "column": 31,
+          "line": 93,
+          "position": 2989
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 8,
+          "line": 32,
+          "position": 859
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}\n\n\tvar req modeRequest",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 140,
+        "endLoc": {
+          "column": 8,
+          "line": 140,
+          "position": 4482
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 129,
+        "startLoc": {
+          "column": 29,
+          "line": 129,
+          "position": 4181
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 847
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 205,
+        "endLoc": {
+          "column": 2,
+          "line": 205,
+          "position": 6554
+        },
+        "name": "inbox\\controller.go",
+        "start": 196,
+        "startLoc": {
+          "column": 27,
+          "line": 196,
+          "position": 6265
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 8,
+          "line": 32,
+          "position": 859
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}\n\n\tvar req modeRequest",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 264,
+        "endLoc": {
+          "column": 8,
+          "line": 264,
+          "position": 8595
+        },
+        "name": "inbox\\controller.go",
+        "start": 253,
+        "startLoc": {
+          "column": 25,
+          "line": 253,
+          "position": 8294
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 847
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 304,
+        "endLoc": {
+          "column": 2,
+          "line": 304,
+          "position": 9948
+        },
+        "name": "inbox\\controller.go",
+        "start": 295,
+        "startLoc": {
+          "column": 31,
+          "line": 295,
+          "position": 9659
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 847
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 21,
+        "startLoc": {
+          "column": 28,
+          "line": 21,
+          "position": 558
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) setMode(gc *gin.Context) {\n\tscope, ok := c.scopeFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 53,
+        "endLoc": {
+          "column": 2,
+          "line": 53,
+          "position": 1598
+        },
+        "name": "reasoning\\controller.go",
+        "start": 44,
+        "startLoc": {
+          "column": 30,
+          "line": 44,
+          "position": 1309
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 57,
+        "endLoc": {
+          "column": 21,
+          "line": 57,
+          "position": 1778
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 51,
+        "startLoc": {
+          "column": 1,
+          "line": 51,
+          "position": 1540
+        }
+      },
+      "format": "go",
+      "fragment": "\t}\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn\n\t}\n\tif err := c.service.MarkRead(gc.Request.Context(), scope, conversationID); err != nil {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 75,
+        "endLoc": {
+          "column": 21,
+          "line": 75,
+          "position": 2380
+        },
+        "name": "inbox\\actions_controller.go",
+        "start": 69,
+        "startLoc": {
+          "column": 1,
+          "line": 69,
+          "position": 2142
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 1,
+          "line": 30,
+          "position": 637
+        },
+        "name": "inbox\\controller.go",
+        "start": 17,
+        "startLoc": {
+          "column": 14,
+          "line": 17,
+          "position": 386
+        }
+      },
+      "format": "go",
+      "fragment": "\tmaxLimit     = 100\n)\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 1,
+          "line": 30,
+          "position": 633
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 17,
+        "startLoc": {
+          "column": 16,
+          "line": 17,
+          "position": 382
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 156,
+        "endLoc": {
+          "column": 2,
+          "line": 156,
+          "position": 4954
+        },
+        "name": "inbox\\controller.go",
+        "start": 144,
+        "startLoc": {
+          "column": 2,
+          "line": 144,
+          "position": 4749
+        }
+      },
+      "format": "go",
+      "fragment": "\t\treturn\n\t}\n\n\tlimit, err := limitFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\tafter, err := cursorFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 215,
+        "endLoc": {
+          "column": 2,
+          "line": 215,
+          "position": 6747
+        },
+        "name": "inbox\\controller.go",
+        "start": 204,
+        "startLoc": {
+          "column": 2,
+          "line": 204,
+          "position": 6544
+        }
+      },
+      "tokens": 60
+    },
+    {
+      "firstFile": {
+        "end": 143,
+        "endLoc": {
+          "column": 1,
+          "line": 143,
+          "position": 4353
+        },
+        "name": "inbox\\handover_controller.go",
+        "start": 134,
+        "startLoc": {
+          "column": 0,
+          "line": 134,
+          "position": 4009
+        }
+      },
+      "format": "go",
+      "fragment": "}\n\nfunc (c *Controller) conversationIDFrom(gc *gin.Context) (uuid.UUID, bool) {\n\tconversationID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_conversation_id\", \"the conversation id is not a uuid\").WithCause(err))\n\t\treturn uuid.Nil, false\n\t}\n\treturn conversationID, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 196,
+        "endLoc": {
+          "column": 1,
+          "line": 196,
+          "position": 5748
+        },
+        "name": "notes\\controller.go",
+        "start": 187,
+        "startLoc": {
+          "column": 0,
+          "line": 187,
+          "position": 5404
+        }
+      },
+      "tokens": 81
+    },
+    {
+      "firstFile": {
+        "end": 61,
+        "endLoc": {
+          "column": 1,
+          "line": 61,
+          "position": 1681
+        },
+        "name": "inbox\\labels_controller.go",
+        "start": 55,
+        "startLoc": {
+          "column": 35,
+          "line": 55,
+          "position": 1454
+        }
+      },
+      "format": "go",
+      "fragment": "\ttags, err := c.service.AssignLabel(gc.Request.Context(), scope, conversationID, labelID)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, translate(err))\n\t\treturn\n\t}\n\tsoniahttp.OK(gc, labelsResponse{ID: conversationID.String(), Labels: presentLabels(tags)})\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 84,
+        "endLoc": {
+          "column": 1,
+          "line": 84,
+          "position": 2322
+        },
+        "name": "inbox\\labels_controller.go",
+        "start": 78,
+        "startLoc": {
+          "column": 37,
+          "line": 78,
+          "position": 2095
+        }
+      },
+      "tokens": 63
+    },
+    {
+      "firstFile": {
+        "end": 84,
+        "endLoc": {
+          "column": 51,
+          "line": 84,
+          "position": 2380
+        },
+        "name": "labels\\controller.go",
+        "start": 75,
+        "startLoc": {
+          "column": 2,
+          "line": 75,
+          "position": 2208
+        }
+      },
+      "format": "go",
+      "fragment": "\t\treturn\n\t}\n\n\tpage, perPage, err := pagination(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\n\tfound, err := c.service.List(gc.Request.Context(), actor.AccountID, perPage, (page-1)*perPage)",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 78,
+        "endLoc": {
+          "column": 51,
+          "line": 78,
+          "position": 2184
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 71,
+        "startLoc": {
+          "column": 2,
+          "line": 71,
+          "position": 2016
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 115,
+        "endLoc": {
+          "column": 25,
+          "line": 115,
+          "position": 3286
+        },
+        "name": "labels\\controller.go",
+        "start": 105,
+        "startLoc": {
+          "column": 1,
+          "line": 105,
+          "position": 2979
+        }
+      },
+      "format": "go",
+      "fragment": "\tif err := gc.ShouldBindJSON(&req); err != nil {\n\t\tsoniahttp.Fail(gc, c.log,\n\t\t\tsoniahttp.BadRequest(\"invalid_body\", \"a name and a color are required\").WithCause(err))\n\t\treturn\n\t}\n\tif err := checkColor(req.Color); err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\n\tlabel, err := c.service.Create(gc.Request.Context(), actor.AccountID, actor.OperatorID, req.Name, req.Color)",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 11,
+      "secondFile": {
+        "end": 147,
+        "endLoc": {
+          "column": 25,
+          "line": 147,
+          "position": 4157
+        },
+        "name": "labels\\controller.go",
+        "start": 137,
+        "startLoc": {
+          "column": 1,
+          "line": 137,
+          "position": 3850
+        }
+      },
+      "tokens": 82
+    },
+    {
+      "firstFile": {
+        "end": 134,
+        "endLoc": {
+          "column": 2,
+          "line": 134,
+          "position": 3821
+        },
+        "name": "labels\\controller.go",
+        "start": 123,
+        "startLoc": {
+          "column": 27,
+          "line": 123,
+          "position": 3521
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *Controller) update(gc *gin.Context) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn\n\t}\n\n\tlabelID, err := labelIDFrom(gc)\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 12,
+      "secondFile": {
+        "end": 166,
+        "endLoc": {
+          "column": 2,
+          "line": 166,
+          "position": 4678
+        },
+        "name": "labels\\controller.go",
+        "start": 155,
+        "startLoc": {
+          "column": 27,
+          "line": 155,
+          "position": 4378
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 1,
+          "line": 36,
+          "position": 1053
+        },
+        "name": "labels\\service.go",
+        "start": 23,
+        "startLoc": {
+          "column": 52,
+          "line": 23,
+          "position": 824
+        }
+      },
+      "format": "go",
+      "fragment": "\tSoftDelete(ctx context.Context, accountID, labelID uuid.UUID) error\n}\n\ntype Service struct {\n\trepo store\n\tlog  *slog.Logger\n}\n\nfunc NewService(repo store, log *slog.Logger) *Service {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Service{repo: repo, log: log}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 33,
+        "endLoc": {
+          "column": 1,
+          "line": 33,
+          "position": 1005
+        },
+        "name": "quick_replies\\service.go",
+        "start": 20,
+        "startLoc": {
+          "column": 52,
+          "line": 20,
+          "position": 776
+        }
+      },
+      "tokens": 60
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 512
+        },
+        "name": "notes\\controller.go",
+        "start": 3,
+        "startLoc": {
+          "column": 0,
+          "line": 3,
+          "position": 17
+        }
+      },
+      "format": "go",
+      "fragment": "import (\n\t\"errors\"\n\t\"log/slog\"\n\t\"time\"\n\n\t\"github.com/gin-gonic/gin\"\n\t\"github.com/google/uuid\"\n\n\t\"github.com/mateo-velasquez/sonia/src/core/internal/inbox\"\n\tsoniahttp \"github.com/mateo-velasquez/sonia/src/core/internal/platform/http\"\n)\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype noteRequest struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 25,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 516
+        },
+        "name": "reasoning\\controller.go",
+        "start": 3,
+        "startLoc": {
+          "column": 0,
+          "line": 3,
+          "position": 21
+        }
+      },
+      "tokens": 68
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 512
+        },
+        "name": "notes\\controller.go",
+        "start": 12,
+        "startLoc": {
+          "column": 1,
+          "line": 12,
+          "position": 182
+        }
+      },
+      "format": "go",
+      "fragment": "\tsoniahttp \"github.com/mateo-velasquez/sonia/src/core/internal/platform/http\"\n)\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype noteRequest struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 16,
+      "secondFile": {
+        "end": 26,
+        "endLoc": {
+          "column": 4,
+          "line": 26,
+          "position": 455
+        },
+        "name": "reminders\\controller.go",
+        "start": 11,
+        "startLoc": {
+          "column": 1,
+          "line": 11,
+          "position": 125
+        }
+      },
+      "tokens": 60
+    },
+    {
+      "firstFile": {
+        "end": 187,
+        "endLoc": {
+          "column": 1,
+          "line": 187,
+          "position": 5405
+        },
+        "name": "notes\\controller.go",
+        "start": 174,
+        "startLoc": {
+          "column": 88,
+          "line": 174,
+          "position": 4978
+        }
+      },
+      "format": "go",
+      "fragment": "\t\treturn soniahttp.Forbidden(\"not_the_author\", \"only the author edits or deletes a note\").WithCause(err)\n\tdefault:\n\t\treturn err\n\t}\n}\n\nfunc (c *Controller) scopeFrom(gc *gin.Context) (inbox.Scope, bool) {\n\tactor, ok := soniahttp.ActorFrom(gc)\n\tif !ok {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn inbox.Scope{}, false\n\t}\n\treturn inbox.Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 14,
+      "secondFile": {
+        "end": 100,
+        "endLoc": {
+          "column": 1,
+          "line": 100,
+          "position": 3390
+        },
+        "name": "reasoning\\controller.go",
+        "start": 87,
+        "startLoc": {
+          "column": 93,
+          "line": 87,
+          "position": 2963
+        }
+      },
+      "tokens": 103
+    },
+    {
+      "firstFile": {
+        "end": 48,
+        "endLoc": {
+          "column": 7,
+          "line": 48,
+          "position": 2084
+        },
+        "name": "operators\\repository.go",
+        "start": 43,
+        "startLoc": {
+          "column": 42,
+          "line": 43,
+          "position": 1891
+        }
+      },
+      "format": "go",
+      "fragment": "\t_, err := r.exec.Exec(ctx, operatorInsert,\n\t\to.ID, o.AccountID, o.Name, o.Lastname, normalizeEmail(o.Email), o.PasswordHash, o.Role, o.Active)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"operators: insert operator: %w\", err)\n\t}\n\treturn nil",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 6,
+      "secondFile": {
+        "end": 97,
+        "endLoc": {
+          "column": 3,
+          "line": 97,
+          "position": 3459
+        },
+        "name": "operators\\roster_repository.go",
+        "start": 92,
+        "startLoc": {
+          "column": 42,
+          "line": 92,
+          "position": 3270
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 142,
+        "endLoc": {
+          "column": 64,
+          "line": 142,
+          "position": 4246
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 136,
+        "startLoc": {
+          "column": 11,
+          "line": 136,
+          "position": 4061
+        }
+      },
+      "format": "go",
+      "fragment": "\toperatorID, ok := c.idFrom(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tvar req updateRequest\n\tif err := gc.ShouldBindJSON(&req); err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_body\", \"name, lastname, email, role and active are the fields of an operator\").WithCause(err))",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 119,
+        "endLoc": {
+          "column": 64,
+          "line": 119,
+          "position": 3349
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 113,
+        "startLoc": {
+          "column": 8,
+          "line": 113,
+          "position": 3164
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 306,
+        "endLoc": {
+          "column": 23,
+          "line": 306,
+          "position": 10345
+        },
+        "name": "operators\\roster_controller.go",
+        "start": 278,
+        "startLoc": {
+          "column": 70,
+          "line": 278,
+          "position": 9511
+        }
+      },
+      "format": "go",
+      "fragment": "\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID}, true\n}\n\n// A page past the end answers an empty list with the real total, as in labels/.\nfunc pagination(gc *gin.Context) (page, perPage int, err error) {\n\tpage, err = positive(gc.Query(\"page\"), 1)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_page\", \"page must be a positive whole number\").WithCause(err)\n\t}\n\tperPage, err = positive(gc.Query(\"per_page\"), defaultPerPage)\n\tif err != nil {\n\t\treturn 0, 0, soniahttp.BadRequest(\"invalid_per_page\", \"per_page must be a positive whole number\").WithCause(err)\n\t}\n\tif perPage > maxPerPage {\n\t\tperPage = maxPerPage\n\t}\n\treturn page, perPage, nil\n}\n\nfunc positive(raw string, fallback int) (int, error) {\n\tif raw == \"\" {\n\t\treturn fallback, nil\n\t}\n\tn, err := strconv.Atoi(raw)\n\tif err != nil {\n\t\treturn 0, err\n\t}\n\tif n < 1 {\n\t\treturn 0, errors.New(\"operators: not a positive whole number\")",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 29,
+      "secondFile": {
+        "end": 205,
+        "endLoc": {
+          "column": 23,
+          "line": 205,
+          "position": 6238
+        },
+        "name": "quick_replies\\controller.go",
+        "start": 177,
+        "startLoc": {
+          "column": 88,
+          "line": 177,
+          "position": 5404
+        }
+      },
+      "tokens": 180
+    },
+    {
+      "firstFile": {
+        "end": 259,
+        "endLoc": {
+          "column": 21,
+          "line": 259,
+          "position": 11389
+        },
+        "name": "platform\\config\\config.go",
+        "start": 253,
+        "startLoc": {
+          "column": 16,
+          "line": 253,
+          "position": 11207
+        }
+      },
+      "format": "go",
+      "fragment": "func positiveInt(key string, fallback int) (int, error) {\n\traw := strings.TrimSpace(os.Getenv(key))\n\tif raw == \"\" {\n\t\treturn fallback, nil\n\t}\n\tn, err := strconv.Atoi(raw)\n\tif err != nil || n <= 0 {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 272,
+        "endLoc": {
+          "column": 21,
+          "line": 272,
+          "position": 11793
+        },
+        "name": "platform\\config\\config.go",
+        "start": 266,
+        "startLoc": {
+          "column": 19,
+          "line": 266,
+          "position": 11611
+        }
+      },
+      "tokens": 58
+    },
+    {
+      "firstFile": {
+        "end": 26,
+        "endLoc": {
+          "column": 4,
+          "line": 26,
+          "position": 455
+        },
+        "name": "reminders\\controller.go",
+        "start": 3,
+        "startLoc": {
+          "column": 0,
+          "line": 3,
+          "position": 21
+        }
+      },
+      "format": "go",
+      "fragment": "import (\n\t\"errors\"\n\t\"log/slog\"\n\t\"time\"\n\n\t\"github.com/gin-gonic/gin\"\n\t\"github.com/google/uuid\"\n\n\tsoniahttp \"github.com/mateo-velasquez/sonia/src/core/internal/platform/http\"\n)\n\ntype Controller struct {\n\tservice *Service\n\tlog     *slog.Logger\n}\n\nfunc NewController(service *Service, log *slog.Logger) *Controller {\n\tif log == nil {\n\t\tlog = slog.Default()\n\t}\n\treturn &Controller{service: service, log: log}\n}\n\ntype reminderResponse struct {",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 24,
+      "secondFile": {
+        "end": 26,
+        "endLoc": {
+          "column": 4,
+          "line": 26,
+          "position": 451
+        },
+        "name": "sales\\controller.go",
+        "start": 3,
+        "startLoc": {
+          "column": 0,
+          "line": 3,
+          "position": 17
+        }
+      },
+      "tokens": 67
+    },
+    {
+      "firstFile": {
+        "end": 229,
+        "endLoc": {
+          "column": 28,
+          "line": 229,
+          "position": 6616
+        },
+        "name": "reminders\\controller.go",
+        "start": 220,
+        "startLoc": {
+          "column": 11,
+          "line": 220,
+          "position": 6271
+        }
+      },
+      "format": "go",
+      "fragment": "\t\tsoniahttp.Fail(gc, c.log, soniahttp.Unauthorized(\"missing_credentials\", \"no operator identity in the request\"))\n\t\treturn Scope{}, false\n\t}\n\treturn Scope{AccountID: actor.AccountID, OperatorID: actor.OperatorID, Role: actor.Role}, true\n}\n\nfunc translate(err error) error {\n\tswitch {\n\tcase errors.Is(err, ErrNotFound):\n\t\treturn soniahttp.NotFound(\"reminder_not_found\", \"no such reminder\").WithCause(err)",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 168,
+        "endLoc": {
+          "column": 28,
+          "line": 168,
+          "position": 4740
+        },
+        "name": "sales\\controller.go",
+        "start": 159,
+        "startLoc": {
+          "column": 11,
+          "line": 159,
+          "position": 4395
+        }
+      },
+      "tokens": 74
+    },
+    {
+      "firstFile": {
+        "end": 86,
+        "endLoc": {
+          "column": 1,
+          "line": 86,
+          "position": 1995
+        },
+        "name": "reminders\\poller.go",
+        "start": 74,
+        "startLoc": {
+          "column": 0,
+          "line": 74,
+          "position": 1772
+        }
+      },
+      "format": "go",
+      "fragment": "func (p *Poller) Wait(ctx context.Context) error {\n\tdone := make(chan struct{})\n\tgo func() {\n\t\tp.running.Wait()\n\t\tclose(done)\n\t}()\n\tselect {\n\tcase <-done:\n\t\treturn nil\n\tcase <-ctx.Done():\n\t\treturn ctx.Err()\n\t}\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 13,
+      "secondFile": {
+        "end": 86,
+        "endLoc": {
+          "column": 1,
+          "line": 86,
+          "position": 2379
+        },
+        "name": "turn\\poller.go",
+        "start": 73,
+        "startLoc": {
+          "column": 0,
+          "line": 73,
+          "position": 2154
+        }
+      },
+      "tokens": 70
+    },
+    {
+      "firstFile": {
+        "end": 129,
+        "endLoc": {
+          "column": 20,
+          "line": 129,
+          "position": 5141
+        },
+        "name": "reminders\\repository.go",
+        "start": 123,
+        "startLoc": {
+          "column": 112,
+          "line": 123,
+          "position": 4958
+        }
+      },
+      "format": "go",
+      "fragment": "\t\t`UPDATE reminders SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, reminderID)\n}\n\nfunc (r *Repository) write(ctx context.Context, what, query string, args ...any) error {\n\ttag, err := r.exec.Exec(ctx, query, args...)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"reminders: %s: %w\", what, err)",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 7,
+      "secondFile": {
+        "end": 105,
+        "endLoc": {
+          "column": 20,
+          "line": 105,
+          "position": 3985
+        },
+        "name": "sales\\repository.go",
+        "start": 99,
+        "startLoc": {
+          "column": 133,
+          "line": 99,
+          "position": 3802
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 162,
+        "endLoc": {
+          "column": 2,
+          "line": 162,
+          "position": 5361
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 153,
+        "startLoc": {
+          "column": 39,
+          "line": 153,
+          "position": 5097
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *SettingsController) setDefault(gc *gin.Context) {\n\tactor, ok := c.actor(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tinboxID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_inbox_id\", \"the inbox id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 223,
+        "endLoc": {
+          "column": 2,
+          "line": 223,
+          "position": 7580
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 214,
+        "startLoc": {
+          "column": 35,
+          "line": 214,
+          "position": 7316
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 162,
+        "endLoc": {
+          "column": 2,
+          "line": 162,
+          "position": 5361
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 153,
+        "startLoc": {
+          "column": 39,
+          "line": 153,
+          "position": 5097
+        }
+      },
+      "format": "go",
+      "fragment": "func (c *SettingsController) setDefault(gc *gin.Context) {\n\tactor, ok := c.actor(gc)\n\tif !ok {\n\t\treturn\n\t}\n\tinboxID, err := uuid.Parse(gc.Param(\"id\"))\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.BadRequest(\"invalid_inbox_id\", \"the inbox id is not a uuid\").WithCause(err))\n\t\treturn\n\t}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 10,
+      "secondFile": {
+        "end": 250,
+        "endLoc": {
+          "column": 2,
+          "line": 250,
+          "position": 8314
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 241,
+        "startLoc": {
+          "column": 38,
+          "line": 241,
+          "position": 8050
+        }
+      },
+      "tokens": 73
+    },
+    {
+      "firstFile": {
+        "end": 235,
+        "endLoc": {
+          "column": 1,
+          "line": 235,
+          "position": 7913
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 225,
+        "startLoc": {
+          "column": 71,
+          "line": 225,
+          "position": 7655
+        }
+      },
+      "format": "go",
+      "fragment": "\terr = c.settings.Remove(gc.Request.Context(), actor.AccountID, inboxID)\n\tif errors.Is(err, ErrInboxNotFound) {\n\t\tsoniahttp.Fail(gc, c.log, soniahttp.NotFound(\"inbox_not_found\", \"no such inbox\").WithCause(err))\n\t\treturn\n\t}\n\tif err != nil {\n\t\tsoniahttp.Fail(gc, c.log, err)\n\t\treturn\n\t}\n\tgc.Status(http.StatusNoContent)\n}",
+      "isNew": false,
+      "kind": "exact",
+      "lines": 11,
+      "secondFile": {
+        "end": 278,
+        "endLoc": {
+          "column": 1,
+          "line": 278,
+          "position": 9176
+        },
+        "name": "whatsapp\\settings_controller.go",
+        "start": 268,
+        "startLoc": {
+          "column": 87,
+          "line": 268,
+          "position": 8918
+        }
+      },
+      "tokens": 66
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-10-26T12:40:21.831Z",
+    "formats": {
+      "go": {
+        "clones": 84,
+        "duplicatedLines": 952,
+        "duplicatedTokens": 5675,
+        "lines": 17500,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 5.4399999999999995,
+        "percentageTokens": 5.34429502391984,
+        "sources": 123,
+        "tokens": 106188
+      },
+      "python": {
+        "clones": 8,
+        "duplicatedLines": 79,
+        "duplicatedTokens": 551,
+        "lines": 5942,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 1.3295186805789296,
+        "percentageTokens": 1.7373482579221187,
+        "sources": 54,
+        "tokens": 31715
+      },
+      "toml": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 60,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 1,
+        "tokens": 147
+      },
+      "yaml": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 409,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 10,
+        "tokens": 2234
+      }
+    },
+    "total": {
+      "clones": 92,
+      "duplicatedLines": 1031,
+      "duplicatedTokens": 6226,
+      "lines": 23911,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 4.311823010329974,
+      "percentageTokens": 4.4381397736021215,
+      "sources": 188,
+      "tokens": 140284
+    }
+  }
+}

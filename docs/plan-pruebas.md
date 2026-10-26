@@ -1,192 +1,120 @@
-\# Plan de pruebas de SONIA
+> Actualización del 26/10/2026: los resultados de la versión 1.0 se conservan como antecedentes. La revalidación, los criterios vigentes y las brechas están en [Revalidación de calidad](revalidacion-calidad.md) y [Ejecución reproducible](ejecucion-calidad.md).
 
+# Plan de pruebas de SONIA
 
+**Versión:** 1.0
 
-\*\*Versión:\*\* 1.0
+**Estado:** Plan inicial basado en las pruebas y evidencias disponibles al 25/10/2026.
 
-\*\*Estado:\*\* Plan inicial basado en las pruebas y evidencias disponibles al 25/10/2026.
+**Proyecto:** SONIA — Plataforma de atención conversacional asistida por inteligencia artificial.
 
-\*\*Proyecto:\*\* SONIA — Plataforma de atención conversacional asistida por inteligencia artificial.
-
-
-
-\## 1. Propósito
-
-
+## 1. Propósito
 
 Establecer el alcance, los niveles, los criterios de aceptación, los riesgos y las evidencias de las pruebas de SONIA. El plan busca verificar la corrección funcional, la integración entre componentes, la estabilidad del sistema y la calidad del software, diferenciando los resultados efectivamente obtenidos de las actividades todavía pendientes.
 
-
-
-\## 2. Alcance
-
-
+## 2. Alcance
 
 El sistema está compuesto por servicios desarrollados en Go y Python, una base de datos relacional, un servicio de búsqueda vectorial y servicios auxiliares. Las pruebas contemplan:
 
+- Pruebas unitarias de los componentes Go y Python.
 
+- Pruebas de integración entre componentes y dependencias.
 
-\- Pruebas unitarias de los componentes Go y Python.
+- Pruebas smoke y flujos end-to-end disponibles.
 
-\- Pruebas de integración entre componentes y dependencias.
+- Comprobaciones de salud y disponibilidad de los servicios.
 
-\- Pruebas smoke y flujos end-to-end disponibles.
+- Pruebas de carga inicial, estrés escalonado y carga sostenida sobre el endpoint `/health`.
 
-\- Comprobaciones de salud y disponibilidad de los servicios.
+- Verificación de configuración, migraciones y arranque de servicios.
 
-\- Pruebas de carga inicial, estrés escalonado y carga sostenida sobre el endpoint `/health`.
-
-\- Verificación de configuración, migraciones y arranque de servicios.
-
-\- Análisis de cobertura y revisión de las verificaciones incorporadas en CI.
-
-
+- Análisis de cobertura y revisión de las verificaciones incorporadas en CI.
 
 Este plan no considera demostrada la carga del flujo conversacional real a partir de las pruebas ejecutadas sobre `/health`. Tampoco considera demostrada la calidad de respuestas del modelo en producción mediante pruebas realizadas con dobles de LLM y embeddings.
 
+## 3. Estrategia y niveles de prueba
 
-
-\## 3. Estrategia y niveles de prueba
-
-
-
-\### 3.1. Pruebas unitarias
-
-
+### 3.1. Pruebas unitarias
 
 Se ejecutan pruebas automatizadas sobre los componentes de Python y Go. Los resultados registrados son:
 
+- **Python:** 554 pruebas aprobadas y 7 omitidas; cobertura global informada del 96,95 %.
 
-
-\- \*\*Python:\*\* 554 pruebas aprobadas y 7 omitidas; cobertura global informada del 96,95 %.
-
-\- \*\*Go:\*\* suite completa aprobada; cobertura global informada del 86,6 %.
+- **Go:** suite completa aprobada; cobertura global informada del 86,6 %.
 
 - **Evidencia Go:** `docs/evidence/go-coverage.txt`, reporte generado mediante `go tool cover -func=cobertura.out`.
 
-
-
 Las pruebas omitidas no se contabilizan como aprobadas. La cobertura global no implica que cada módulo alcance individualmente el mismo porcentaje.
 
+### 3.2. Pruebas de integración
 
-
-\### 3.2. Pruebas de integración
-
-
-
-Se verifica la interacción entre los servicios y sus dependencias. La suite Go ejecutada incluye los paquetes disponibles en el repositorio. Las pruebas que requieren una base de datos de prueba pueden omitirse cuando no está configurada la variable `SONIA\_TEST\_DATABASE\_URL`; por ello, una ejecución global aprobada no prueba por sí sola que todos los escenarios de integración con base de datos hayan sido ejecutados.
-
-
+Se verifica la interacción entre los servicios y sus dependencias. La suite Go ejecutada incluye los paquetes disponibles en el repositorio. Las pruebas que requieren una base de datos de prueba pueden omitirse cuando no está configurada la variable `SONIA_TEST_DATABASE_URL`; por ello, una ejecución global aprobada no prueba por sí sola que todos los escenarios de integración con base de datos hayan sido ejecutados.
 
 Las migraciones se verificaron mediante la prueba de esquema inicial y la comprobación de las migraciones aplicadas. El mantenimiento de sus expectativas está documentado en `docs/evidence/maintenance-migration-test.md`.
 
-
-
-\### 3.3. Pruebas smoke y end-to-end
-
-
+### 3.3. Pruebas smoke y end-to-end
 
 Se ejecutaron las pruebas disponibles de smoke y de flujos integrados. El resultado registrado fue satisfactorio. La evidencia está en `docs/evidence/smoke-test-pass.txt`.
 
-
-
 Esta comprobación valida los flujos cubiertos por la suite ejecutada; no implica que todas las funcionalidades del anteproyecto estén cubiertas ni que se haya completado una validación integral en producción.
 
-
-
-\### 3.4. Pruebas de rendimiento
-
-
+### 3.4. Pruebas de rendimiento
 
 Se ejecutaron pruebas sobre el endpoint de salud `/health`, con tres modalidades:
 
+- **Carga inicial:** 50 solicitudes concurrentes distribuidas entre 5 trabajadores; 50 respuestas HTTP 200.
 
+- **Estrés escalonado:** niveles de concurrencia de 5, 10 y 20, durante 10 segundos por nivel. No se registraron respuestas distintas de HTTP 200 en las ejecuciones documentadas.
 
-\- \*\*Carga inicial:\*\* 50 solicitudes concurrentes distribuidas entre 5 trabajadores; 50 respuestas HTTP 200.
-
-\- \*\*Estrés escalonado:\*\* niveles de concurrencia de 5, 10 y 20, durante 10 segundos por nivel. No se registraron respuestas distintas de HTTP 200 en las ejecuciones documentadas.
-
-\- \*\*Carga sostenida:\*\* duración aproximada de 60 segundos, con 5 trabajadores y 31.236 solicitudes registradas; todas respondieron HTTP 200.
-
-
+- **Carga sostenida:** duración aproximada de 60 segundos, con 5 trabajadores y 31.236 solicitudes registradas; todas respondieron HTTP 200.
 
 Los resultados detallados están en `docs/evidence/load-health-initial.txt`, `docs/evidence/load-health-stress.txt` y `docs/evidence/load-health-sustained.txt`.
 
-
-
 Estas pruebas evalúan la respuesta del endpoint de salud bajo las condiciones indicadas. No permiten extrapolar directamente la capacidad del sistema para procesar conversaciones, invocar modelos de lenguaje, recuperar documentos o persistir mensajes.
 
-
-
-\## 4. Entorno de ejecución
-
-
+## 4. Entorno de ejecución
 
 El entorno local de integración utiliza Docker Compose e incluye los servicios de SONIA y sus dependencias. En la ejecución documentada se verificaron el estado saludable de los servicios, la respuesta HTTP 200 del endpoint de salud y el arranque del cerebro y del trabajador.
 
-
-
 La configuración de dobles de LLM y embeddings debe identificarse al interpretar resultados: las mediciones obtenidas con esos dobles no representan necesariamente la latencia, disponibilidad ni comportamiento de los proveedores reales.
-
-
 
 No se deben incluir en las evidencias contraseñas, tokens, claves ni contenidos sensibles de variables de entorno.
 
+## 5. Criterios de entrada y salida
 
-
-\## 5. Criterios de entrada y salida
-
-
-
-\### 5.1. Criterios de entrada
-
-
+### 5.1. Criterios de entrada
 
 Antes de ejecutar una prueba se debe verificar:
 
+- Código y dependencias disponibles en la versión bajo evaluación.
 
+- Configuración del entorno y variables requeridas, sin exponer secretos.
 
-\- Código y dependencias disponibles en la versión bajo evaluación.
+- Servicios y dependencias necesarios iniciados.
 
-\- Configuración del entorno y variables requeridas, sin exponer secretos.
+- Datos de prueba válidos y aislados de información real sensible.
 
-\- Servicios y dependencias necesarios iniciados.
+- Criterios de aceptación definidos para el caso.
 
-\- Datos de prueba válidos y aislados de información real sensible.
+- Registro de la versión, comando y configuración relevante de la ejecución.
 
-\- Criterios de aceptación definidos para el caso.
-
-\- Registro de la versión, comando y configuración relevante de la ejecución.
-
-
-
-\### 5.2. Criterios de salida
-
-
+### 5.2. Criterios de salida
 
 Una ejecución se considera satisfactoria cuando:
 
+- Los casos previstos finalizaron y sus resultados quedaron registrados.
 
+- No existen fallos sin analizar que impidan aceptar el alcance evaluado.
 
-\- Los casos previstos finalizaron y sus resultados quedaron registrados.
+- Los fallos conocidos tienen un registro, severidad y decisión de tratamiento.
 
-\- No existen fallos sin analizar que impidan aceptar el alcance evaluado.
+- La evidencia permite reproducir o revisar el resultado.
 
-\- Los fallos conocidos tienen un registro, severidad y decisión de tratamiento.
-
-\- La evidencia permite reproducir o revisar el resultado.
-
-\- Las pruebas omitidas y las limitaciones del entorno quedan explícitas.
-
-
+- Las pruebas omitidas y las limitaciones del entorno quedan explícitas.
 
 La aprobación de una suite no sustituye la verificación de que los escenarios requeridos fueron efectivamente ejecutados.
 
-
-
-\## 6. Riesgos de calidad
-
-
+## 6. Riesgos de calidad
 
 | Riesgo | Probabilidad | Impacto | Tratamiento |
 
@@ -206,15 +134,9 @@ La aprobación de una suite no sustituye la verificación de que los escenarios 
 
 | La canalización CI no aplica todas las puertas de calidad esperadas | Media | Alto | Incorporar y verificar análisis estático, umbrales y reportes automatizados |
 
-
-
 Las probabilidades e impactos de esta tabla son estimaciones iniciales de planificación, no frecuencias estadísticas observadas.
 
-
-
-\## 7. Registro de evidencias
-
-
+## 7. Registro de evidencias
 
 | Identificador | Evidencia | Propósito |
 
@@ -236,35 +158,19 @@ Las probabilidades e impactos de esta tabla son estimaciones iniciales de planif
 
 | EV-08 | `docs/evidence/brain-worker-after-fix.txt` | Evidencia de arranque del cerebro y trabajador |
 
-
-
 La cobertura de Python y Go se encuentra registrada en los resultados de ejecución disponibles. Para que los porcentajes sean reproducibles desde el repositorio, se debe conservar también el comando exacto, la versión evaluada y el reporte generado en cada ejecución.
 
-
-
-\## 8. Defectos y mantenimiento de pruebas
-
-
+## 8. Defectos y mantenimiento de pruebas
 
 El defecto QA-001 documenta un problema de configuración local relacionado con variables vacías que anulaban valores predeterminados y provocaban errores de arranque. La corrección se verificó en el entorno local y quedó documentada en `docs/evidence/defect-config-brain-worker.md`.
 
-
-
 El ajuste de las expectativas de las pruebas de migración se registra como mantenimiento de pruebas, no como defecto funcional confirmado del sistema.
 
-
-
-\## 9. Trazabilidad
-
-
+## 9. Trazabilidad
 
 `docs/design/01-trazabilidad.md` contiene trazabilidad de requisitos y diseño. No reemplaza una matriz de pruebas.
 
-
-
 Queda pendiente mantener una matriz específica con, como mínimo, los campos siguientes:
-
-
 
 | Requisito | Caso de prueba | Resultado | Evidencia | Defecto asociado |
 
@@ -272,40 +178,61 @@ Queda pendiente mantener una matriz específica con, como mínimo, los campos si
 
 | Identificador del requisito | Identificador del caso | Pendiente de vinculación | Ruta del artefacto | Identificador o N/A |
 
-
-
 No se asignan identificadores de casos ni resultados a requisitos individuales hasta verificar su correspondencia con pruebas concretas.
 
+## 10. Actividades pendientes
 
+1. Completar la matriz de trazabilidad requisito → caso de prueba → defecto.
 
-\## 10. Actividades pendientes
+2. Documentar casos individuales con precondiciones, pasos, resultado esperado y resultado obtenido.
 
+3. Incorporar y ejecutar análisis estático automatizado para los lenguajes del proyecto.
 
+4. Revisar la configuración del pipeline CI para confirmar umbrales de cobertura y puertas de calidad.
 
-1\. Completar la matriz de trazabilidad requisito → caso de prueba → defecto.
+5. Generar reportes de cobertura exportables y conservarlos como artefactos de ejecución.
 
-2\. Documentar casos individuales con precondiciones, pasos, resultado esperado y resultado obtenido.
+6. Diseñar y ejecutar pruebas de carga sobre el flujo conversacional real con datos de prueba válidos.
 
-3\. Incorporar y ejecutar análisis estático automatizado para los lenguajes del proyecto.
+7. Evaluar las integraciones externas y los flujos relevantes con una configuración representativa del entorno objetivo.
 
-4\. Revisar la configuración del pipeline CI para confirmar umbrales de cobertura y puertas de calidad.
+8. Documentar resultados, limitaciones y criterios de aceptación de cada actividad pendiente.
 
-5\. Generar reportes de cobertura exportables y conservarlos como artefactos de ejecución.
-
-6\. Diseñar y ejecutar pruebas de carga sobre el flujo conversacional real con datos de prueba válidos.
-
-7\. Evaluar las integraciones externas y los flujos relevantes con una configuración representativa del entorno objetivo.
-
-8\. Documentar resultados, limitaciones y criterios de aceptación de cada actividad pendiente.
-
-
-
-\## 11. Conclusión
-
-
+## 11. Conclusión
 
 Las ejecuciones registradas aportan evidencia favorable sobre las suites unitarias disponibles, los flujos smoke/E2E cubiertos y la respuesta del endpoint de salud bajo las cargas documentadas. Sin embargo, el alcance de esas evidencias es limitado: quedan actividades necesarias para completar la trazabilidad de QA, fortalecer las puertas automáticas de calidad y evaluar el comportamiento bajo carga del procesamiento conversacional real.
 
-
-
 Por tanto, este documento constituye el plan inicial de pruebas y el registro de su estado conocido; no implica que todas las actividades de calidad estén completas ni que se haya demostrado el cumplimiento integral de todos los requisitos del proyecto.
+
+## Adenda vigente del 26/10/2026
+
+El informe original declara **nivel 1 (inicial)**. Se conserva esa declaración; el corredor adopta adicionalmente el umbral interno de 80 % por servicio de ADR-0028. El mínimo exigido para código existente del nivel 1 es 50 %; el 80 % sobre código nuevo y las puertas comunes siguen siendo obligatorios.
+
+La aceptación actual se define en `ejecucion-calidad.md`. Entrada: código compilable, dependencias bloqueadas, stack de calidad saludable, migraciones y semilla aplicadas. Salida: cero fallos y cero omisiones en integración/smoke, gates de cobertura y duplicación aprobados y carga dentro de umbrales. Los resultados se conservan por campaña y no se sustituyen las evidencias históricas por cifras nuevas.
+
+**QA (prevención):** contratos versionados, revisiones, fixtures aisladas, límites y criterios escritos antes de ejecutar, dependencias bloqueadas y configuración de aceptación independiente del entorno personal. **QC (detección):** suites, analizadores, medición de cobertura/duplicación y ejecución de carga. Una cobertura alta no sustituye las aserciones ni la revisión.
+
+### Riesgos priorizados
+
+Escala de planificación: probabilidad e impacto de 1 (bajo) a 3 (alto). P x I es una estimación del equipo para priorizar, no una frecuencia observada.
+
+| Riesgo | P | I | P x I | Tratamiento y evidencia |
+|---|---:|---:|---:|---|
+| Un verde omite integraciones | 3 | 3 | 9 | Dependencias/semilla explícitas y rechazo de omisiones, QA-002 |
+| Configuración distribuida impide arrancar | 2 | 3 | 6 | CP-06 y regresión de QA-001 |
+| Datos de otras campañas invalidan el smoke | 3 | 2 | 6 | Entorno nuevo y recorrido paginado, QA-003 |
+| Medición con dobles se extrapola a producción | 3 | 3 | 9 | Alcance declarado y campaña separada con proveedores reales |
+| Cobertura global oculta cambios sin probar | 2 | 3 | 6 | Medición por servicio, diff de código nuevo y pruebas negativas del gate |
+| Accesibilidad, seguridad o recuperación incompletas | 2 | 3 | 6 | Matriz ISO parcial y registro de límites de la evaluación |
+
+### Siete principios aplicados
+
+1. Las pruebas muestran presencia de defectos: QA-001 y QA-003 se reproducen; un verde no demuestra ausencia de otros errores.
+2. No se prueba exhaustivamente: se priorizan roles, configuración, cuotas documentales, turnos y dependencias críticas.
+3. Probar temprano: configuración y contratos se comprueban antes de aceptar un despliegue.
+4. Concentración de defectos: la campaña refuerza configuración y preparación de datos, donde surgieron los problemas observados.
+5. Las pruebas requieren renovación: se agregan fronteras exactas, paginación y turnos sostenidos, además de los casos históricos.
+6. El contexto determina las pruebas: IA y canal usan dobles; PostgreSQL y Qdrant son servicios reales del entorno aislado.
+7. Ausencia de errores no asegura utilidad: usabilidad, precisión y tono requieren evaluación con usuarios/datasets y proveedores reales.
+
+Cada defecto corregido conserva la regresión. El registro y las plantillas están en `defectos-calidad.md`; la trazabilidad de aceptación en `revalidacion-calidad.md`.

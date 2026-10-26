@@ -1,0 +1,22 @@
+Running gate-regressions
+Running reset-test-stack
+Running deploy
+Running seed
+Running go-format
+Running go-dependencies
+Running go-vet
+Running go-build
+Running go-tests
+Running python-static
+Running contracts
+Running python-tests
+Running frontend-install
+Running frontend-lint
+Running frontend-build
+Running smoke
+Running load
+Running duplication
+Running quality-gate
+Quality checks passed. Evidence: reports/
+Running service-logs
+Running cleanup

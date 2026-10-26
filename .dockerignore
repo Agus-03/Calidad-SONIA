@@ -6,6 +6,12 @@
 
 # Real secrets: a container reads the environment, and a file copied into a layer stays there forever.
 .env
+.env.quality
+.tools
+reports
+**/.gotmp
+**/coverage.out
+**/coverage.filtered.out
 
 z_helps
 docs

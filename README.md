@@ -91,3 +91,9 @@ El núcleo del sistema es un motor de composición modular de prompts que ensamb
 
 ## 🎓 Contexto Académico
 Proyecto Integrador para la carrera de Ingeniería de Sistemas en la Universidad Católica de Córdoba (Facultad de Ingeniería), Córdoba, Argentina (2026–2027).
+
+## Verificación de calidad
+
+Ejecutar `make quality` o, en Windows, `src/brain/.venv/Scripts/python.exe scripts/quality.py`.
+La preparación del entorno, los umbrales y los reportes están en [Ejecución de calidad](docs/ejecucion-calidad.md).
+La comparación con el resumen entregado y los requisitos del TP está en [Revalidación del 26/10/2026](docs/revalidacion-calidad.md).

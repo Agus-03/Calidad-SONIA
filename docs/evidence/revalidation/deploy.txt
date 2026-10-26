@@ -1,0 +1,95 @@
+ storage Pulling 
+ 4f4fb700ef54 Pulling fs layer 
+ 0956153060b0 Pulling fs layer 
+ e0054dc8ef7b Pulling fs layer 
+ 4f4fb700ef54 Already exists 
+ 4f4fb700ef54 Pull complete 
+ e0054dc8ef7b Downloading [==>                                                ]  1.049MB/21.55MB
+ 0956153060b0 Download complete 
+ e0054dc8ef7b Downloading [==>                                                ]  1.049MB/21.55MB
+ 0956153060b0 Pull complete 
+ e0054dc8ef7b Downloading [====>                                              ]  2.097MB/21.55MB
+ e0054dc8ef7b Downloading [====>                                              ]  2.097MB/21.55MB
+ e0054dc8ef7b Downloading [=======>                                           ]  3.146MB/21.55MB
+ e0054dc8ef7b Downloading [=========>                                         ]  4.194MB/21.55MB
+ e0054dc8ef7b Downloading [=========>                                         ]  4.194MB/21.55MB
+ e0054dc8ef7b Downloading [============>                                      ]  5.243MB/21.55MB
+ e0054dc8ef7b Downloading [============>                                      ]  5.243MB/21.55MB
+ e0054dc8ef7b Downloading [==============>                                    ]  6.291MB/21.55MB
+ e0054dc8ef7b Downloading [==============>                                    ]  6.291MB/21.55MB
+ e0054dc8ef7b Downloading [=================>                                 ]   7.34MB/21.55MB
+ e0054dc8ef7b Downloading [=================>                                 ]   7.34MB/21.55MB
+ e0054dc8ef7b Downloading [===================>                               ]  8.389MB/21.55MB
+ e0054dc8ef7b Downloading [=====================>                             ]  9.437MB/21.55MB
+ e0054dc8ef7b Downloading [=====================>                             ]  9.437MB/21.55MB
+ e0054dc8ef7b Downloading [========================>                          ]  10.49MB/21.55MB
+ e0054dc8ef7b Downloading [========================>                          ]  10.49MB/21.55MB
+ e0054dc8ef7b Downloading [==========================>                        ]  11.53MB/21.55MB
+ e0054dc8ef7b Downloading [==========================>                        ]  11.53MB/21.55MB
+ e0054dc8ef7b Downloading [=============================>                     ]  12.58MB/21.55MB
+ e0054dc8ef7b Downloading [=============================>                     ]  12.58MB/21.55MB
+ e0054dc8ef7b Downloading [===============================>                   ]  13.63MB/21.55MB
+ e0054dc8ef7b Downloading [===============================>                   ]  13.63MB/21.55MB
+ e0054dc8ef7b Downloading [==================================>                ]  14.68MB/21.55MB
+ e0054dc8ef7b Downloading [====================================>              ]  15.73MB/21.55MB
+ e0054dc8ef7b Downloading [====================================>              ]  15.73MB/21.55MB
+ e0054dc8ef7b Downloading [======================================>            ]  16.78MB/21.55MB
+ e0054dc8ef7b Downloading [======================================>            ]  16.78MB/21.55MB
+ e0054dc8ef7b Downloading [=========================================>         ]  17.83MB/21.55MB
+ e0054dc8ef7b Downloading [=========================================>         ]  17.83MB/21.55MB
+ e0054dc8ef7b Downloading [===========================================>       ]  18.87MB/21.55MB
+ e0054dc8ef7b Downloading [==============================================>    ]  19.92MB/21.55MB
+ e0054dc8ef7b Downloading [==============================================>    ]  19.92MB/21.55MB
+ e0054dc8ef7b Downloading [================================================>  ]  20.97MB/21.55MB
+ e0054dc8ef7b Downloading [==================================================>]  21.55MB/21.55MB
+ e0054dc8ef7b Download complete 
+ e0054dc8ef7b Extracting 1 s
+ e0054dc8ef7b Extracting 1 s
+ e0054dc8ef7b Pull complete 
+ storage Pulled 
+ Network sonia-quality_default  Creating
+ Network sonia-quality_default  Created
+ Container sonia-quality-db-1  Creating
+ Container sonia-quality-storage-1  Creating
+ Container sonia-quality-qdrant-1  Creating
+ Container sonia-quality-storage-1  Created
+ Container sonia-quality-db-1  Created
+ Container sonia-quality-qdrant-1  Created
+ Container sonia-quality-core-1  Creating
+ Container sonia-quality-brain-1  Creating
+ Container sonia-quality-core-1  Created
+ Container sonia-quality-worker-1  Creating
+ Container sonia-quality-brain-1  Created
+ Container sonia-quality-worker-1  Created
+ Container sonia-quality-qdrant-1  Starting
+ Container sonia-quality-storage-1  Starting
+ Container sonia-quality-db-1  Starting
+ Container sonia-quality-qdrant-1  Started
+ Container sonia-quality-db-1  Started
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-storage-1  Started
+ Container sonia-quality-storage-1  Waiting
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-storage-1  Healthy
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-core-1  Starting
+ Container sonia-quality-core-1  Started
+ Container sonia-quality-core-1  Waiting
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-brain-1  Starting
+ Container sonia-quality-brain-1  Started
+ Container sonia-quality-core-1  Healthy
+ Container sonia-quality-worker-1  Starting
+ Container sonia-quality-worker-1  Started
+ Container sonia-quality-storage-1  Waiting
+ Container sonia-quality-core-1  Waiting
+ Container sonia-quality-brain-1  Waiting
+ Container sonia-quality-worker-1  Waiting
+ Container sonia-quality-db-1  Waiting
+ Container sonia-quality-qdrant-1  Waiting
+ Container sonia-quality-storage-1  Healthy
+ Container sonia-quality-db-1  Healthy
+ Container sonia-quality-qdrant-1  Healthy
+ Container sonia-quality-worker-1  Healthy
+ Container sonia-quality-core-1  Healthy
+ Container sonia-quality-brain-1  Healthy

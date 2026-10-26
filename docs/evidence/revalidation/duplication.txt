@@ -1,0 +1,5 @@
+Resolving dependencies
+Resolved, downloaded and extracted [18]
+Saved lockfile
+[32mJSON report saved to docs/evidence/revalidation/duplication\jscpd-report.json[39m
+[90mtime: 56.131ms[39m

@@ -1,0 +1,32 @@
+{
+  "go_statement_percent": 88.23150088666775,
+  "python_line_and_branch_percent": 98.01680672268908,
+  "python_details": {
+    "covered_lines": 2421,
+    "num_statements": 2455,
+    "percent_covered": 98.01680672268908,
+    "percent_covered_display": "98",
+    "missing_lines": 34,
+    "excluded_lines": 35,
+    "percent_statements_covered": 98.61507128309572,
+    "percent_statements_covered_display": "99",
+    "num_branches": 520,
+    "num_partial_branches": 21,
+    "covered_branches": 495,
+    "missing_branches": 25,
+    "percent_branches_covered": 95.1923076923077,
+    "percent_branches_covered_display": "95"
+  },
+  "duplication_percent": 4.398088900264482,
+  "base": "HEAD",
+  "go_new_code": {
+    "lines": 0,
+    "percent": null
+  },
+  "python_new_code": {
+    "lines": 0,
+    "percent": null
+  },
+  "errors": [],
+  "passed": true
+}

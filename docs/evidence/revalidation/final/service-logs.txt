@@ -1,0 +1,448 @@
+brain-1    | {"time": "2026-10-26T13:03:24.728278+00:00", "level": "WARN", "msg": "answer blocked after generating", "service": "brain", "environment": "test", "logger": "sonia.api.turns", "conversation_id": "01a1784e-fb59-75ec-a4d1-a4a650bebfb6", "turn_number": 1, "llm_provider": "cohere", "llm_model": "command-a-03-2025", "prompt_components": 6, "prompt_rules_version": 3, "detected_intents": 2, "quick_replies": 0, "knowledge_chunks": 0, "context_rewritten": true, "extracted": 0, "pipeline_steps": 5, "generation_id": "01a1784e-fc25-7212-ac0e-cc18cc1da537"}
+qdrant-1   |            _                 _    
+db-1       | The files belonging to this database system will be owned by user "postgres".
+db-1       | This user must also own the server process.
+db-1       | 
+brain-1    | {"time": "2026-10-26T13:03:28.806763+00:00", "level": "WARN", "msg": "the guardrail redacted what reached it unredacted", "service": "brain", "environment": "test", "logger": "sonia.pipeline.guardrail", "conversation_id": "01a1784f-0b83-7bf7-8e6e-76566a2d286b", "message_batch_id": "01a1784f-0b8c-7959-bdfd-b23ec2f7739a", "direction": "inbound", "found": {"dni": 1}}
+qdrant-1   |   __ _  __| |_ __ __ _ _ __ | |_  
+qdrant-1   |  / _` |/ _` | '__/ _` | '_ \| __| 
+qdrant-1   | | (_| | (_| | | | (_| | | | | |_  
+qdrant-1   |  \__, |\__,_|_|  \__,_|_| |_|\__| 
+db-1       | The database cluster will be initialized with locale "en_US.utf8".
+core-1     | {"time":"2026-10-26T13:05:03.365651433Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7d83-7a3b-afa0-e6b75dd6f23a"}
+qdrant-1   |     |_|                           
+storage-1  | time=2026-10-26T13:01:26.632Z level=INFO msg="server started at http://0.0.0.0:4443"
+db-1       | The default database encoding has accordingly been set to "UTF8".
+db-1       | The default text search configuration will be set to "english".
+db-1       | 
+db-1       | Data page checksums are disabled.
+core-1     | {"time":"2026-10-26T13:05:03.428258804Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351345078304","wamid":"wamid.double.01a17850-7dc4-73d2-b821-adf5702c0217"}
+core-1     | {"time":"2026-10-26T13:05:03.458484356Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7de0-78ba-8aea-4b33d1f402be"}
+core-1     | {"time":"2026-10-26T13:05:03.527549747Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351046217086","wamid":"wamid.double.01a17850-7e27-7843-b972-0705534ca744"}
+storage-1  | time=2026-10-26T13:01:28.549Z level=INFO msg="::1 - - [26/Oct/2026:13:01:28 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:30.625Z level=INFO msg="::1 - - [26/Oct/2026:13:01:30 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:32.690Z level=INFO msg="::1 - - [26/Oct/2026:13:01:32 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:34.763Z level=INFO msg="::1 - - [26/Oct/2026:13:01:34 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:36.833Z level=INFO msg="::1 - - [26/Oct/2026:13:01:36 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:38.905Z level=INFO msg="::1 - - [26/Oct/2026:13:01:38 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:03.529974701Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351217697129","wamid":"wamid.double.01a17850-7e29-7eba-8c44-49fc6ec4cfe8"}
+core-1     | {"time":"2026-10-26T13:05:03.556920861Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7e42-79a5-be8d-8d14f55e8d17"}
+core-1     | {"time":"2026-10-26T13:05:03.56303902Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7e48-7d1c-9ba3-4840cce862de"}
+storage-1  | time=2026-10-26T13:01:40.966Z level=INFO msg="::1 - - [26/Oct/2026:13:01:40 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:43.028Z level=INFO msg="::1 - - [26/Oct/2026:13:01:43 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:45.120Z level=INFO msg="::1 - - [26/Oct/2026:13:01:45 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:47.191Z level=INFO msg="::1 - - [26/Oct/2026:13:01:47 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:49.285Z level=INFO msg="::1 - - [26/Oct/2026:13:01:49 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:03.633280263Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351947228257","wamid":"wamid.double.01a17850-7e91-740f-b796-eda09bbed008"}
+core-1     | {"time":"2026-10-26T13:05:03.654987602Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7ea4-7eed-9dcd-0bf8e8157055"}
+core-1     | {"time":"2026-10-26T13:05:03.734041847Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351140549056","wamid":"wamid.double.01a17850-7ef6-7081-80e7-7cc5e983502b"}
+core-1     | {"time":"2026-10-26T13:05:03.738721304Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351649624444","wamid":"wamid.double.01a17850-7efa-7ac2-8f0c-23d1f11906de"}
+core-1     | {"time":"2026-10-26T13:05:03.753124126Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7f07-75ff-8def-d5e6e62bdeff"}
+qdrant-1   | 
+qdrant-1   | Version: 1.19.1, build: 6ab21cac
+qdrant-1   | Access web UI at http://localhost:6333/dashboard
+qdrant-1   | Agentic Skills: https://skills.qdrant.tech/
+storage-1  | time=2026-10-26T13:01:51.377Z level=INFO msg="::1 - - [26/Oct/2026:13:01:51 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:53.463Z level=INFO msg="::1 - - [26/Oct/2026:13:01:53 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:03.760312254Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7f0e-7819-ada5-cc9bdbb36d51"}
+core-1     | {"time":"2026-10-26T13:05:03.826915091Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351196555123","wamid":"wamid.double.01a17850-7f52-7dce-b6df-17204484be32"}
+qdrant-1   | 
+qdrant-1   | 2026-10-26T13:01:26.573062Z  WARN qdrant: There is a potential issue with the filesystem for storage path ./storage. Details: Container filesystem detected - storage might be lost with container re-creation
+db-1       | 
+db-1       | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+db-1       | creating subdirectories ... ok
+qdrant-1   | 2026-10-26T13:01:26.573285Z  INFO storage::content_manager::consensus::persistent: Initializing new raft state at ./storage/raft_state.json
+qdrant-1   | 2026-10-26T13:01:26.627310Z  INFO qdrant: Distributed mode disabled
+qdrant-1   | 2026-10-26T13:01:26.627371Z  INFO qdrant: Telemetry reporting enabled, id: a21eba66-7fc0-4471-ba58-6daa20110f35
+qdrant-1   | 2026-10-26T13:01:26.718676Z  INFO qdrant::actix: REST transport settings: keep_alive=5s, client_request_timeout=5s, client_disconnect_timeout=5s
+qdrant-1   | 2026-10-26T13:01:26.718763Z  INFO qdrant::actix: TLS disabled for REST API
+db-1       | selecting dynamic shared memory implementation ... posix
+db-1       | selecting default "max_connections" ... 100
+db-1       | selecting default "shared_buffers" ... 128MB
+storage-1  | time=2026-10-26T13:01:55.549Z level=INFO msg="::1 - - [26/Oct/2026:13:01:55 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:01:57.616Z level=INFO msg="::1 - - [26/Oct/2026:13:01:57 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | selecting default time zone ... UTC
+db-1       | creating configuration files ... ok
+db-1       | running bootstrap script ... ok
+db-1       | sh: locale: not found
+db-1       | 2026-10-26 13:01:27.275 UTC [35] WARNING:  no usable system locales were found
+db-1       | performing post-bootstrap initialization ... ok
+storage-1  | time=2026-10-26T13:01:59.694Z level=INFO msg="::1 - - [26/Oct/2026:13:01:59 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:01.806Z level=INFO msg="::1 - - [26/Oct/2026:13:02:01 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:03.877Z level=INFO msg="::1 - - [26/Oct/2026:13:02:03 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:05.964Z level=INFO msg="::1 - - [26/Oct/2026:13:02:05 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:08.046Z level=INFO msg="::1 - - [26/Oct/2026:13:02:08 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:10.344Z level=INFO msg="::1 - - [26/Oct/2026:13:02:10 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:12.419Z level=INFO msg="::1 - - [26/Oct/2026:13:02:12 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:14.568Z level=INFO msg="::1 - - [26/Oct/2026:13:02:14 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+qdrant-1   | 2026-10-26T13:01:26.718875Z  INFO qdrant::actix: Qdrant HTTP listening on 6333
+qdrant-1   | 2026-10-26T13:01:26.718933Z  INFO actix_server::builder: starting 15 workers
+qdrant-1   | 2026-10-26T13:01:26.719107Z  INFO actix_server::server: Actix runtime found; starting in Actix runtime
+qdrant-1   | 2026-10-26T13:01:26.719143Z  INFO actix_server::server: starting service: "actix-web-service-0.0.0.0:6333", workers: 15, listening on: 0.0.0.0:6333
+core-1     | {"time":"2026-10-26T13:05:03.855181658Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7f6d-7512-a91d-d7b60e634bb0"}
+core-1     | {"time":"2026-10-26T13:05:03.931300113Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351913752049","wamid":"wamid.double.01a17850-7fbb-7471-a550-34e077f0f4ff"}
+qdrant-1   | 2026-10-26T13:01:26.727088Z  INFO qdrant::tonic: Qdrant gRPC listening on 6334
+qdrant-1   | 2026-10-26T13:01:26.727137Z  INFO qdrant::tonic: TLS disabled for gRPC API
+qdrant-1   | 2026-10-26T13:03:07.298297Z  INFO actix_web::middleware::logger: 172.21.0.1 "GET /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100 HTTP/1.1" 404 118 "-" "python-httpx/0.28.1" 0.038216
+qdrant-1   | 2026-10-26T13:03:07.307643Z  INFO storage::content_manager::toc::collection_meta_ops: Creating collection kb_01a1784e-b7dc-7101-8ddf-f2130e85b100
+core-1     | {"time":"2026-10-26T13:05:03.934008147Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351554519541","wamid":"wamid.double.01a17850-7fbe-7000-b5ad-b17615db8bd3"}
+core-1     | {"time":"2026-10-26T13:05:03.951612423Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7fcd-78be-b5ea-7aa907d7fef2"}
+core-1     | {"time":"2026-10-26T13:05:03.962621619Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-7fd7-7c79-bc72-138f7494d1da"}
+core-1     | {"time":"2026-10-26T13:05:04.022279476Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351847414695","wamid":"wamid.double.01a17850-8016-7420-afef-764d62ce9fb8"}
+core-1     | {"time":"2026-10-26T13:05:04.0511369Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8031-770b-bda6-8bf37d4464b2"}
+core-1     | {"time":"2026-10-26T13:05:04.136691729Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351367965400","wamid":"wamid.double.01a17850-8088-7a64-8428-06a6f59785a8"}
+core-1     | {"time":"2026-10-26T13:05:04.139400474Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351436922105","wamid":"wamid.double.01a17850-808b-75e9-ae8c-ccba29bb1796"}
+core-1     | {"time":"2026-10-26T13:05:04.166037709Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-80a4-7373-b6da-38d2e0839e4e"}
+core-1     | {"time":"2026-10-26T13:05:04.201496093Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-80c7-7cab-90c0-cf60ad8b268f"}
+qdrant-1   | 2026-10-26T13:03:07.783702Z  INFO actix_web::middleware::logger: 172.21.0.1 "PUT /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100 HTTP/1.1" 200 57 "-" "python-httpx/0.28.1" 0.480024
+qdrant-1   | 2026-10-26T13:03:08.651720Z  INFO actix_web::middleware::logger: 172.21.0.1 "PUT /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100/index?wait=true HTTP/1.1" 200 84 "-" "python-httpx/0.28.1" 0.863660
+db-1       | initdb: warning: enabling "trust" authentication for local connections
+core-1     | {"time":"2026-10-26T13:05:04.225751352Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351304615434","wamid":"wamid.double.01a17850-80e1-7b54-bafc-246a2a69febf"}
+core-1     | {"time":"2026-10-26T13:05:04.245505535Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-80f3-7cb9-9ae3-b79130bdee60"}
+storage-1  | time=2026-10-26T13:02:16.753Z level=INFO msg="::1 - - [26/Oct/2026:13:02:16 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:19.346Z level=INFO msg="::1 - - [26/Oct/2026:13:02:19 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:21.579Z level=INFO msg="::1 - - [26/Oct/2026:13:02:21 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+db-1       | syncing data to disk ... ok
+db-1       | 
+storage-1  | time=2026-10-26T13:02:23.734Z level=INFO msg="::1 - - [26/Oct/2026:13:02:23 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+qdrant-1   | 2026-10-26T13:03:08.656490Z  INFO actix_web::middleware::logger: 172.21.0.1 "GET /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100 HTTP/1.1" 200 473 "-" "python-httpx/0.28.1" 0.002208
+qdrant-1   | 2026-10-26T13:03:08.682469Z  INFO actix_web::middleware::logger: 172.21.0.1 "GET /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100 HTTP/1.1" 200 473 "-" "python-httpx/0.28.1" 0.001315
+qdrant-1   | 2026-10-26T13:03:08.724934Z  INFO actix_web::middleware::logger: 172.21.0.1 "PUT /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100/points?wait=true HTTP/1.1" 200 82 "-" "python-httpx/0.28.1" 0.035776
+qdrant-1   | 2026-10-26T13:03:08.748105Z  INFO actix_web::middleware::logger: 172.21.0.1 "POST /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100/points/query HTTP/1.1" 200 150 "-" "python-httpx/0.28.1" 0.010751
+core-1     | {"time":"2026-10-26T13:05:04.340198523Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351612904106","wamid":"wamid.double.01a17850-8154-72df-85d2-e00ecd4a81d2"}
+core-1     | {"time":"2026-10-26T13:05:04.379656431Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8179-7f1c-98ca-1a024007210a"}
+storage-1  | time=2026-10-26T13:02:25.826Z level=INFO msg="::1 - - [26/Oct/2026:13:02:25 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:27.901Z level=INFO msg="::1 - - [26/Oct/2026:13:02:27 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+qdrant-1   | 2026-10-26T13:03:08.758094Z  INFO actix_web::middleware::logger: 172.21.0.1 "POST /collections/kb_01a1784e-bdd3-7210-827f-4a4096c438ec/points/query HTTP/1.1" 404 118 "-" "python-httpx/0.28.1" 0.000517
+qdrant-1   | 2026-10-26T13:03:08.774118Z  INFO storage::content_manager::toc::collection_meta_ops: Deleting collection kb_01a1784e-b7dc-7101-8ddf-f2130e85b100
+qdrant-1   | 2026-10-26T13:03:08.812567Z  INFO actix_web::middleware::logger: 172.21.0.1 "DELETE /collections/kb_01a1784e-b7dc-7101-8ddf-f2130e85b100 HTTP/1.1" 200 57 "-" "python-httpx/0.28.1" 0.038872
+storage-1  | time=2026-10-26T13:02:29.974Z level=INFO msg="::1 - - [26/Oct/2026:13:02:29 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:32.046Z level=INFO msg="::1 - - [26/Oct/2026:13:02:32 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:04.435399405Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351201465203","wamid":"wamid.double.01a17850-81b3-75eb-bfac-dbca7e90074f"}
+core-1     | {"time":"2026-10-26T13:05:04.437887303Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351800895491","wamid":"wamid.double.01a17850-81b5-7d6d-bede-08c5bc7ca643"}
+core-1     | {"time":"2026-10-26T13:05:04.453966032Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-81c4-7532-ae31-5c76493bbcf3"}
+core-1     | {"time":"2026-10-26T13:05:04.491893031Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-81e9-7eac-b90b-6ba4bf5e9006"}
+core-1     | {"time":"2026-10-26T13:05:04.651431343Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351076364151","wamid":"wamid.double.01a17850-828b-766e-9a74-293d6c99c057"}
+core-1     | {"time":"2026-10-26T13:05:04.653919286Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351732662352","wamid":"wamid.double.01a17850-828d-7dec-8254-65a89a6d8e95"}
+core-1     | {"time":"2026-10-26T13:05:04.677503291Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-82a3-7d77-b64a-a2825f43ec75"}
+core-1     | {"time":"2026-10-26T13:05:04.696958318Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-82b7-734f-bdbe-7d43d3d19044"}
+core-1     | {"time":"2026-10-26T13:05:04.737620563Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351978177260","wamid":"wamid.double.01a17850-82e1-7950-a68f-5a7a30cb8d1a"}
+qdrant-1   | 2026-10-26T13:03:25.876585Z  INFO actix_web::middleware::logger: 172.21.0.7 "GET /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364 HTTP/1.1" 404 117 "-" "python-httpx/0.28.1" 0.003464
+qdrant-1   | 2026-10-26T13:03:25.882385Z  INFO storage::content_manager::toc::collection_meta_ops: Creating collection kb_01a1784e-fe2d-7db4-b032-613ef3fd8364
+db-1       | 
+db-1       | Success. You can now start the database server using:
+db-1       | 
+db-1       |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+db-1       | 
+db-1       | waiting for server to start....2026-10-26 13:01:28.874 UTC [47] LOG:  starting PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+storage-1  | time=2026-10-26T13:02:34.103Z level=INFO msg="::1 - - [26/Oct/2026:13:02:34 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:36.173Z level=INFO msg="::1 - - [26/Oct/2026:13:02:36 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+qdrant-1   | 2026-10-26T13:03:26.223550Z  INFO actix_web::middleware::logger: 172.21.0.7 "PUT /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364 HTTP/1.1" 200 57 "-" "python-httpx/0.28.1" 0.341897
+qdrant-1   | 2026-10-26T13:03:27.013291Z  INFO actix_web::middleware::logger: 172.21.0.7 "PUT /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/index?wait=true HTTP/1.1" 200 84 "-" "python-httpx/0.28.1" 0.786032
+qdrant-1   | 2026-10-26T13:03:27.019440Z  INFO actix_web::middleware::logger: 172.21.0.7 "POST /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/points/delete?wait=true HTTP/1.1" 200 81 "-" "python-httpx/0.28.1" 0.003972
+qdrant-1   | 2026-10-26T13:03:27.037485Z  INFO actix_web::middleware::logger: 172.21.0.7 "PUT /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/points?wait=true HTTP/1.1" 200 83 "-" "python-httpx/0.28.1" 0.003818
+db-1       | 2026-10-26 13:01:28.880 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+db-1       | 2026-10-26 13:01:28.907 UTC [50] LOG:  database system was shut down at 2026-10-26 13:01:27 UTC
+db-1       | 2026-10-26 13:01:28.967 UTC [47] LOG:  database system is ready to accept connections
+storage-1  | time=2026-10-26T13:02:38.221Z level=INFO msg="::1 - - [26/Oct/2026:13:02:38 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:40.295Z level=INFO msg="::1 - - [26/Oct/2026:13:02:40 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:42.365Z level=INFO msg="::1 - - [26/Oct/2026:13:02:42 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       |  done
+db-1       | server started
+db-1       | CREATE DATABASE
+db-1       | 
+core-1     | {"time":"2026-10-26T13:05:04.800401264Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-831e-7a55-8e5f-ca3eebb4bfa4"}
+core-1     | {"time":"2026-10-26T13:05:04.920995786Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351419834641","wamid":"wamid.double.01a17850-8398-7f13-a7cb-c6da88042265"}
+core-1     | {"time":"2026-10-26T13:05:04.923509719Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351179852394","wamid":"wamid.double.01a17850-839b-77ab-ada5-0b48040c06d9"}
+qdrant-1   | 2026-10-26T13:03:27.506348Z  INFO actix_web::middleware::logger: 172.21.0.1 "POST /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/points/count HTTP/1.1" 200 78 "-" "Go-http-client/1.1" 0.003321
+qdrant-1   | 2026-10-26T13:03:28.051456Z  INFO actix_web::middleware::logger: 172.21.0.7 "POST /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/points/delete?wait=true HTTP/1.1" 200 83 "-" "python-httpx/0.28.1" 0.003630
+qdrant-1   | 2026-10-26T13:03:28.533037Z  INFO actix_web::middleware::logger: 172.21.0.1 "POST /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364/points/count HTTP/1.1" 200 78 "-" "Go-http-client/1.1" 0.000580
+qdrant-1   | 2026-10-26T13:03:28.581280Z  INFO storage::content_manager::toc::collection_meta_ops: Deleting collection kb_01a1784e-fe2d-7db4-b032-613ef3fd8364
+qdrant-1   | 2026-10-26T13:03:28.605247Z  INFO actix_web::middleware::logger: 172.21.0.1 "DELETE /collections/kb_01a1784e-fe2d-7db4-b032-613ef3fd8364 HTTP/1.1" 200 71 "-" "Go-http-client/1.1" 0.024082
+core-1     | {"time":"2026-10-26T13:05:04.950483514Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-83b4-7d24-b8e2-7c5bbe94d931"}
+core-1     | {"time":"2026-10-26T13:05:04.950567348Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-83b4-7d2c-8a7c-24b661aae243"}
+core-1     | {"time":"2026-10-26T13:05:05.018917718Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351520356816","wamid":"wamid.double.01a17850-83fa-7ddc-bb47-b70b7eae7c77"}
+core-1     | {"time":"2026-10-26T13:05:05.045655671Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8413-79b6-9838-4f4738655d5e"}
+core-1     | {"time":"2026-10-26T13:05:05.121065136Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351512829463","wamid":"wamid.double.01a17850-8461-70dd-a6b7-a4d683698521"}
+db-1       | 
+core-1     | {"time":"2026-10-26T13:05:05.131523411Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351524179405","wamid":"wamid.double.01a17850-846b-77dd-8a79-ac4591fc2b15"}
+core-1     | {"time":"2026-10-26T13:05:05.149173829Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-847b-7912-b570-8cf51aa04f2e"}
+db-1       | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+db-1       | 
+storage-1  | time=2026-10-26T13:02:44.428Z level=INFO msg="::1 - - [26/Oct/2026:13:02:44 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:46.502Z level=INFO msg="::1 - - [26/Oct/2026:13:02:46 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:48.587Z level=INFO msg="::1 - - [26/Oct/2026:13:02:48 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:50.655Z level=INFO msg="::1 - - [26/Oct/2026:13:02:50 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:52.715Z level=INFO msg="::1 - - [26/Oct/2026:13:02:52 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:54.794Z level=INFO msg="::1 - - [26/Oct/2026:13:02:54 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:02:56.909Z level=INFO msg="::1 - - [26/Oct/2026:13:02:56 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | waiting for server to shut down....2026-10-26 13:01:29.168 UTC [47] LOG:  received fast shutdown request
+db-1       | 2026-10-26 13:01:29.189 UTC [47] LOG:  aborting any active transactions
+db-1       | 2026-10-26 13:01:29.192 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
+db-1       | 2026-10-26 13:01:29.192 UTC [48] LOG:  shutting down
+db-1       | 2026-10-26 13:01:29.197 UTC [48] LOG:  checkpoint starting: shutdown immediate
+db-1       | 2026-10-26 13:01:29.405 UTC [48] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.038 s, sync=0.153 s, total=0.214 s; sync files=301, longest=0.095 s, average=0.001 s; distance=4266 kB, estimate=4266 kB; lsn=0/191E818, redo lsn=0/191E818
+db-1       | 2026-10-26 13:01:29.414 UTC [47] LOG:  database system is shut down
+db-1       |  done
+core-1     | {"time":"2026-10-26T13:05:05.149299751Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-847b-7a5c-be00-f1e6c62c99e0"}
+core-1     | {"time":"2026-10-26T13:05:05.222827222Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351402606385","wamid":"wamid.double.01a17850-84c6-7c7c-ab91-ecdb34d42550"}
+core-1     | {"time":"2026-10-26T13:05:05.234650459Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-84d1-707d-a920-3e642404aa28"}
+db-1       | server stopped
+storage-1  | time=2026-10-26T13:02:58.999Z level=INFO msg="::1 - - [26/Oct/2026:13:02:58 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:01.078Z level=INFO msg="::1 - - [26/Oct/2026:13:03:01 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:03.206Z level=INFO msg="::1 - - [26/Oct/2026:13:03:03 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:05.323936691Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351746005656","wamid":"wamid.double.01a17850-852b-7e2d-9ec8-46ee2d61b75d"}
+core-1     | {"time":"2026-10-26T13:05:05.332392558Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351238536032","wamid":"wamid.double.01a17850-8534-75df-b443-fe45453164b1"}
+core-1     | {"time":"2026-10-26T13:05:05.340176816Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-853a-79fd-942f-159c85ab0cb3"}
+core-1     | {"time":"2026-10-26T13:05:05.394031554Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8570-7437-b243-073e717c1198"}
+storage-1  | time=2026-10-26T13:03:05.298Z level=INFO msg="::1 - - [26/Oct/2026:13:03:05 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:07.382Z level=INFO msg="::1 - - [26/Oct/2026:13:03:07 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:09.441Z level=INFO msg="::1 - - [26/Oct/2026:13:03:09 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:11.513Z level=INFO msg="::1 - - [26/Oct/2026:13:03:11 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 
+db-1       | PostgreSQL init process complete; ready for start up.
+db-1       | 
+db-1       | 2026-10-26 13:01:29.509 UTC [1] LOG:  starting PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+db-1       | 2026-10-26 13:01:29.509 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+db-1       | 2026-10-26 13:01:29.509 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+storage-1  | time=2026-10-26T13:03:13.577Z level=INFO msg="::1 - - [26/Oct/2026:13:03:13 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:15.637Z level=INFO msg="::1 - - [26/Oct/2026:13:03:15 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:17.729Z level=INFO msg="::1 - - [26/Oct/2026:13:03:17 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:19.796Z level=INFO msg="::1 - - [26/Oct/2026:13:03:19 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:21.851Z level=INFO msg="::1 - - [26/Oct/2026:13:03:21 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:23.919Z level=INFO msg="::1 - - [26/Oct/2026:13:03:23 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:25.000Z level=INFO msg="172.21.0.1 - - [26/Oct/2026:13:03:24 +0000] \"POST /storage/v1/b?project=sonia HTTP/1.1\" 200 403\n"
+db-1       | 2026-10-26 13:01:29.523 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+db-1       | 2026-10-26 13:01:29.536 UTC [63] LOG:  database system was shut down at 2026-10-26 13:01:29 UTC
+core-1     | {"time":"2026-10-26T13:05:05.420714679Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351206182437","wamid":"wamid.double.01a17850-858c-7acd-b122-e996c1df8db2"}
+storage-1  | time=2026-10-26T13:03:25.466Z level=INFO msg="172.21.0.5 - - [26/Oct/2026:13:03:25 +0000] \"POST /upload/storage/v1/b/sonia-smoke/o?uploadType=media&name=knowledge-bases%2F01a1784e-ff0c-7f03-b73d-5d429cc9c539%2F01a1784e-ff12-7d25-ae3c-3f9d02fe292a HTTP/1.1\" 200 1207\n"
+db-1       | 2026-10-26 13:01:29.553 UTC [1] LOG:  database system is ready to accept connections
+db-1       | 2026-10-26 13:02:19.972 UTC [300] ERROR:  new row for relation "conversations" violates check constraint "conversations_quality_score_check"
+core-1     | {"time":"2026-10-26T13:05:05.478857744Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-85c4-795b-8256-652af8282bee"}
+core-1     | {"time":"2026-10-26T13:05:05.519791942Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351782900088","wamid":"wamid.double.01a17850-85ef-7bee-8710-48c29c4a2b49"}
+core-1     | {"time":"2026-10-26T13:05:05.55046886Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-860c-73c3-a795-b13d0ba550fb"}
+core-1     | {"time":"2026-10-26T13:05:05.625486706Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351247827030","wamid":"wamid.double.01a17850-8659-7757-be3e-41b572cf74b6"}
+core-1     | {"time":"2026-10-26T13:05:05.628196017Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351763470764","wamid":"wamid.double.01a17850-865c-72e8-93a0-5d193042ca4e"}
+core-1     | {"time":"2026-10-26T13:05:05.675252858Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8689-7af2-8ce0-d3cf0e1c2857"}
+core-1     | {"time":"2026-10-26T13:05:05.689692577Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8698-70cf-9b3c-275a057971c0"}
+core-1     | {"time":"2026-10-26T13:05:05.727352699Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351871226394","wamid":"wamid.double.01a17850-86bf-7542-8885-6d0bae5ac903"}
+core-1     | {"time":"2026-10-26T13:05:05.740514068Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-86cb-70b9-9dd1-86b2885013ac"}
+core-1     | {"time":"2026-10-26T13:05:05.819590797Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351155183717","wamid":"wamid.double.01a17850-871b-78e5-9231-c7a89567f731"}
+core-1     | {"time":"2026-10-26T13:05:05.865636438Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8748-70e6-bf74-c6c623095659"}
+core-1     | {"time":"2026-10-26T13:05:05.921107977Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351617996782","wamid":"wamid.double.01a17850-8781-7189-91da-00d6372d2ef1"}
+core-1     | {"time":"2026-10-26T13:05:05.923586692Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351456961456","wamid":"wamid.double.01a17850-8783-78e0-bcfc-18d9b23eee49"}
+core-1     | {"time":"2026-10-26T13:05:05.985477032Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-87bf-7e97-96a8-4a67896bffd7"}
+core-1     | {"time":"2026-10-26T13:05:05.98578198Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-87bf-7f2a-81c9-96a12ef36730"}
+core-1     | {"time":"2026-10-26T13:05:06.020174545Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351882013415","wamid":"wamid.double.01a17850-87e4-728e-b3a1-7ef2c1d7bb22"}
+core-1     | {"time":"2026-10-26T13:05:06.073743863Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8818-72a2-9585-871ac4ea6e1b"}
+storage-1  | time=2026-10-26T13:03:25.480Z level=INFO msg="172.21.0.1 - - [26/Oct/2026:13:03:25 +0000] \"GET /storage/v1/b/sonia-smoke/o/knowledge-bases%2F01a1784e-ff0c-7f03-b73d-5d429cc9c539%2F01a1784e-ff12-7d25-ae3c-3f9d02fe292a?alt=media HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:06.125512424Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351511032215","wamid":"wamid.double.01a17850-884d-77b4-8a0a-be99f56fced7"}
+core-1     | {"time":"2026-10-26T13:05:06.18011259Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8882-786f-89b0-ded74c1940ec"}
+core-1     | {"time":"2026-10-26T13:05:06.222419483Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351777116041","wamid":"wamid.double.01a17850-88ae-7647-a5ac-995270ff9752"}
+core-1     | {"time":"2026-10-26T13:05:06.230618734Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351251246427","wamid":"wamid.double.01a17850-88b6-7951-a8f5-c1d1f0c161f6"}
+storage-1  | time=2026-10-26T13:03:25.783Z level=INFO msg="172.21.0.7 - - [26/Oct/2026:13:03:25 +0000] \"GET /storage/v1/b/sonia-smoke?projection=noAcl&prettyPrint=false HTTP/1.1\" 200 403\n"
+storage-1  | time=2026-10-26T13:03:25.797Z level=INFO msg="172.21.0.7 - - [26/Oct/2026:13:03:25 +0000] \"GET /download/storage/v1/b/sonia-smoke/o/knowledge-bases%2F01a1784e-ff0c-7f03-b73d-5d429cc9c539%2F01a1784e-ff12-7d25-ae3c-3f9d02fe292a?alt=media HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:25.991Z level=INFO msg="::1 - - [26/Oct/2026:13:03:25 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:27.524Z level=INFO msg="172.21.0.1 - - [26/Oct/2026:13:03:27 +0000] \"GET /storage/v1/b/sonia-smoke/o/knowledge-bases%2F01a1784e-ff0c-7f03-b73d-5d429cc9c539%2F01a1784e-ff12-7d25-ae3c-3f9d02fe292a?alt=media HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:28.055Z level=INFO msg="::1 - - [26/Oct/2026:13:03:28 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:30.116Z level=INFO msg="::1 - - [26/Oct/2026:13:03:30 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 2026-10-26 13:02:19.972 UTC [300] DETAIL:  Failing row contains (01a1784d-fefa-7b62-8904-2309ef91108c, 01a1784d-fedb-79ac-ae90-ca1f4d312976, 01930000-0000-7000-8000-000000000003, 01930000-0000-7000-8000-000000000002, 01a1784d-fec6-78d1-bb1a-7d72395891ee, resolved, autonomous, f, 6, 01a1784d-fec6-78d1-bb1a-7d72395891ee, 2026-10-26 13:02:19.823895+00, null, 2026-10-26 13:02:19.823895+00, 2026-10-26 13:02:19.823895+00, 01a1784d-fec6-78d1-bb1a-7d72395891ee, 0, null, 2026-10-26 13:02:19.880419+00, 2026-10-27 13:02:19.880419+00, 2026-10-26 13:02:19.823895+00, 2026-10-26 13:02:19.823895+00, null).
+db-1       | 2026-10-26 13:02:19.972 UTC [300] STATEMENT:  UPDATE conversations SET quality_score = 6 WHERE id = $1
+storage-1  | time=2026-10-26T13:03:32.170Z level=INFO msg="::1 - - [26/Oct/2026:13:03:32 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:34.227Z level=INFO msg="::1 - - [26/Oct/2026:13:03:34 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 2026-10-26 13:02:21.606 UTC [381] ERROR:  duplicate key value violates unique constraint "uq_labels_account_id_name"
+db-1       | 2026-10-26 13:02:21.606 UTC [381] DETAIL:  Key (account_id, lower(name::text))=(01930000-0000-7000-8000-000000000001, seguimiento-01a1784e-0566-70d4-b5fb-440e1033e941) already exists.
+db-1       | 2026-10-26 13:02:21.606 UTC [381] STATEMENT:  
+db-1       | 	UPDATE labels
+db-1       | 	SET    name = $3, color = $4, updated_at = now()
+storage-1  | time=2026-10-26T13:03:36.298Z level=INFO msg="::1 - - [26/Oct/2026:13:03:36 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:38.379Z level=INFO msg="::1 - - [26/Oct/2026:13:03:38 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:06.285390992Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-88eb-7b64-917b-340569f75b64"}
+core-1     | {"time":"2026-10-26T13:05:06.28801447Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-88ee-7657-b46f-f7b75496564c"}
+storage-1  | time=2026-10-26T13:03:40.450Z level=INFO msg="::1 - - [26/Oct/2026:13:03:40 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:42.514Z level=INFO msg="::1 - - [26/Oct/2026:13:03:42 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:44.579Z level=INFO msg="::1 - - [26/Oct/2026:13:03:44 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:46.665Z level=INFO msg="::1 - - [26/Oct/2026:13:03:46 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:48.754Z level=INFO msg="::1 - - [26/Oct/2026:13:03:48 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:50.852Z level=INFO msg="::1 - - [26/Oct/2026:13:03:50 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:52.946Z level=INFO msg="::1 - - [26/Oct/2026:13:03:52 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:55.033Z level=INFO msg="::1 - - [26/Oct/2026:13:03:55 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 	WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
+db-1       | 2026-10-26 13:02:23.162 UTC [61] LOG:  checkpoint starting: immediate force wait
+db-1       | 2026-10-26 13:02:24.069 UTC [61] LOG:  checkpoint complete: wrote 365 buffers (2.2%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.195 s, sync=0.591 s, total=0.907 s; sync files=239, longest=0.037 s, average=0.003 s; distance=7570 kB, estimate=7570 kB; lsn=0/20AD8A8, redo lsn=0/2083378
+db-1       | 2026-10-26 13:02:25.202 UTC [61] LOG:  checkpoint starting: immediate force wait
+storage-1  | time=2026-10-26T13:03:57.089Z level=INFO msg="::1 - - [26/Oct/2026:13:03:57 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:03:59.153Z level=INFO msg="::1 - - [26/Oct/2026:13:03:59 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:01.225Z level=INFO msg="::1 - - [26/Oct/2026:13:04:01 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:03.289Z level=INFO msg="::1 - - [26/Oct/2026:13:04:03 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:05.357Z level=INFO msg="::1 - - [26/Oct/2026:13:04:05 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:07.421Z level=INFO msg="::1 - - [26/Oct/2026:13:04:07 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 2026-10-26 13:02:25.472 UTC [61] LOG:  checkpoint complete: wrote 58 buffers (0.4%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.067 s, sync=0.141 s, total=0.271 s; sync files=55, longest=0.022 s, average=0.003 s; distance=5718 kB, estimate=7385 kB; lsn=0/262D5C0, redo lsn=0/2618F50
+db-1       | 2026-10-26 13:02:25.821 UTC [61] LOG:  checkpoint starting: immediate force wait
+db-1       | 2026-10-26 13:02:26.073 UTC [793] ERROR:  duplicate key value violates unique constraint "uq_quick_replies_account_id_title"
+core-1     | {"time":"2026-10-26T13:05:06.321577812Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351534932816","wamid":"wamid.double.01a17850-8911-78b1-9714-b72482c44a08"}
+core-1     | {"time":"2026-10-26T13:05:06.336839727Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-891f-7397-94e5-fab105b8b719"}
+core-1     | {"time":"2026-10-26T13:05:06.419414579Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351922129752","wamid":"wamid.double.01a17850-8973-7632-b699-fba3e24d0b1d"}
+core-1     | {"time":"2026-10-26T13:05:06.505851975Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-89c8-749f-911d-206252388691"}
+core-1     | {"time":"2026-10-26T13:05:06.526574264Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351893065735","wamid":"wamid.double.01a17850-89de-78a7-a652-d8a56c371d75"}
+storage-1  | time=2026-10-26T13:04:09.482Z level=INFO msg="::1 - - [26/Oct/2026:13:04:09 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:11.541Z level=INFO msg="::1 - - [26/Oct/2026:13:04:11 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:13.609Z level=INFO msg="::1 - - [26/Oct/2026:13:04:13 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:15.662Z level=INFO msg="::1 - - [26/Oct/2026:13:04:15 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:17.756Z level=INFO msg="::1 - - [26/Oct/2026:13:04:17 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:19.804Z level=INFO msg="::1 - - [26/Oct/2026:13:04:19 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:21.865Z level=INFO msg="::1 - - [26/Oct/2026:13:04:21 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:23.920Z level=INFO msg="::1 - - [26/Oct/2026:13:04:23 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:25.976Z level=INFO msg="::1 - - [26/Oct/2026:13:04:25 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:28.044Z level=INFO msg="::1 - - [26/Oct/2026:13:04:28 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:06.529100843Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351386683573","wamid":"wamid.double.01a17850-89e1-716e-b521-d2d76425db19"}
+core-1     | {"time":"2026-10-26T13:05:06.58207816Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8a14-7311-b2e8-cebc64343207"}
+core-1     | {"time":"2026-10-26T13:05:06.585312576Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8a17-7b12-a630-36b0b465e555"}
+core-1     | {"time":"2026-10-26T13:05:06.729375827Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351310036422","wamid":"wamid.double.01a17850-8aa9-75a1-af09-b3be86e18f72"}
+core-1     | {"time":"2026-10-26T13:05:06.731925485Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351048290355","wamid":"wamid.double.01a17850-8aab-7e06-971c-ca7b86f1dbf7"}
+core-1     | {"time":"2026-10-26T13:05:06.731925482Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351150112334","wamid":"wamid.double.01a17850-8aab-7e07-9a04-a155ff2d64bf"}
+core-1     | {"time":"2026-10-26T13:05:06.769428854Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8acf-7bff-94e0-9a6a9245bdad"}
+storage-1  | time=2026-10-26T13:04:30.096Z level=INFO msg="::1 - - [26/Oct/2026:13:04:30 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:32.152Z level=INFO msg="::1 - - [26/Oct/2026:13:04:32 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:06.775579839Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8ad6-720a-8fcf-67f3481e0ada"}
+core-1     | {"time":"2026-10-26T13:05:06.798423518Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8aec-7cb2-8e8f-edc964a6d1c7"}
+core-1     | {"time":"2026-10-26T13:05:06.925512886Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351366931696","wamid":"wamid.double.01a17850-8b6d-77bb-93e0-9fe5dac52816"}
+core-1     | {"time":"2026-10-26T13:05:06.927966342Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351589207518","wamid":"wamid.double.01a17850-8b6f-7ea8-814c-037cbc6ab675"}
+core-1     | {"time":"2026-10-26T13:05:06.965841087Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8b94-7271-8bcc-9f9cc7d0e557"}
+db-1       | 2026-10-26 13:02:26.073 UTC [793] DETAIL:  Key (account_id, lower(title::text))=(01930000-0000-7000-8000-000000000001, horarios 01a1784e-1700-72e2-ac83-988d64595a01) already exists.
+db-1       | 2026-10-26 13:02:26.073 UTC [793] STATEMENT:  
+storage-1  | time=2026-10-26T13:04:34.212Z level=INFO msg="::1 - - [26/Oct/2026:13:04:34 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:36.263Z level=INFO msg="::1 - - [26/Oct/2026:13:04:36 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+db-1       | 	UPDATE quick_replies
+db-1       | 	SET    title = COALESCE($3, title), content = COALESCE($4, content), active = COALESCE($5, active), updated_at = now()
+db-1       | 	WHERE  account_id = $1 AND id = $2 AND deleted_at IS NULL
+storage-1  | time=2026-10-26T13:04:38.323Z level=INFO msg="::1 - - [26/Oct/2026:13:04:38 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:40.384Z level=INFO msg="::1 - - [26/Oct/2026:13:04:40 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:42.448Z level=INFO msg="::1 - - [26/Oct/2026:13:04:42 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:44.508Z level=INFO msg="::1 - - [26/Oct/2026:13:04:44 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:06.966439811Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8b94-765c-876c-70bf760fc206"}
+core-1     | {"time":"2026-10-26T13:05:07.017997838Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351379027360","wamid":"wamid.double.01a17850-8bc9-7f16-b52b-2cf8ff5c9f7d"}
+core-1     | {"time":"2026-10-26T13:05:07.040793459Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8bdf-73d9-8b1b-2289db1d5401"}
+db-1       | 2026-10-26 13:02:26.127 UTC [61] LOG:  checkpoint complete: wrote 34 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.035 s, sync=0.206 s, total=0.306 s; sync files=34, longest=0.024 s, average=0.007 s; distance=4452 kB, estimate=7092 kB; lsn=0/2A8A200, redo lsn=0/2A71FE0
+db-1       | 2026-10-26 13:02:26.892 UTC [61] LOG:  checkpoint starting: immediate force wait
+core-1     | {"time":"2026-10-26T13:05:07.130171991Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351267993670","wamid":"wamid.double.01a17850-8c3a-7281-80b3-634c48fad40b"}
+core-1     | {"time":"2026-10-26T13:05:07.132612201Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351505105672","wamid":"wamid.double.01a17850-8c3c-793c-ba75-f5c326983b42"}
+db-1       | 2026-10-26 13:02:27.186 UTC [61] LOG:  checkpoint complete: wrote 50 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.041 s, sync=0.196 s, total=0.294 s; sync files=43, longest=0.026 s, average=0.005 s; distance=5608 kB, estimate=6943 kB; lsn=0/2FFA8D0, redo lsn=0/2FEC028
+db-1       | 2026-10-26 13:02:27.342 UTC [845] ERROR:  duplicate key value violates unique constraint "uq_inboxes_phone_number_id"
+db-1       | 2026-10-26 13:02:27.342 UTC [845] DETAIL:  Key (phone_number_id)=(it-01a1784e-1c18-7645-aa50-1ed7495ed00e) already exists.
+db-1       | 2026-10-26 13:02:27.342 UTC [845] STATEMENT:  
+db-1       | 					INSERT INTO inboxes (id, account_id, phone_number_id, waba_id, display_name, verify_token, status)
+db-1       | 					VALUES ($1, $2, $3, 'it-waba', 'Numero repetido', $4, 'active')
+storage-1  | time=2026-10-26T13:04:46.576Z level=INFO msg="::1 - - [26/Oct/2026:13:04:46 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:48.627Z level=INFO msg="::1 - - [26/Oct/2026:13:04:48 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:50.691Z level=INFO msg="::1 - - [26/Oct/2026:13:04:50 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:52.742Z level=INFO msg="::1 - - [26/Oct/2026:13:04:52 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:54.807Z level=INFO msg="::1 - - [26/Oct/2026:13:04:54 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:07.157153427Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8c53-77fa-a39e-1f9a4edbad93"}
+core-1     | {"time":"2026-10-26T13:05:07.160185105Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8c56-7ab2-bfab-b6aa26425428"}
+storage-1  | time=2026-10-26T13:04:56.880Z level=INFO msg="::1 - - [26/Oct/2026:13:04:56 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:04:58.943Z level=INFO msg="::1 - - [26/Oct/2026:13:04:58 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:07.224424722Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351531524285","wamid":"wamid.double.01a17850-8c98-765a-ba11-90ab7658cf6d"}
+storage-1  | time=2026-10-26T13:05:00.990Z level=INFO msg="::1 - - [26/Oct/2026:13:05:00 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:05:03.043Z level=INFO msg="::1 - - [26/Oct/2026:13:05:03 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:05:05.114Z level=INFO msg="::1 - - [26/Oct/2026:13:05:05 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:07.284195397Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8cd2-7052-9395-b9f327563f19"}
+core-1     | {"time":"2026-10-26T13:05:07.327288445Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351843254570","wamid":"wamid.double.01a17850-8cff-744b-bd4e-4b854f2c1c69"}
+storage-1  | time=2026-10-26T13:05:07.179Z level=INFO msg="::1 - - [26/Oct/2026:13:05:07 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:05:09.254Z level=INFO msg="::1 - - [26/Oct/2026:13:05:09 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+storage-1  | time=2026-10-26T13:05:11.310Z level=INFO msg="::1 - - [26/Oct/2026:13:05:11 +0000] \"GET /_internal/healthcheck HTTP/1.1\" 200 0\n"
+core-1     | {"time":"2026-10-26T13:05:07.329826346Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351422661584","wamid":"wamid.double.01a17850-8d01-7c83-8ac1-9d54ce6f4ae4"}
+core-1     | {"time":"2026-10-26T13:05:07.353136693Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8d17-7878-809d-fbfcb58eaced"}
+core-1     | {"time":"2026-10-26T13:05:07.353231568Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8d17-79a1-aa2f-ad1c6ec2ac89"}
+core-1     | {"time":"2026-10-26T13:05:07.424297568Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351944587346","wamid":"wamid.double.01a17850-8d60-746e-adce-e40137b8e53f"}
+core-1     | {"time":"2026-10-26T13:05:07.47600017Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8d91-7d88-9baf-48b9e0597273"}
+core-1     | {"time":"2026-10-26T13:05:07.52228325Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351405370270","wamid":"wamid.double.01a17850-8dc2-7435-bc47-de5d089f18af"}
+core-1     | {"time":"2026-10-26T13:05:07.52770239Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351482728468","wamid":"wamid.double.01a17850-8dc7-7a9c-910b-bbf947280459"}
+core-1     | {"time":"2026-10-26T13:05:07.544653472Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8dd7-70f4-b1ed-ee2f4b03a31b"}
+core-1     | {"time":"2026-10-26T13:05:07.544741575Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8dd7-7132-a30c-3a5513804470"}
+core-1     | {"time":"2026-10-26T13:05:07.626321638Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351146015049","wamid":"wamid.double.01a17850-8e2a-74c4-9c2c-e94eaf6e481e"}
+core-1     | {"time":"2026-10-26T13:05:07.682062088Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8e5e-7a72-8151-efbd9ae26c4c"}
+core-1     | {"time":"2026-10-26T13:05:07.753930399Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351880844056","wamid":"wamid.double.01a17850-8ea9-7e04-b16e-4aa73a6834ea"}
+core-1     | {"time":"2026-10-26T13:05:07.757432593Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351044524816","wamid":"wamid.double.01a17850-8ead-765e-95ee-ee852b56feee"}
+core-1     | {"time":"2026-10-26T13:05:07.807518968Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8edd-76ae-9d6e-e1e0427861fe"}
+core-1     | {"time":"2026-10-26T13:05:07.807626158Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8edd-7772-a28e-d3a58d199e17"}
+core-1     | {"time":"2026-10-26T13:05:07.837084975Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351014739780","wamid":"wamid.double.01a17850-8efd-7131-978a-67ca7e59e337"}
+core-1     | {"time":"2026-10-26T13:05:07.855365922Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8f0d-7909-b5e1-8b130f9d9fa9"}
+core-1     | {"time":"2026-10-26T13:05:08.032187918Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351698165018","wamid":"wamid.double.01a17850-8fc0-72c4-9c27-e1bdd1fdcc57"}
+core-1     | {"time":"2026-10-26T13:05:08.034825386Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351429524761","wamid":"wamid.double.01a17850-8fc2-7c81-a519-aa48b2b6d39d"}
+core-1     | {"time":"2026-10-26T13:05:08.037538029Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351449283207","wamid":"wamid.double.01a17850-8fc5-7818-8654-3fe50f0607c6"}
+core-1     | {"time":"2026-10-26T13:05:08.05051683Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8fd0-7e90-9c99-de226cf3956b"}
+core-1     | {"time":"2026-10-26T13:05:08.062084572Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8fdc-73c6-85a9-b2a0e1bfe9c1"}
+core-1     | {"time":"2026-10-26T13:05:08.062089773Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-8fdc-7429-8a92-2d917c82f972"}
+core-1     | {"time":"2026-10-26T13:05:08.230400848Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351338849758","wamid":"wamid.double.01a17850-9086-7605-bfa6-baee52ad1dd8"}
+core-1     | {"time":"2026-10-26T13:05:08.230522532Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351994074528","wamid":"wamid.double.01a17850-9086-77e0-ae7d-911ab4b39bd3"}
+core-1     | {"time":"2026-10-26T13:05:08.233311897Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351103322458","wamid":"wamid.double.01a17850-9089-749f-9a0b-0da524225bc9"}
+core-1     | {"time":"2026-10-26T13:05:08.243635958Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9091-7dcf-b684-90d0f4ae1725"}
+core-1     | {"time":"2026-10-26T13:05:08.262826647Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-90a5-70c7-a2fa-95ad51f7671d"}
+core-1     | {"time":"2026-10-26T13:05:08.262920495Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-90a5-72c7-af76-d3af905238d5"}
+core-1     | {"time":"2026-10-26T13:05:08.42959414Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351224181664","wamid":"wamid.double.01a17850-914d-78e9-b86c-78422513bd07"}
+core-1     | {"time":"2026-10-26T13:05:08.432203932Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351818375016","wamid":"wamid.double.01a17850-9150-72fd-a5d6-17b20f25dfc3"}
+core-1     | {"time":"2026-10-26T13:05:08.43717095Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351613129982","wamid":"wamid.double.01a17850-9155-7287-93bf-479182ccb081"}
+core-1     | {"time":"2026-10-26T13:05:08.456141026Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9166-773c-b97f-a7f82ebf05c2"}
+core-1     | {"time":"2026-10-26T13:05:08.456820326Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9167-72bf-ab5f-e9f88a61032a"}
+core-1     | {"time":"2026-10-26T13:05:08.49317671Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-918b-795d-9847-ffa44cb699a6"}
+core-1     | {"time":"2026-10-26T13:05:08.624666141Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351127346233","wamid":"wamid.double.01a17850-9210-7a0c-b309-c7e2d6a8ec1c"}
+core-1     | {"time":"2026-10-26T13:05:08.627309238Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351928300754","wamid":"wamid.double.01a17850-9213-749d-975a-5294277bdf5f"}
+core-1     | {"time":"2026-10-26T13:05:08.859919999Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351315933541","wamid":"wamid.double.01a17850-92fb-7def-98bb-d33d885e1ce2"}
+core-1     | {"time":"2026-10-26T13:05:08.866070596Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9300-7650-a7f3-fd9fddf94e8b"}
+core-1     | {"time":"2026-10-26T13:05:08.885785161Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9314-70ba-9f7d-2ba0f2abfc5e"}
+core-1     | {"time":"2026-10-26T13:05:08.901861651Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9324-714e-a998-97b8645863a6"}
+core-1     | {"time":"2026-10-26T13:05:09.020055431Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351720164409","wamid":"wamid.double.01a17850-939c-70b8-96c5-2d1e55b47d80"}
+core-1     | {"time":"2026-10-26T13:05:09.064856173Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-93c7-7229-b5e6-f4f580ee9850"}
+core-1     | {"time":"2026-10-26T13:05:09.127138086Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351664754671","wamid":"wamid.double.01a17850-9407-71fd-856e-7b9aa26b4528"}
+core-1     | {"time":"2026-10-26T13:05:09.129679413Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351725931184","wamid":"wamid.double.01a17850-9409-7a46-8bca-0dd17bd849f9"}
+core-1     | {"time":"2026-10-26T13:05:09.151357405Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-941d-7b34-bc08-78ddcfaa5f33"}
+core-1     | {"time":"2026-10-26T13:05:09.188309053Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9442-7a6f-876a-15cd0f1f1348"}
+core-1     | {"time":"2026-10-26T13:05:09.225656072Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351798984260","wamid":"wamid.double.01a17850-9469-79e5-9ad2-2c744ab9941f"}
+core-1     | {"time":"2026-10-26T13:05:09.271206055Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9495-7a8c-814e-2eafada810e9"}
+core-1     | {"time":"2026-10-26T13:05:09.319262785Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351085487600","wamid":"wamid.double.01a17850-94c7-73db-9932-af072a597d9b"}
+core-1     | {"time":"2026-10-26T13:05:09.34296385Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-94dd-748b-97a3-f5c6a674781e"}
+core-1     | {"time":"2026-10-26T13:05:09.42205037Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351732048402","wamid":"wamid.double.01a17850-952e-70ab-8bdb-59e237c55544"}
+core-1     | {"time":"2026-10-26T13:05:09.424729456Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351592568706","wamid":"wamid.double.01a17850-9530-7b07-8139-d860b5dfbd39"}
+core-1     | {"time":"2026-10-26T13:05:09.441821525Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9540-736b-a16b-912718e32098"}
+core-1     | {"time":"2026-10-26T13:05:09.459425165Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9551-7dbc-999a-f039f34c6d61"}
+core-1     | {"time":"2026-10-26T13:05:09.518850995Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351233930906","wamid":"wamid.double.01a17850-958e-7cdc-b363-73d081bfc7e1"}
+core-1     | {"time":"2026-10-26T13:05:09.535291356Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-959d-7b99-b1d2-69dc643bb381"}
+core-1     | {"time":"2026-10-26T13:05:09.628900551Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351008743270","wamid":"wamid.double.01a17850-95fc-7da3-852b-4bd940c48cb4"}
+core-1     | {"time":"2026-10-26T13:05:09.631478742Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351155655927","wamid":"wamid.double.01a17850-95ff-7737-ae9f-0b73dc30996a"}
+core-1     | {"time":"2026-10-26T13:05:09.649882569Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9610-7142-b18b-2792c2b3f6b3"}
+core-1     | {"time":"2026-10-26T13:05:09.68570235Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9634-71c9-98ef-f053d0936106"}
+core-1     | {"time":"2026-10-26T13:05:09.721443457Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351205544815","wamid":"wamid.double.01a17850-9659-76a4-b275-c7f9e9e082fa"}
+core-1     | {"time":"2026-10-26T13:05:09.778146805Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9690-7966-a360-399a141e908c"}
+core-1     | {"time":"2026-10-26T13:05:09.827724943Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351257580127","wamid":"wamid.double.01a17850-96c3-7ae4-b60b-ae662464012b"}
+core-1     | {"time":"2026-10-26T13:05:09.831085887Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351534883931","wamid":"wamid.double.01a17850-96c7-712e-980d-859f04024f1e"}
+core-1     | {"time":"2026-10-26T13:05:09.848416444Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-96d6-7a76-98c1-fb3902d1fad3"}
+core-1     | {"time":"2026-10-26T13:05:09.88079834Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-96f7-73ca-979e-007331fe5162"}
+core-1     | {"time":"2026-10-26T13:05:09.926013925Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351856558019","wamid":"wamid.double.01a17850-9726-7008-9c2a-50b8094961eb"}
+core-1     | {"time":"2026-10-26T13:05:09.979598133Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-975a-7151-bd51-804a4f7fe64b"}
+core-1     | {"time":"2026-10-26T13:05:10.024554249Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351364196113","wamid":"wamid.double.01a17850-9788-785c-a335-86c7ada668fc"}
+core-1     | {"time":"2026-10-26T13:05:10.027030509Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351600572710","wamid":"wamid.double.01a17850-978b-705d-b8ba-0ad3f4105393"}
+core-1     | {"time":"2026-10-26T13:05:10.071394395Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-97b5-7ddc-9dd4-2b6d373994aa"}
+core-1     | {"time":"2026-10-26T13:05:10.086844758Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-97c5-7525-ba55-56364b59898e"}
+core-1     | {"time":"2026-10-26T13:05:10.121422717Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351355726951","wamid":"wamid.double.01a17850-97e9-7655-a5db-3ee4019e6096"}
+core-1     | {"time":"2026-10-26T13:05:10.173600158Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-981b-7d54-beda-b1e1dc8f07b2"}
+core-1     | {"time":"2026-10-26T13:05:10.227517968Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351244159809","wamid":"wamid.double.01a17850-9853-77c9-b7d9-a77b7382c488"}
+core-1     | {"time":"2026-10-26T13:05:10.230523901Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351404997482","wamid":"wamid.double.01a17850-9856-77de-81ec-273c9f1433fe"}
+core-1     | {"time":"2026-10-26T13:05:10.261749189Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9874-719e-aef5-00f2e9a753c4"}
+core-1     | {"time":"2026-10-26T13:05:10.283755568Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-988a-7238-a4d2-2072d3d43194"}
+core-1     | {"time":"2026-10-26T13:05:10.326308666Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351324015380","wamid":"wamid.double.01a17850-98b6-7434-a561-7761bd448511"}
+core-1     | {"time":"2026-10-26T13:05:10.368293885Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-98de-771b-a742-5fe5ee638fe4"}
+core-1     | {"time":"2026-10-26T13:05:10.424060543Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351426756425","wamid":"wamid.double.01a17850-9918-70cd-80e1-c90033df8b45"}
+core-1     | {"time":"2026-10-26T13:05:10.426743344Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351870494122","wamid":"wamid.double.01a17850-991a-7b3c-bbeb-576fab223440"}
+core-1     | {"time":"2026-10-26T13:05:10.455347813Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9935-7918-86ec-ef28684b0464"}
+core-1     | {"time":"2026-10-26T13:05:10.474889757Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9949-7382-96ff-de4eb5a5a15e"}
+core-1     | {"time":"2026-10-26T13:05:10.519827442Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351551498352","wamid":"wamid.double.01a17850-9977-7c7e-857c-3cafed770e26"}
+core-1     | {"time":"2026-10-26T13:05:10.560924357Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-999f-74cf-ba31-4d397c9c2902"}
+core-1     | {"time":"2026-10-26T13:05:10.62196526Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351298837965","wamid":"wamid.double.01a17850-99dd-7e9a-8623-d965d5f64971"}
+core-1     | {"time":"2026-10-26T13:05:10.625027641Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351763967893","wamid":"wamid.double.01a17850-99e1-704a-9df8-fadc5ac1cc26"}
+core-1     | {"time":"2026-10-26T13:05:10.646390322Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-99f4-774c-8ede-33637ba86a64"}
+core-1     | {"time":"2026-10-26T13:05:10.664199344Z","level":"WARN","msg":"no active vendor to receive the conversation, it stays in the pool","service":"core","environment":"test","conversation_id":"01a17850-9a06-7893-a4f0-5adc2809301c"}
+core-1     | {"time":"2026-10-26T13:05:10.718827796Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351067859592","wamid":"wamid.double.01a17850-9a3e-7c76-9f11-61ff8e1941a7"}
+core-1     | {"time":"2026-10-26T13:05:10.829872744Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351710051058","wamid":"wamid.double.01a17850-9aad-7d2d-8183-d6f15a14902a"}
+core-1     | {"time":"2026-10-26T13:05:10.832351721Z","level":"WARN","msg":"whatsapp send doubled","service":"core","environment":"test","inbox_id":"01930000-0000-7000-8000-000000000003","to":"549351699511175","wamid":"wamid.double.01a17850-9ab0-7547-9d3f-7e30c4e88496"}

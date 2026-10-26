@@ -1,0 +1,133 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_example_environment_can_boot_brain_and_worker ______________
+
+clean_env = None
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002A1C04A6190>
+
+    def test_example_environment_can_boot_brain_and_worker(clean_env, monkeypatch) -> None:
+        # QA-001: empty numeric values in the distributed example overrode valid defaults.
+        example = Path(__file__).resolve().parents[3] / ".env.example"
+        for name, value in dotenv_values(example).items():
+            monkeypatch.setenv(name, value or "")
+        monkeypatch.setenv("DATABASE_URL", _MINIMUM["database_url"])
+        monkeypatch.setenv("BRAIN_INTERNAL_TOKEN", _MINIMUM["brain_internal_token"])
+        monkeypatch.setenv("DOCUMENT_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+        monkeypatch.setenv("FIREBASE_STORAGE_BUCKET", "sonia-test")
+        monkeypatch.setenv("EMBEDDINGS_USE_DOUBLE", "true")
+    
+>       settings = Settings(_env_file=None)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_config.py:27: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+__pydantic_self__ = Settings(), _case_sensitive = None
+_nested_model_default_partial_update = None, _env_prefix = None
+_env_prefix_target = None, _env_file = None, _env_file_encoding = None
+_env_ignore_empty = None, _env_nested_delimiter = None
+_env_nested_max_split = None, _env_parse_none_str = None
+_env_parse_enums = None, _cli_prog_name = None, _cli_parse_args = None
+_cli_settings_source = None, _cli_parse_none_str = None
+_cli_hide_none_type = None, _cli_avoid_json = None, _cli_enforce_required = None
+_cli_use_class_docs_for_groups = None, _cli_show_env_vars = None
+_cli_exit_on_error = None, _cli_prefix = None, _cli_flag_prefix_char = None
+_cli_implicit_flags = None, _cli_ignore_unknown_args = None
+_cli_kebab_case = None, _cli_shortcuts = None, _secrets_dir = None
+_build_sources = None, values = {}
+
+    def __init__(
+        __pydantic_self__,
+        _case_sensitive: bool | None = None,
+        _nested_model_default_partial_update: bool | None = None,
+        _env_prefix: str | None = None,
+        _env_prefix_target: EnvPrefixTarget | None = None,
+        _env_file: DotenvType | None = ENV_FILE_SENTINEL,
+        _env_file_encoding: str | None = None,
+        _env_ignore_empty: bool | None = None,
+        _env_nested_delimiter: str | None = None,
+        _env_nested_max_split: int | None = None,
+        _env_parse_none_str: str | None = None,
+        _env_parse_enums: bool | None = None,
+        _cli_prog_name: str | None = None,
+        _cli_parse_args: bool | list[str] | tuple[str, ...] | None = None,
+        _cli_settings_source: CliSettingsSource[Any] | None = None,
+        _cli_parse_none_str: str | None = None,
+        _cli_hide_none_type: bool | None = None,
+        _cli_avoid_json: bool | None = None,
+        _cli_enforce_required: bool | None = None,
+        _cli_use_class_docs_for_groups: bool | None = None,
+        _cli_show_env_vars: bool | None = None,
+        _cli_exit_on_error: bool | None = None,
+        _cli_prefix: str | None = None,
+        _cli_flag_prefix_char: str | None = None,
+        _cli_implicit_flags: bool | Literal['dual', 'toggle'] | None = None,
+        _cli_ignore_unknown_args: bool | None = None,
+        _cli_kebab_case: bool | Literal['all', 'no_enums'] | None = None,
+        _cli_shortcuts: Mapping[str, str | list[str]] | None = None,
+        _secrets_dir: PathType | None = None,
+        _build_sources: tuple[tuple[PydanticBaseSettingsSource, ...], dict[str, Any]] | None = None,
+        **values: Any,
+    ) -> None:
+        sources, init_kwargs = (
+            _build_sources
+            if _build_sources is not None
+            else __pydantic_self__.__class__._settings_init_sources(
+                _case_sensitive=_case_sensitive,
+                _nested_model_default_partial_update=_nested_model_default_partial_update,
+                _env_prefix=_env_prefix,
+                _env_prefix_target=_env_prefix_target,
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+                _env_ignore_empty=_env_ignore_empty,
+                _env_nested_delimiter=_env_nested_delimiter,
+                _env_nested_max_split=_env_nested_max_split,
+                _env_parse_none_str=_env_parse_none_str,
+                _env_parse_enums=_env_parse_enums,
+                _cli_prog_name=_cli_prog_name,
+                _cli_parse_args=_cli_parse_args,
+                _cli_settings_source=_cli_settings_source,
+                _cli_parse_none_str=_cli_parse_none_str,
+                _cli_hide_none_type=_cli_hide_none_type,
+                _cli_avoid_json=_cli_avoid_json,
+                _cli_enforce_required=_cli_enforce_required,
+                _cli_use_class_docs_for_groups=_cli_use_class_docs_for_groups,
+                _cli_show_env_vars=_cli_show_env_vars,
+                _cli_exit_on_error=_cli_exit_on_error,
+                _cli_prefix=_cli_prefix,
+                _cli_flag_prefix_char=_cli_flag_prefix_char,
+                _cli_implicit_flags=_cli_implicit_flags,
+                _cli_ignore_unknown_args=_cli_ignore_unknown_args,
+                _cli_kebab_case=_cli_kebab_case,
+                _cli_shortcuts=_cli_shortcuts,
+                _secrets_dir=_secrets_dir,
+                _init_kwargs=values,
+            )
+        )
+    
+>       super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+E       pydantic_core._pydantic_core.ValidationError: 3 validation errors for Settings
+E       brain_http_port
+E         Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/int_parsing
+E       db_pool_min_size
+E         Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/int_parsing
+E       db_pool_max_size
+E         Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/int_parsing
+
+.venv\Lib\site-packages\pydantic_settings\main.py:262: ValidationError
+============================== warnings summary ===============================
+tests/test_config.py::test_example_environment_can_boot_brain_and_worker
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\.venv\Lib\site-packages\pytest_asyncio\plugin.py:916: PytestDeprecationWarning: Overriding the "event_loop_policy" fixture is deprecated and will be removed in a future version of pytest-asyncio. Use the "pytest_asyncio_loop_factories" hook to customize event loop creation.
+    warnings.warn(
+
+tests/test_config.py::test_example_environment_can_boot_brain_and_worker
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\tests\conftest.py:45: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+    return asyncio.WindowsSelectorEventLoopPolicy()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_config.py::test_example_environment_can_boot_brain_and_worker
+1 failed, 28 deselected, 2 warnings in 0.57s

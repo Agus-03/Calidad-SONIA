@@ -152,7 +152,7 @@ INSERT INTO inboxes (
 // CreateSettings inserts a new inbox from the UI.
 func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, displayName, phoneNumberID, wabaID, accessToken, verifyToken string) (InboxSettings, error) {
 	inboxID := uuid.New()
-	
+
 	var encryptedToken []byte
 	var err error
 	if accessToken != "" {
@@ -162,9 +162,9 @@ func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, di
 		}
 	}
 
-	settings, err := scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings, 
+	settings, err := scanSettings(r.exec.QueryRow(ctx, inboxCreateSettings,
 		inboxID, accountID, phoneNumberID, wabaID, displayName, verifyToken, encryptedToken))
-	
+
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_inboxes_phone_number_id" {
@@ -172,7 +172,7 @@ func (r *Repository) CreateSettings(ctx context.Context, accountID uuid.UUID, di
 		}
 		return InboxSettings{}, err
 	}
-	
+
 	return settings, nil
 }
 
@@ -219,7 +219,7 @@ func (r *Repository) SetInboxOperators(ctx context.Context, accountID, inboxID u
 		id := uuid.New()
 		b.Queue("INSERT INTO inbox_operators (id, inbox_id, operator_id) VALUES ($1, $2, $3)", id, inboxID, opID)
 	}
-	
+
 	br := r.exec.SendBatch(ctx, &b)
 	defer br.Close()
 

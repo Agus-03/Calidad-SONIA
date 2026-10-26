@@ -1,0 +1,8 @@
+{
+  "path": ["src/core/internal", "src/brain"],
+  "format": ["go", "python"],
+  "ignore": ["**/*_test.go", "**/tests/**", "**/.venv/**", "**/__pycache__/**", "**/enums_gen.go", "**/infra/enums.py"],
+  "reporters": ["json"],
+  "output": "reports/duplication",
+  "threshold": 5
+}

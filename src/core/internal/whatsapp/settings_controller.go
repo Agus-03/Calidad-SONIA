@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 	soniahttp "github.com/mateo-velasquez/sonia/src/core/internal/platform/http"
+	"github.com/mateo-velasquez/sonia/src/core/internal/platform/httpclient"
 )
 
 // The one field of an inbox the panel writes today: connecting a number is still --connect-inbox (ADR-0033), and the rest of the
@@ -129,12 +129,12 @@ func (c *SettingsController) create(gc *gin.Context) {
 	verifyToken := uuid.New().String()
 
 	inbox, err := c.settings.Create(
-		gc.Request.Context(), 
-		actor.AccountID, 
-		req.InboxName, 
-		req.PhoneNumberID, 
-		req.BusinessAccountID, 
-		req.APIKey, 
+		gc.Request.Context(),
+		actor.AccountID,
+		req.InboxName,
+		req.PhoneNumberID,
+		req.BusinessAccountID,
+		req.APIKey,
 		verifyToken,
 	)
 	if err != nil {

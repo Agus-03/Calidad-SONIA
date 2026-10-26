@@ -173,7 +173,7 @@ func TestCreateInbox(t *testing.T) {
 	// Valid payload
 	payload := `{"inbox_name":"Test Inbox","phone_number_id":"12345","business_account_id":"67890","api_key":"secret"}`
 	rec := callSettings(engine, http.MethodPost, "/inboxes", payload)
-	
+
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("Create inbox failed. Code: %d, Body: %s", rec.Code, rec.Body)
 	}

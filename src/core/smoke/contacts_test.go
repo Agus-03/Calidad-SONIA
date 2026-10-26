@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -31,6 +32,53 @@ type world struct {
 	reachable  string
 	outOfReach string
 	label      string
+}
+
+// QA-003: a fixture can be on any page after an earlier load campaign.
+func contactIDsAcrossPages(t *testing.T, core, token string) map[string]bool {
+	t.Helper()
+	found := map[string]bool{}
+	for page := 1; ; page++ {
+		status, body := call(t, core, http.MethodGet, fmt.Sprintf("/api/v1/contacts?per_page=100&page=%d", page), token, "")
+		if status != http.StatusOK {
+			t.Fatalf("contact page %d: HTTP %d", page, status)
+		}
+		var result struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+			Total   int `json:"total"`
+			PerPage int `json:"per_page"`
+		}
+		if err := json.Unmarshal([]byte(body), &result); err != nil || result.PerPage < 1 {
+			t.Fatalf("invalid contact page %d: %v", page, err)
+		}
+		for _, item := range result.Items {
+			found[item.ID] = true
+		}
+		if page*result.PerPage >= result.Total {
+			return found
+		}
+	}
+}
+
+func TestContactPaginationVisitsAllPages(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`{"items":[{"id":"first"}],"total":2,"per_page":1}`))
+		} else {
+			_, _ = w.Write([]byte(`{"items":[{"id":"second"}],"total":2,"per_page":1}`))
+		}
+	}))
+	defer server.Close()
+
+	found := contactIDsAcrossPages(t, server.URL, "test-token")
+
+	if requests != 2 || len(found) != 2 || !found["first"] || !found["second"] {
+		t.Fatalf("requests=%d, contacts=%v; want both pages", requests, found)
+	}
 }
 
 // TestTheThreeRolesWalkTheContactBookThroughTheRealProcess is the only case that crosses everything at once: a real login, a
@@ -80,17 +128,17 @@ func TestTheThreeRolesWalkTheContactBookThroughTheRealProcess(t *testing.T) {
 	})
 
 	t.Run("el operador alcanza solo los contactos de sus conversaciones", func(t *testing.T) {
-		_, body := call(t, core, http.MethodGet, "/api/v1/contacts?per_page=100", tokens[enums.OperatorRoleOperator], "")
-		if !listed(t, body, w.reachable) {
-			t.Fatalf("the operator lost the contact of its own conversation - %s", body)
+		operatorContacts := contactIDsAcrossPages(t, core, tokens[enums.OperatorRoleOperator])
+		if !operatorContacts[w.reachable] {
+			t.Fatal("the operator lost the contact of its own conversation")
 		}
-		if listed(t, body, w.outOfReach) {
-			t.Fatalf("the operator reached a contact nobody assigned to it - %s", body)
+		if operatorContacts[w.outOfReach] {
+			t.Fatal("the operator reached a contact nobody assigned to it")
 		}
 
-		_, body = call(t, core, http.MethodGet, "/api/v1/contacts?per_page=100", tokens[enums.OperatorRoleAdmin], "")
-		if !listed(t, body, w.reachable) || !listed(t, body, w.outOfReach) {
-			t.Fatalf("the admin does not see the whole book, so the narrowing above is not what separated them - %s", body)
+		adminContacts := contactIDsAcrossPages(t, core, tokens[enums.OperatorRoleAdmin])
+		if !adminContacts[w.reachable] || !adminContacts[w.outOfReach] {
+			t.Fatal("the admin does not see both fixture contacts across the contact book pages")
 		}
 	})
 

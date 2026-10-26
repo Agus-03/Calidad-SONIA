@@ -1,0 +1,4 @@
+=== RUN   TestContactPaginationVisitsAllPages
+--- PASS: TestContactPaginationVisitsAllPages (0.00s)
+PASS
+ok  	github.com/mateo-velasquez/sonia/src/core/smoke	2.139s

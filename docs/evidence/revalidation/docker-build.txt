@@ -1,0 +1,497 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.73kB done
+#1 DONE 0.0s
+
+#2 [brain internal] load build definition from brain.Dockerfile
+#2 transferring dockerfile:
+#2 transferring dockerfile: 729B 0.0s done
+#2 DONE 0.2s
+
+#3 [core internal] load build definition from core.Dockerfile
+#3 transferring dockerfile: 701B 0.0s done
+#3 DONE 0.2s
+
+#4 [brain internal] load metadata for docker.io/library/python:3.14-slim
+#4 ...
+
+#5 [core internal] load metadata for docker.io/library/alpine:3.22
+#5 DONE 2.6s
+
+#4 [brain internal] load metadata for docker.io/library/python:3.14-slim
+#4 DONE 2.6s
+
+#6 [core internal] load metadata for docker.io/library/golang:1.27-alpine
+#6 DONE 2.6s
+
+#7 [worker internal] load .dockerignore
+#7 transferring context: 498B done
+#7 DONE 0.1s
+
+#8 [brain internal] load build context
+#8 DONE 0.0s
+
+#9 [core internal] load build context
+#9 DONE 0.0s
+
+#10 [brain 1/7] FROM docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+#10 resolve docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 0.1s done
+#10 ...
+
+#11 [core stage-1 1/3] FROM docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+#11 resolve docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f 0.1s done
+#11 DONE 0.2s
+
+#10 [brain 1/7] FROM docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+#10 resolve docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 0.1s done
+#10 ...
+
+#8 [worker internal] load build context
+#8 transferring context: 1.13MB 0.1s done
+#8 DONE 0.3s
+
+#9 [core internal] load build context
+#9 transferring context: 2.27MB 0.1s done
+#9 DONE 0.4s
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 resolve docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c 0.1s done
+#12 ...
+
+#11 [core stage-1 1/3] FROM docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+#11 sha256:63e7e49699e8f5b93162e14c630db8294f87799bfec4376677160876bd6840dc 3.79MB / 3.79MB 0.9s done
+#11 extracting sha256:63e7e49699e8f5b93162e14c630db8294f87799bfec4376677160876bd6840dc 0.2s done
+#11 DONE 1.4s
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 sha256:c8e3100880d834be60a9562375f4c5018b2cb26d64591bd0060aa3a80b935f43 0B / 126B 0.2s
+#12 sha256:c8e3100880d834be60a9562375f4c5018b2cb26d64591bd0060aa3a80b935f43 126B / 126B 0.3s done
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 0B / 71.15MB 0.2s
+#12 sha256:c012d78a862fe59ae6789c91f982ea68a882c9c44bbde97013914458dcdd9c4c 0B / 244.47kB 0.2s
+#12 sha256:c012d78a862fe59ae6789c91f982ea68a882c9c44bbde97013914458dcdd9c4c 244.47kB / 244.47kB 0.7s done
+#12 sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 0B / 3.85MB 0.2s
+#12 sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 1.05MB / 3.85MB 0.9s
+#12 sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 2.10MB / 3.85MB 1.5s
+#12 sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 3.15MB / 3.85MB 2.1s
+#12 sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 3.85MB / 3.85MB 2.3s done
+#12 extracting sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788
+#12 extracting sha256:7b229517ed222597277036d94892173207d01a731ab3a88eeb1de2e963a2c788 0.2s done
+#12 extracting sha256:c012d78a862fe59ae6789c91f982ea68a882c9c44bbde97013914458dcdd9c4c
+#12 ...
+
+#13 [core stage-1 2/3] RUN apk add --no-cache ca-certificates     && adduser -D -u 10001 sonia
+#13 0.468 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz
+#13 1.542 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/community/x86_64/APKINDEX.tar.gz
+#13 3.793 (1/1) Installing ca-certificates (20261020-r0)
+#13 3.992 Executing busybox-1.37.0-r20.trigger
+#13 4.014 Executing ca-certificates-20261020-r0.trigger
+#13 4.130 OK: 8 MiB in 17 packages
+#13 DONE 4.9s
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 extracting sha256:c012d78a862fe59ae6789c91f982ea68a882c9c44bbde97013914458dcdd9c4c 0.7s done
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 2.10MB / 71.15MB 5.3s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 6.29MB / 71.15MB 7.1s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 10.49MB / 71.15MB 8.7s
+#12 ...
+
+#10 [worker 1/7] FROM docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+#10 sha256:1484fb1dde9f1e72e81c3217b4081dbca2ff3cd75d9f7a4dbdd5ed9a9ab609d4 250B / 250B 0.2s done
+#10 sha256:2cb672340c81d54eae68bd73635134ad5ede9da3664d3d638e94bae1666adae8 12.39MB / 12.39MB 7.1s done
+#10 sha256:c8c008b474ac76c5b59e7ad8bf45f234e69d9d618d800de57ec7b157be08381d 1.29MB / 1.29MB 1.7s done
+#10 sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034 20.97MB / 29.84MB 9.8s
+#10 ...
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 14.68MB / 71.15MB 10.4s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 18.87MB / 71.15MB 11.7s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 23.07MB / 71.15MB 12.9s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 27.26MB / 71.15MB 13.7s
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 31.46MB / 71.15MB 14.3s
+#12 ...
+
+#10 [worker 1/7] FROM docker.io/library/python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+#10 sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034 29.84MB / 29.84MB 13.1s done
+#10 extracting sha256:f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034 1.3s done
+#10 extracting sha256:c8c008b474ac76c5b59e7ad8bf45f234e69d9d618d800de57ec7b157be08381d 0.2s done
+#10 extracting sha256:2cb672340c81d54eae68bd73635134ad5ede9da3664d3d638e94bae1666adae8 0.8s done
+#10 extracting sha256:1484fb1dde9f1e72e81c3217b4081dbca2ff3cd75d9f7a4dbdd5ed9a9ab609d4 0.0s done
+#10 DONE 16.4s
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 35.65MB / 71.15MB 15.0s
+#12 ...
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 2.357 Collecting poetry==2.4.3
+#14 2.510   Downloading poetry-2.4.3-py3-none-any.whl.metadata (7.5 kB)
+#14 2.547 Collecting build<2.0.0,>=1.2.1 (from poetry==2.4.3)
+#14 2.576   Downloading build-1.6.1-py3-none-any.whl.metadata (5.6 kB)
+#14 2.610 Collecting cachecontrol<0.15.0,>=0.14.0 (from cachecontrol[filecache]<0.15.0,>=0.14.0->poetry==2.4.3)
+#14 2.634   Downloading cachecontrol-0.14.4-py3-none-any.whl.metadata (3.1 kB)
+#14 2.817 Collecting cleo<3.0.0,>=2.1.0 (from poetry==2.4.3)
+#14 2.855   Downloading cleo-2.1.0-py3-none-any.whl.metadata (12 kB)
+#14 3.282 Collecting dulwich<2,>=0.25.0 (from poetry==2.4.3)
+#14 3.338   Downloading dulwich-1.2.19-cp314-cp314-manylinux_2_28_x86_64.whl.metadata (6.1 kB)
+#14 3.400 Collecting fastjsonschema<3.0.0,>=2.18.0 (from poetry==2.4.3)
+#14 3.447   Downloading fastjsonschema-2.22.2-py3-none-any.whl.metadata (2.1 kB)
+#14 3.504 Collecting findpython<0.9.0,>=0.6.2 (from poetry==2.4.3)
+#14 3.552   Downloading findpython-0.8.0-py3-none-any.whl.metadata (5.4 kB)
+#14 3.601 Collecting installer<2.0.0,>=0.7.0 (from poetry==2.4.3)
+#14 3.652   Downloading installer-1.1.0-py3-none-any.whl.metadata (1.3 kB)
+#14 3.730 Collecting keyring<26.0.0,>=25.1.0 (from poetry==2.4.3)
+#14 3.774   Downloading keyring-25.7.0-py3-none-any.whl.metadata (21 kB)
+#14 3.846 Collecting packaging>=24.2 (from poetry==2.4.3)
+#14 3.891   Downloading packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+#14 3.954 Collecting pbs-installer>=2025.6.10 (from pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 3.998   Downloading pbs_installer-2026.10.25-py3-none-any.whl.metadata (1.2 kB)
+#14 4.054 Collecting pkginfo<2.0,>=1.12 (from poetry==2.4.3)
+#14 4.098   Downloading pkginfo-1.13.3-py3-none-any.whl.metadata (14 kB)
+#14 4.148 Collecting platformdirs<5,>=3.0.0 (from poetry==2.4.3)
+#14 4.172   Downloading platformdirs-4.13.5-py3-none-any.whl.metadata (5.5 kB)
+#14 4.209 Collecting poetry-core==2.4.0 (from poetry==2.4.3)
+#14 4.234   Downloading poetry_core-2.4.0-py3-none-any.whl.metadata (3.8 kB)
+#14 4.270 Collecting pyproject-hooks<2.0.0,>=1.0.0 (from poetry==2.4.3)
+#14 4.295   Downloading pyproject_hooks-1.3.3-py3-none-any.whl.metadata (1.3 kB)
+#14 4.340 Collecting requests<3.0,>=2.26 (from poetry==2.4.3)
+#14 4.373   Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+#14 4.424 Collecting requests-toolbelt<2.0.0,>=1.0.0 (from poetry==2.4.3)
+#14 4.466   Downloading requests_toolbelt-1.0.0-py2.py3-none-any.whl.metadata (14 kB)
+#14 4.532 Collecting shellingham<2.0,>=1.5 (from poetry==2.4.3)
+#14 4.582   Downloading shellingham-1.5.4-py2.py3-none-any.whl.metadata (3.5 kB)
+#14 4.721 Collecting tomlkit<1.0.0,>=0.11.4 (from poetry==2.4.3)
+#14 4.752   Downloading tomlkit-0.15.2-py3-none-any.whl.metadata (3.4 kB)
+#14 4.822 Collecting trove-classifiers>=2022.5.19 (from poetry==2.4.3)
+#14 4.876   Downloading trove_classifiers-2026.9.21.13-py3-none-any.whl.metadata (2.4 kB)
+#14 4.999 Collecting virtualenv>=20.26.6 (from poetry==2.4.3)
+#14 5.076   Downloading virtualenv-21.14.13-py3-none-any.whl.metadata (4.1 kB)
+#14 5.300 Collecting msgpack<2.0.0,>=0.5.2 (from cachecontrol<0.15.0,>=0.14.0->cachecontrol[filecache]<0.15.0,>=0.14.0->poetry==2.4.3)
+#14 5.349   Downloading msgpack-1.2.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.3 kB)
+#14 5.440 Collecting filelock>=3.8.0 (from cachecontrol[filecache]<0.15.0,>=0.14.0->poetry==2.4.3)
+#14 5.489   Downloading filelock-4.2.4-py3-none-any.whl.metadata (2.0 kB)
+#14 5.675 Collecting crashtest<0.5.0,>=0.4.1 (from cleo<3.0.0,>=2.1.0->poetry==2.4.3)
+#14 5.718   Downloading crashtest-0.4.1-py3-none-any.whl.metadata (1.1 kB)
+#14 6.685 Collecting rapidfuzz<4.0.0,>=3.0.0 (from cleo<3.0.0,>=2.1.0->poetry==2.4.3)
+#14 6.708   Downloading rapidfuzz-3.14.6-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (12 kB)
+#14 6.773 Collecting urllib3>=2.2.2 (from dulwich<2,>=0.25.0->poetry==2.4.3)
+#14 6.793   Downloading urllib3-2.8.0-py3-none-any.whl.metadata (7.4 kB)
+#14 6.827 Collecting SecretStorage>=3.2 (from keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 6.847   Downloading secretstorage-3.5.0-py3-none-any.whl.metadata (4.0 kB)
+#14 6.871 Collecting jeepney>=0.4.2 (from keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 7.005   Downloading jeepney-0.9.0-py3-none-any.whl.metadata (1.2 kB)
+#14 7.029 Collecting jaraco.classes (from keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 7.048   Downloading jaraco.classes-3.4.0-py3-none-any.whl.metadata (2.6 kB)
+#14 7.078 Collecting jaraco.functools (from keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 7.098   Downloading jaraco_functools-4.6.0-py3-none-any.whl.metadata (2.9 kB)
+#14 7.124 Collecting jaraco.context (from keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 7.146   Downloading jaraco_context-6.1.2-py3-none-any.whl.metadata (4.2 kB)
+#14 7.337 Collecting charset_normalizer<4,>=2 (from requests<3.0,>=2.26->poetry==2.4.3)
+#14 7.360   Downloading charset_normalizer-3.5.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (46 kB)
+#14 7.406 Collecting idna<4,>=2.5 (from requests<3.0,>=2.26->poetry==2.4.3)
+#14 7.425   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+#14 7.460 Collecting certifi>=2023.5.7 (from requests<3.0,>=2.26->poetry==2.4.3)
+#14 7.479   Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+#14 7.511 Collecting httpx2<3,>=2.14.0 (from pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.533   Downloading httpx2-2.16.0-py3-none-any.whl.metadata (10 kB)
+#14 7.567 Collecting anyio>=4.10 (from httpx2<3,>=2.14.0->pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.591   Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+#14 7.621 Collecting httpcore2==2.16.0 (from httpx2<3,>=2.14.0->pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.643   Downloading httpcore2-2.16.0-py3-none-any.whl.metadata (27 kB)
+#14 7.676 Collecting truststore>=0.10 (from httpx2<3,>=2.14.0->pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.696   Downloading truststore-0.10.5-py3-none-any.whl.metadata (4.5 kB)
+#14 7.726 Collecting h11>=0.16 (from httpcore2==2.16.0->httpx2<3,>=2.14.0->pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.745   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+#14 7.780 Collecting typing_extensions>=4.16.0 (from anyio>=4.10->httpx2<3,>=2.14.0->pbs-installer[download,install]>=2025.6.10->poetry==2.4.3)
+#14 7.799   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+#14 8.035 Collecting cryptography>=2.0 (from SecretStorage>=3.2->keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 8.056   Downloading cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (4.4 kB)
+#14 8.225 Collecting cffi>=2.0.0 (from cryptography>=2.0->SecretStorage>=3.2->keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 8.316   Downloading cffi-2.1.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+#14 8.340 Collecting pycparser (from cffi>=2.0.0->cryptography>=2.0->SecretStorage>=3.2->keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 8.359   Downloading pycparser-3.12-py3-none-any.whl.metadata (9.7 kB)
+#14 8.387 Collecting distlib<1,>=0.4.3 (from virtualenv>=20.26.6->poetry==2.4.3)
+#14 8.405   Downloading distlib-0.4.4-py2.py3-none-any.whl.metadata (5.3 kB)
+#14 8.442 Collecting python-discovery>=1.6.1 (from virtualenv>=20.26.6->poetry==2.4.3)
+#14 8.462   Downloading python_discovery-1.6.4-py3-none-any.whl.metadata (5.1 kB)
+#14 8.503 Collecting more-itertools (from jaraco.classes->keyring<26.0.0,>=25.1.0->poetry==2.4.3)
+#14 8.524   Downloading more_itertools-11.2.1-py3-none-any.whl.metadata (42 kB)
+#14 8.561 Downloading poetry-2.4.3-py3-none-any.whl (293 kB)
+#14 8.636 Downloading poetry_core-2.4.0-py3-none-any.whl (374 kB)
+#14 8.720 Downloading build-1.6.1-py3-none-any.whl (31 kB)
+#14 8.744 Downloading cachecontrol-0.14.4-py3-none-any.whl (22 kB)
+#14 8.771 Downloading cleo-2.1.0-py3-none-any.whl (78 kB)
+#14 8.806 Downloading crashtest-0.4.1-py3-none-any.whl (7.6 kB)
+#14 8.827 Downloading dulwich-1.2.19-cp314-cp314-manylinux_2_28_x86_64.whl (1.5 MB)
+#14 9.095    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 5.7 MB/s  0:00:00
+#14 9.116 Downloading fastjsonschema-2.22.2-py3-none-any.whl (27 kB)
+#14 9.143 Downloading findpython-0.8.0-py3-none-any.whl (21 kB)
+#14 9.165 Downloading installer-1.1.0-py3-none-any.whl (464 kB)
+#14 9.263 Downloading keyring-25.7.0-py3-none-any.whl (39 kB)
+#14 9.289 Downloading msgpack-1.2.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (462 kB)
+#14 9.385 Downloading pkginfo-1.13.3-py3-none-any.whl (35 kB)
+#14 9.410 Downloading platformdirs-4.13.5-py3-none-any.whl (32 kB)
+#14 9.434 Downloading pyproject_hooks-1.3.3-py3-none-any.whl (10 kB)
+#14 9.469 Downloading rapidfuzz-3.14.6-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (3.2 MB)
+#14 10.01    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 6.4 MB/s  0:00:00
+#14 10.04 Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+#14 10.07 Downloading charset_normalizer-3.5.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (255 kB)
+#14 10.17 Downloading idna-3.20-py3-none-any.whl (69 kB)
+#14 10.23 Downloading requests_toolbelt-1.0.0-py2.py3-none-any.whl (54 kB)
+#14 10.26 Downloading shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+#14 ...
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 71.15MB / 71.15MB 22.0s done
+#12 extracting sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b
+#12 ...
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 10.29 Downloading tomlkit-0.15.2-py3-none-any.whl (52 kB)
+#14 10.32 Downloading urllib3-2.8.0-py3-none-any.whl (135 kB)
+#14 10.39 Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+#14 10.45 Downloading filelock-4.2.4-py3-none-any.whl (162 kB)
+#14 10.50 Downloading jeepney-0.9.0-py3-none-any.whl (49 kB)
+#14 10.52 Downloading packaging-26.3-py3-none-any.whl (129 kB)
+#14 10.57 Downloading pbs_installer-2026.10.25-py3-none-any.whl (109 kB)
+#14 10.62 Downloading httpx2-2.16.0-py3-none-any.whl (97 kB)
+#14 10.66 Downloading httpcore2-2.16.0-py3-none-any.whl (85 kB)
+#14 10.70 Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+#14 10.76 Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+#14 10.78 Downloading secretstorage-3.5.0-py3-none-any.whl (15 kB)
+#14 10.81 Downloading cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl (4.8 MB)
+#14 11.65    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 5.8 MB/s  0:00:00
+#14 11.70 Downloading cffi-2.1.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+#14 11.75 Downloading trove_classifiers-2026.9.21.13-py3-none-any.whl (14 kB)
+#14 11.77 Downloading truststore-0.10.5-py3-none-any.whl (19 kB)
+#14 11.79 Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+#14 11.82 Downloading virtualenv-21.14.13-py3-none-any.whl (5.6 MB)
+#14 12.80    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.6/5.6 MB 5.7 MB/s  0:00:00
+#14 12.83 Downloading distlib-0.4.4-py2.py3-none-any.whl (472 kB)
+#14 12.92 Downloading python_discovery-1.6.4-py3-none-any.whl (39 kB)
+#14 12.95 Downloading jaraco.classes-3.4.0-py3-none-any.whl (6.8 kB)
+#14 12.97 Downloading jaraco_context-6.1.2-py3-none-any.whl (7.9 kB)
+#14 12.99 Downloading jaraco_functools-4.6.0-py3-none-any.whl (11 kB)
+#14 13.01 Downloading more_itertools-11.2.1-py3-none-any.whl (74 kB)
+#14 13.04 Downloading pycparser-3.12-py3-none-any.whl (62 kB)
+#14 14.58 Installing collected packages: trove-classifiers, distlib, urllib3, typing_extensions, truststore, tomlkit, shellingham, rapidfuzz, pyproject-hooks, pycparser, poetry-core, platformdirs, pkginfo, pbs-installer, packaging, msgpack, more-itertools, jeepney, jaraco.context, installer, idna, h11, filelock, fastjsonschema, crashtest, charset_normalizer, certifi, requests, python-discovery, jaraco.functools, jaraco.classes, httpcore2, findpython, dulwich, cleo, cffi, build, anyio, virtualenv, requests-toolbelt, httpx2, cryptography, cachecontrol, SecretStorage, keyring, poetry
+#14 ...
+
+#12 [core build 1/6] FROM docker.io/library/golang:1.27-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c
+#12 extracting sha256:82e0bb27ae78502103ed383ed33346f88a83943fb7bd93977850d5890ee8fb3b 13.0s done
+#12 extracting sha256:c8e3100880d834be60a9562375f4c5018b2cb26d64591bd0060aa3a80b935f43
+#12 extracting sha256:c8e3100880d834be60a9562375f4c5018b2cb26d64591bd0060aa3a80b935f43 0.0s done
+#12 extracting sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1 0.1s done
+#12 DONE 36.5s
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 ...
+
+#15 [core build 2/6] WORKDIR /src
+#15 DONE 1.2s
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 ...
+
+#16 [core build 3/6] COPY src/core/go.mod src/core/go.sum ./
+#16 DONE 0.2s
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 ...
+
+#17 [core build 4/6] RUN go mod download
+#17 ...
+
+#14 [brain 2/7] RUN pip install --no-cache-dir "poetry==2.4.3"
+#14 22.88 
+#14 22.88 Successfully installed SecretStorage-3.5.0 anyio-4.15.1 build-1.6.1 cachecontrol-0.14.4 certifi-2026.10.23 cffi-2.1.1 charset_normalizer-3.5.2 cleo-2.1.0 crashtest-0.4.1 cryptography-50.0.2 distlib-0.4.4 dulwich-1.2.19 fastjsonschema-2.22.2 filelock-4.2.4 findpython-0.8.0 h11-0.16.0 httpcore2-2.16.0 httpx2-2.16.0 idna-3.20 installer-1.1.0 jaraco.classes-3.4.0 jaraco.context-6.1.2 jaraco.functools-4.6.0 jeepney-0.9.0 keyring-25.7.0 more-itertools-11.2.1 msgpack-1.2.3 packaging-26.3 pbs-installer-2026.10.25 pkginfo-1.13.3 platformdirs-4.13.5 poetry-2.4.3 poetry-core-2.4.0 pycparser-3.12 pyproject-hooks-1.3.3 python-discovery-1.6.4 rapidfuzz-3.14.6 requests-2.34.2 requests-toolbelt-1.0.0 shellingham-1.5.4 tomlkit-0.15.2 trove-classifiers-2026.9.21.13 truststore-0.10.5 typing_extensions-4.16.0 urllib3-2.8.0 virtualenv-21.14.13
+#14 22.88 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#14 DONE 23.7s
+
+#18 [worker 3/7] WORKDIR /app
+#18 DONE 0.2s
+
+#19 [brain 4/7] COPY src/brain/pyproject.toml src/brain/poetry.lock ./
+#19 DONE 0.1s
+
+#20 [brain 5/7] RUN poetry install --only main --no-interaction
+#20 1.754 Skipping virtualenv creation, as specified in config file.
+#20 1.955 Installing dependencies from lock file
+#20 2.177 
+#20 2.177 Package operations: 71 installs, 9 updates, 0 removals
+#20 2.177 
+#20 2.178   - Installing aiohappyeyeballs (2.7.1)
+#20 2.179   - Installing aiohttp (3.14.3)
+#20 2.179   - Installing aiolimiter (1.3.0)
+#20 2.180   - Installing aiosignal (1.4.0)
+#20 2.180   - Installing annotated-doc (0.0.5)
+#20 2.181   - Installing annotated-types (0.8.0)
+#20 2.185   - Installing anthropic (1.4.0)
+#20 2.188   - Downgrading certifi (2026.10.23 -> 2026.7.22)
+#20 2.191   - Installing attrs (26.1.0)
+#20 2.198   - Installing click (8.5.0)
+#20 2.200   - Downgrading charset-normalizer (3.5.2 -> 3.5.1)
+#20 2.200   - Installing cohere (7.1.1)
+#20 2.203   - Installing distro (1.9.0)
+#20 2.205   - Installing docstring-parser (0.18.0)
+#20 2.207   - Installing fastapi (0.141.1)
+#20 2.208   - Installing fastavro (1.12.2)
+#20 2.210   - Downgrading filelock (4.2.4 -> 3.32.5)
+#20 2.212   - Installing frozenlist (1.8.0)
+#20 2.213   - Installing fsspec (2026.7.0)
+#20 2.215   - Installing google-api-core (2.40.0)
+#20 2.719   - Installing google-auth (2.59.1)
+#20 2.732   - Installing google-cloud-core (2.8.0)
+#20 2.750   - Installing google-cloud-storage (3.16.0)
+#20 2.765   - Installing google-crc32c (1.9.0)
+#20 2.836   - Installing google-resumable-media (2.11.0)
+#20 2.863   - Installing googleapis-common-protos (1.75.5)
+#20 2.925   - Installing hf-xet (1.6.0)
+#20 2.937   - Installing httpcore (1.0.9)
+#20 3.015   - Downgrading httpcore2 (2.16.0 -> 2.12.0)
+#20 3.058   - Installing httptools (0.8.0)
+#20 3.078   - Installing httpx (0.28.1)
+#20 3.288   - Downgrading httpx2 (2.16.0 -> 2.12.0)
+#20 3.362   - Installing huggingface-hub (1.30.0)
+#20 3.565   - Downgrading idna (3.20 -> 3.19)
+#20 3.612   - Installing jiter (0.16.0)
+#20 3.681   - Installing jsonpatch (1.33)
+#20 3.769   - Installing jsonpointer (3.1.1)
+#20 3.795   - Installing langchain-core (1.6.6)
+#20 3.841   - Installing langchain-protocol (0.0.19)
+#20 3.976   - Installing langchain-text-splitters (1.1.3)
+#20 4.130   - Installing langsmith (0.14.4)
+#20 4.229   - Installing multidict (6.9.1)
+#20 4.266   - Installing numpy (2.5.3)
+#20 4.560   - Installing openai (3.8.0)
+#20 4.570   - Installing opentelemetry-api (1.45.0)
+#20 4.595   - Installing orjson (3.12.0)
+#20 4.630   - Installing pillow (12.3.0)
+#20 4.737   - Installing propcache (0.5.4)
+#20 5.279   - Installing proto-plus (1.29.0)
+#20 5.377   - Installing protobuf (7.36.2)
+#20 5.639   - Installing psycopg (3.3.5)
+#20 5.689   - Installing psycopg-binary (3.3.5)
+#20 5.740   - Installing psycopg-pool (3.3.1)
+#20 5.745   - Installing pyasn1 (0.6.4)
+#20 5.776   - Installing pyasn1-modules (0.4.2)
+#20 5.839   - Downgrading pycparser (3.12 -> 3.0)
+#20 5.927   - Installing pydantic (2.13.5)
+#20 6.132   - Installing pydantic-core (2.46.5)
+#20 6.187   - Installing pydantic-settings (2.15.0)
+#20 6.236   - Installing pypdf (6.19.0)
+#20 6.256   - Installing python-dotenv (1.2.3)
+#20 6.481   - Installing pyyaml (6.0.3)
+#20 6.661   - Installing sniffio (1.3.1)
+#20 6.903   - Installing starlette (1.6.0)
+#20 6.919   - Installing tenacity (9.1.4)
+#20 7.007   - Installing tokenizers (0.23.2)
+#20 7.099   - Installing tqdm (4.70.0)
+#20 7.188   - Downgrading truststore (0.10.5 -> 0.10.4)
+#20 7.224   - Installing types-requests (2.33.0.20260712)
+#20 7.338   - Installing typing-inspection (0.4.4)
+#20 7.360   - Downgrading urllib3 (2.8.0 -> 2.7.0)
+#20 7.495   - Installing uuid-utils (0.17.1)
+#20 7.517   - Installing uvicorn (0.52.4)
+#20 7.539   - Installing uvloop (0.22.1)
+#20 7.636   - Installing voyageai (0.5.0)
+#20 7.675   - Installing watchfiles (1.2.0)
+#20 7.839   - Installing websockets (17.1)
+#20 7.856   - Installing xxhash (4.0.1)
+#20 7.911   - Installing yarl (1.25.1)
+#20 8.268   - Installing zstandard (0.25.0)
+#20 ...
+
+#17 [core build 4/6] RUN go mod download
+#17 DONE 30.5s
+
+#20 [worker 5/7] RUN poetry install --only main --no-interaction
+#20 DONE 28.0s
+
+#21 [worker 6/7] COPY src/brain ./
+#21 DONE 0.7s
+
+#22 [core build 5/6] COPY src/core ./
+#22 DONE 0.7s
+
+#23 [worker 7/7] RUN useradd --uid 10001 --create-home sonia
+#23 DONE 1.0s
+
+#24 [worker] exporting to image
+#24 exporting layers
+#24 ...
+
+#25 [core build 6/6] RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/core .
+#25 ...
+
+#26 [brain] exporting to image
+#26 ...
+
+#25 [core build 6/6] RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/core .
+#25 DONE 34.5s
+
+#27 [core stage-1 3/3] COPY --from=build /out/core /usr/local/bin/core
+#27 DONE 0.8s
+
+#24 [worker] exporting to image
+#24 ...
+
+#28 [core] exporting to image
+#28 exporting layers
+#28 exporting layers 1.4s done
+#28 exporting manifest sha256:5839410f536d7567fffb3b80f725b918ac7e557d7f0f76a5671a0341e0664c24 0.0s done
+#28 exporting config sha256:a5c745b933a13a5b02f75106f34504c18fd29491c066b42c52ccb1c995f75309 0.0s done
+#28 exporting attestation manifest sha256:84f7ee6bb97dfb597a390205dee7b7a4827223ea986fed87e18107a65b4f9c18
+#28 exporting attestation manifest sha256:84f7ee6bb97dfb597a390205dee7b7a4827223ea986fed87e18107a65b4f9c18 0.1s done
+#28 exporting manifest list sha256:8235aeec087e5748dcf05eb49624129baf642e24293e59d97a7f51abfb5277a1 0.0s done
+#28 naming to docker.io/library/sonia-quality-core:latest
+#28 naming to docker.io/library/sonia-quality-core:latest 0.0s done
+#28 unpacking to docker.io/library/sonia-quality-core:latest
+#28 unpacking to docker.io/library/sonia-quality-core:latest 0.3s done
+#28 DONE 2.0s
+
+#26 [brain] exporting to image
+#26 ...
+
+#29 [core] resolving provenance for metadata file
+#29 DONE 0.1s
+
+#24 [worker] exporting to image
+#24 ...
+
+#26 [brain] exporting to image
+#26 exporting layers 40.0s done
+#26 exporting manifest sha256:c3008b4957b8c024749c4510aabe2f798aca5265b2d91f963f2025293ccab0cc 0.1s done
+#26 exporting config sha256:3b6433a43345f18773bea87d9ed63e31f13026cc581172b354127aa1706d13aa
+#26 exporting config sha256:3b6433a43345f18773bea87d9ed63e31f13026cc581172b354127aa1706d13aa 0.1s done
+#26 exporting attestation manifest sha256:c2ced17da7019350a9fb01dd33e8c93e1f21cb44c199da5145ef847127736349
+#26 exporting attestation manifest sha256:c2ced17da7019350a9fb01dd33e8c93e1f21cb44c199da5145ef847127736349 0.2s done
+#26 exporting manifest list sha256:3f21f5d6c23d9e2863eb99758ad432a6d363d6ef2d8b65a06126723dcd3a2638 0.1s done
+#26 naming to docker.io/library/sonia-quality-brain:latest done
+#26 unpacking to docker.io/library/sonia-quality-brain:latest
+#26 ...
+
+#24 [worker] exporting to image
+#24 exporting layers 40.0s done
+#24 exporting manifest sha256:7ab73a27de962637aa8464e3a080fd45d1c046847a7757d07690877df78b273c 0.1s done
+#24 exporting config sha256:616c4fd56968aee032819fc97f1b397f5e7d105f5774c05187608cd2ab8b9c90 0.1s done
+#24 exporting attestation manifest sha256:1a9b095f8da2d959390482e7b21571a669a81899a3a2e9a6e7002caab848e4bd 0.2s done
+#24 exporting manifest list sha256:c9f36e4e1222f4ddf0626c59840348446643bb5d8b65c3bc09a9bbe2ab22004c 0.1s done
+#24 naming to docker.io/library/sonia-quality-worker:latest 0.0s done
+#24 unpacking to docker.io/library/sonia-quality-worker:latest
+#24 ...
+
+#26 [brain] exporting to image
+#26 unpacking to docker.io/library/sonia-quality-brain:latest 14.5s done
+#26 DONE 55.1s
+
+#24 [worker] exporting to image
+#24 unpacking to docker.io/library/sonia-quality-worker:latest 14.5s done
+#24 DONE 55.1s
+
+#30 [brain] resolving provenance for metadata file
+#30 DONE 0.2s
+
+#31 [worker] resolving provenance for metadata file
+#31 DONE 0.0s
+ sonia-quality-core  Built
+ sonia-quality-brain  Built
+ sonia-quality-worker  Built

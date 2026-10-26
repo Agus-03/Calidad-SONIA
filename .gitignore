@@ -1,5 +1,9 @@
 # Environment Variables
 .env
+.env.quality
+/.tools/
+/reports/
+/src/core/.gotmp/
 
 # The Firebase service account the core mounts (ADR-0069)
 /secrets/

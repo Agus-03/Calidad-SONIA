@@ -1,6 +1,8 @@
 # The configuration is the only thing between a missing secret and a process that answers turns wrong.
 
 import pytest
+from pathlib import Path
+from dotenv import dotenv_values
 from pydantic import ValidationError
 
 from infra.config import DOUBLE_ALLOWED_ENVIRONMENTS, ConfigError, Settings, describe, get_settings
@@ -9,6 +11,24 @@ _MINIMUM = {
     "database_url": "postgresql://sonia:sonia@127.0.0.1:5432/sonia",
     "brain_internal_token": "test-token",
 }
+
+
+def test_example_environment_can_boot_brain_and_worker(clean_env, monkeypatch) -> None:
+    # QA-001: empty numeric values in the distributed example overrode valid defaults.
+    example = Path(__file__).resolve().parents[3] / ".env.example"
+    for name, value in dotenv_values(example).items():
+        monkeypatch.setenv(name, value or "")
+    monkeypatch.setenv("DATABASE_URL", _MINIMUM["database_url"])
+    monkeypatch.setenv("BRAIN_INTERNAL_TOKEN", _MINIMUM["brain_internal_token"])
+    monkeypatch.setenv("DOCUMENT_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+    monkeypatch.setenv("FIREBASE_STORAGE_BUCKET", "sonia-test")
+    monkeypatch.setenv("EMBEDDINGS_USE_DOUBLE", "true")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.brain_http_port == 8000
+    assert (settings.db_pool_min_size, settings.db_pool_max_size) == (1, 10)
+    assert settings.worker_problems() == []
 
 
 # Failing on the first problem would mean booting four times to find four broken variables.

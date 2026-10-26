@@ -1,0 +1,124 @@
+........................................................................ [ 12%]
+........................................................................ [ 25%]
+........................................................................ [ 38%]
+........................................................................ [ 51%]
+........................................................................ [ 64%]
+........................................................................ [ 76%]
+........................................................................ [ 89%]
+..........................................................               [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:53
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/test_blocklist.py::test_the_shipped_list_is_empty_on_purpose
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\.venv\Lib\site-packages\pytest_asyncio\plugin.py:916: PytestDeprecationWarning: Overriding the "event_loop_policy" fixture is deprecated and will be removed in a future version of pytest-asyncio. Use the "pytest_asyncio_loop_factories" hook to customize event loop creation.
+    warnings.warn(
+
+tests/test_blocklist.py::test_the_shipped_list_is_empty_on_purpose
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\tests\conftest.py:45: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+    return asyncio.WindowsSelectorEventLoopPolicy()
+
+tests/test_llm.py::test_resolve_returns_the_client_the_row_names
+tests/test_llm.py::test_resolve_reuses_the_client_of_the_same_credential
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\.venv\Lib\site-packages\cohere\client.py:43: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(method):
+
+tests/test_llm.py::test_resolve_returns_the_client_the_row_names
+tests/test_llm.py::test_resolve_returns_the_client_the_row_names
+tests/test_llm.py::test_resolve_reuses_the_client_of_the_same_credential
+tests/test_llm.py::test_resolve_reuses_the_client_of_the_same_credential
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\.venv\Lib\site-packages\cohere\client.py:114: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(func):
+
+tests/test_main.py::test_a_configured_worker_runs_its_loop
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\main.py:112: DeprecationWarning: 'asyncio.WindowsSelectorEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+tests/test_main.py::test_a_configured_worker_runs_its_loop
+  C:\Users\tobia\Escritorio\Facultad\calidad-de-soft\TP Final\Calidad-SONIA\src\brain\main.py:112: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.9-final-0 _______________
+
+Name                               Stmts   Miss  Cover   Missing
+----------------------------------------------------------------
+adapters\__init__.py                   0      0   100%
+adapters\embeddings\__init__.py        0      0   100%
+adapters\embeddings\base.py            7      0   100%
+adapters\embeddings\double.py         21      0   100%
+adapters\embeddings\registry.py       11      0   100%
+adapters\embeddings\voyage.py         25      0   100%
+adapters\llm\__init__.py               0      0   100%
+adapters\llm\anthropic.py             32      0   100%
+adapters\llm\base.py                  46      0   100%
+adapters\llm\cohere.py                34      0   100%
+adapters\llm\double.py                36      0   100%
+adapters\llm\openai.py                31      0   100%
+adapters\llm\registry.py              33      0   100%
+adapters\storage\__init__.py           0      0   100%
+adapters\storage\firebase.py          17      0   100%
+adapters\vectorstore\__init__.py       0      0   100%
+adapters\vectorstore\qdrant.py        63      0   100%
+api\__init__.py                        0      0   100%
+api\routes\__init__.py                 0      0   100%
+api\routes\health.py                   8      0   100%
+api\routes\models.py                   8      0   100%
+api\routes\prompts.py                 14      0   100%
+api\routes\turns\__init__.py           0      0   100%
+api\routes\turns\enrichment.py        40      0   100%
+api\routes\turns\route.py            148      1    99%   406
+api\routes\turns\signals.py           40      3    92%   24, 42, 61
+api\schemas\__init__.py                0      0   100%
+api\schemas\models.py                  3      0   100%
+api\schemas\preview.py                21      0   100%
+api\schemas\turn.py                   14      0   100%
+api\security.py                        7      0   100%
+classifiers\__init__.py                0      0   100%
+classifiers\extraction.py             86      2    98%   62, 91
+classifiers\intent.py                 82      2    98%   59-60
+classifiers\transfer.py               35      0   100%
+infra\__init__.py                      0      0   100%
+infra\config.py                       90      3    97%   102, 111, 116
+infra\db.py                           30      0   100%
+infra\ids.py                           3      0   100%
+infra\logging.py                      25      0   100%
+infra\rules.py                        58      0   100%
+knowledge\__init__.py                  0      0   100%
+knowledge\chunking.py                 70      0   100%
+knowledge\repository.py               20      0   100%
+knowledge\search.py                   63      0   100%
+main.py                               80     12    85%   42, 89-94, 129-135, 139
+pipeline\__init__.py                   0      0   100%
+pipeline\blocklist.py                 52      0   100%
+pipeline\generation.py                86      0   100%
+pipeline\grounding.py                 24      0   100%
+pipeline\guardrail.py                 79      0   100%
+pipeline\notices.py                   33      0   100%
+pipeline\repository\__init__.py        0      0   100%
+pipeline\repository\context.py        30      0   100%
+pipeline\repository\evidence.py       44      0   100%
+pipeline\repository\signals.py        24      0   100%
+pipeline\repository\turn.py           40      0   100%
+pipeline\retrieval.py                 40      0   100%
+pipeline\runner.py                    45      0   100%
+pipeline\step.py                      18      0   100%
+pipeline\triage.py                    94      0   100%
+prompts\__init__.py                    0      0   100%
+prompts\assembler.py                  82      0   100%
+prompts\repository.py                 35      0   100%
+prompts\rewriter.py                   92      0   100%
+worker\__init__.py                     0      0   100%
+worker\crypto.py                      31      0   100%
+worker\images.py                      35      0   100%
+worker\ingest.py                      86      2    98%   114, 167
+worker\loop.py                        49      0   100%
+worker\pdf.py                         94      9    90%   72-74, 114-116, 133, 137-138
+worker\repository.py                  41      0   100%
+----------------------------------------------------------------
+TOTAL                               2455     34    99%
+Coverage JSON written to file ../../docs/evidence/revalidation/python-coverage.json
+Required test coverage of 80% reached. Total coverage: 98.62%
+562 passed, 11 warnings in 19.71s

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,6 +31,66 @@ func newFixture() fixture {
 	return fixture{
 		scope: scope, agentID: agentID, store: store, objects: objects,
 		service: NewService(Options{Repo: store, Tx: store.tx, Objects: objects, Sealer: stubSealer{}}),
+	}
+}
+
+// F06: check both sides of the exact accumulated limit before and after taking the lock.
+func TestSinglePDFExactByteBoundaries(t *testing.T) {
+	for _, delta := range []int64{-1, 0, 1} {
+		t.Run(fmt.Sprintf("delta=%d", delta), func(t *testing.T) {
+			f := newFixture()
+			up := validUpload("boundary")
+			up.Data = make([]byte, MaxKnowledgeBaseBytes+delta)
+			copy(up.Data, pdfSignature)
+
+			doc, err := f.service.Upload(t.Context(), f.scope, f.agentID, up)
+
+			if delta > 0 {
+				if !errors.Is(err, ErrLimitExceeded) || len(f.objects.objects) != 0 || len(f.store.docs) != 0 {
+					t.Fatalf("over limit: err=%v, objects=%d, rows=%d", err, len(f.objects.objects), len(f.store.docs))
+				}
+				return
+			}
+			if err != nil || doc.SizeBytes != MaxKnowledgeBaseBytes+delta || len(f.objects.objects) != 1 {
+				t.Fatalf("accepted boundary: size=%d, err=%v, objects=%d", doc.SizeBytes, err, len(f.objects.objects))
+			}
+		})
+	}
+}
+
+// The accumulated limit must hold even when a concurrent upload takes the remaining space.
+func TestKnowledgeBaseExactByteBoundaries(t *testing.T) {
+	for _, underLock := range []bool{false, true} {
+		for _, delta := range []int64{-1, 0, 1} {
+			t.Run(fmt.Sprintf("locked=%v/delta=%d", underLock, delta), func(t *testing.T) {
+				f := newFixture()
+				up := validUpload("boundary")
+				initial := MaxKnowledgeBaseBytes + delta - int64(len(up.Data))
+				f.store.bases[f.agentID] = KnowledgeBase{ID: id.New(), AIAgentID: f.agentID, SizeBytesTotal: initial}
+				if underLock {
+					kb := f.store.bases[f.agentID]
+					kb.SizeBytesTotal = 0
+					f.store.bases[f.agentID] = kb
+					f.store.beforeLock = func(s *stubStore) {
+						kb := s.bases[f.agentID]
+						kb.SizeBytesTotal = initial
+						s.bases[f.agentID] = kb
+					}
+				}
+
+				doc, err := f.service.Upload(t.Context(), f.scope, f.agentID, up)
+
+				if delta > 0 {
+					if !errors.Is(err, ErrLimitExceeded) || len(f.objects.objects) != 0 || len(f.store.docs) != 0 {
+						t.Fatalf("over limit: err=%v, objects=%d, rows=%d", err, len(f.objects.objects), len(f.store.docs))
+					}
+					return
+				}
+				if err != nil || doc.SizeBytes != int64(len(up.Data)) || f.store.bases[f.agentID].SizeBytesTotal != MaxKnowledgeBaseBytes+delta {
+					t.Fatalf("accepted boundary: document=%+v, err=%v, size=%d", doc, err, f.store.bases[f.agentID].SizeBytesTotal)
+				}
+			})
+		}
 	}
 }
 

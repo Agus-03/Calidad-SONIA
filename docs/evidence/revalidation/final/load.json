@@ -1,0 +1,99 @@
+{
+  "environment": "Windows-11-10.0.26200-SP0",
+  "llm_and_channel_doubles": true,
+  "scope": "Core, Brain, real PostgreSQL; model quality and real provider latency are excluded",
+  "stages": [
+    {
+      "name": "health-stress",
+      "concurrency": 5,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.004190200008452,
+      "completed": 9476,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 1893.6130764941738,
+      "p95_seconds": 0.003662400064058602,
+      "p95_limit_seconds": 1,
+      "passed": true
+    },
+    {
+      "name": "health-stress",
+      "concurrency": 10,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.006308300071396,
+      "completed": 10916,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 2180.449014665023,
+      "p95_seconds": 0.006918199942447245,
+      "p95_limit_seconds": 1,
+      "passed": true
+    },
+    {
+      "name": "health-stress",
+      "concurrency": 20,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.009826899971813,
+      "completed": 11208,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 2237.20304589028,
+      "p95_seconds": 0.013217899948358536,
+      "p95_limit_seconds": 1,
+      "passed": true
+    },
+    {
+      "name": "turn-stress",
+      "concurrency": 1,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.05978209991008,
+      "completed": 25,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 4.940924234750008,
+      "p95_seconds": 0.2463770000031218,
+      "p95_limit_seconds": 5,
+      "passed": true
+    },
+    {
+      "name": "turn-stress",
+      "concurrency": 3,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.188816400012001,
+      "completed": 75,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 14.454163381041297,
+      "p95_seconds": 0.26791270007379353,
+      "p95_limit_seconds": 5,
+      "passed": true
+    },
+    {
+      "name": "turn-stress",
+      "concurrency": 5,
+      "planned_seconds": 5,
+      "elapsed_seconds": 5.2017663000151515,
+      "completed": 106,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 20.377693630659888,
+      "p95_seconds": 0.31045939994510263,
+      "p95_limit_seconds": 5,
+      "passed": true
+    },
+    {
+      "name": "turn-sustained",
+      "concurrency": 3,
+      "planned_seconds": 60,
+      "elapsed_seconds": 60.142620200058445,
+      "completed": 830,
+      "errors": 0,
+      "error_examples": [],
+      "throughput_per_second": 13.800529428865712,
+      "p95_seconds": 0.29935139999724925,
+      "p95_limit_seconds": 5,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

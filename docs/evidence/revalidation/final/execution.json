@@ -1,0 +1,107 @@
+[
+  {
+    "name": "gate-regressions",
+    "exit_code": 0,
+    "seconds": 0.352
+  },
+  {
+    "name": "reset-test-stack",
+    "exit_code": 0,
+    "seconds": 0.4
+  },
+  {
+    "name": "deploy",
+    "exit_code": 0,
+    "seconds": 47.983
+  },
+  {
+    "name": "seed",
+    "exit_code": 0,
+    "seconds": 0.581
+  },
+  {
+    "name": "go-format",
+    "exit_code": 0,
+    "seconds": 6.634
+  },
+  {
+    "name": "go-dependencies",
+    "exit_code": 0,
+    "seconds": 4.402
+  },
+  {
+    "name": "go-vet",
+    "exit_code": 0,
+    "seconds": 1.728
+  },
+  {
+    "name": "go-build",
+    "exit_code": 0,
+    "seconds": 4.471
+  },
+  {
+    "name": "go-tests",
+    "exit_code": 0,
+    "seconds": 34.761
+  },
+  {
+    "name": "python-static",
+    "exit_code": 0,
+    "seconds": 1.138
+  },
+  {
+    "name": "contracts",
+    "exit_code": 0,
+    "seconds": 12.491
+  },
+  {
+    "name": "python-tests",
+    "exit_code": 0,
+    "seconds": 25.373
+  },
+  {
+    "name": "frontend-install",
+    "exit_code": 0,
+    "seconds": 0.124
+  },
+  {
+    "name": "frontend-lint",
+    "exit_code": 0,
+    "seconds": 0.3
+  },
+  {
+    "name": "frontend-build",
+    "exit_code": 0,
+    "seconds": 0.842
+  },
+  {
+    "name": "smoke",
+    "exit_code": 0,
+    "seconds": 24.784
+  },
+  {
+    "name": "load",
+    "exit_code": 0,
+    "seconds": 91.373
+  },
+  {
+    "name": "duplication",
+    "exit_code": 0,
+    "seconds": 0.761
+  },
+  {
+    "name": "quality-gate",
+    "exit_code": 0,
+    "seconds": 0.292
+  },
+  {
+    "name": "service-logs",
+    "exit_code": 0,
+    "seconds": 0.583
+  },
+  {
+    "name": "cleanup",
+    "exit_code": 0,
+    "seconds": 4.452
+  }
+]

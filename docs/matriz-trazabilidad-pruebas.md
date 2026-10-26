@@ -1,48 +1,34 @@
-\# Matriz de trazabilidad de pruebas de SONIA
+> Actualización del 26/10/2026: los resultados de la versión 1.0 se conservan como antecedentes. La revalidación, los criterios vigentes y las brechas están en [Revalidación de calidad](revalidacion-calidad.md) y [Ejecución reproducible](ejecucion-calidad.md).
 
+# Matriz de trazabilidad de pruebas de SONIA
 
+**Versión:** 1.0
 
-\*\*Versión:\*\* 1.0
+**Estado:** Inicial; pendiente de completar la trazabilidad de todos los requisitos y casos individuales.
 
-\*\*Estado:\*\* Inicial; pendiente de completar la trazabilidad de todos los requisitos y casos individuales.
+**Proyecto:** SONIA QA Integrator
 
-\*\*Proyecto:\*\* SONIA QA Integrator
+**Base funcional:** Anteproyecto v.2
 
-\*\*Base funcional:\*\* Anteproyecto v.2
+**Plan asociado:** `docs/plan-pruebas.md`
 
-\*\*Plan asociado:\*\* `docs/plan-pruebas.md`
-
-
-
-\## 1. Propósito
-
-
+## 1. Propósito
 
 Esta matriz vincula los objetivos y requisitos relevantes del proyecto con los casos de prueba ejecutados, las evidencias disponibles y los defectos identificados. Permite distinguir entre funcionalidades verificadas, verificaciones parciales y actividades pendientes.
 
-
-
 La matriz se actualizará cuando se incorporen nuevas pruebas o se modifiquen los requisitos. La existencia de una evidencia solo demuestra el alcance concreto de la prueba ejecutada; no implica que se haya validado toda la funcionalidad relacionada.
 
+## 2. Criterios de estado
 
+- **Verificado:** existe una prueba ejecutada cuyo resultado respalda el requisito dentro del alcance indicado.
 
-\## 2. Criterios de estado
+- **Parcial:** hay evidencia relacionada, pero no cubre por completo el requisito.
 
+- **Pendiente:** falta una prueba específica o evidencia suficiente.
 
+- **No aplica:** el requisito no corresponde al alcance de la prueba considerada.
 
-\- \*\*Verificado:\*\* existe una prueba ejecutada cuyo resultado respalda el requisito dentro del alcance indicado.
-
-\- \*\*Parcial:\*\* hay evidencia relacionada, pero no cubre por completo el requisito.
-
-\- \*\*Pendiente:\*\* falta una prueba específica o evidencia suficiente.
-
-\- \*\*No aplica:\*\* el requisito no corresponde al alcance de la prueba considerada.
-
-
-
-\## 3. Matriz de trazabilidad
-
-
+## 3. Matriz de trazabilidad
 
 | ID | Requisito u objetivo | Caso o verificación asociada | Evidencia | Defecto relacionado | Estado |
 
@@ -82,80 +68,67 @@ La matriz se actualizará cuando se incorporen nuevas pruebas o se modifiquen lo
 
 | TR-17 | Validación de integridad de webhooks entrantes | CP-05: rechazo de webhook con firma inválida | `docs/evidence/smoke-test-pass.txt`; ficha `CP-05` en `docs/casos-de-prueba.md` | No registrado | Verificado para el escenario de firma inválida; pendiente ampliar las pruebas a otros escenarios de seguridad de webhooks |
 
+### **Observaciones sobre el OE6 - límite de 100MB por agente**
 
+**Evidencia complementaria de límite:** `src/core/internal/documents/model.go` define el máximo de 100 MiB; `src/core/internal/documents/service.go` valida el tamaño individual y el servicio vuelve a comprobar el límite acumulado bajo bloqueo. `src/core/internal/documents/service_test.go` incluye pruebas de rechazo por exceso, acumulación y revalidación bajo bloqueo. La suite del paquete finalizó con `PASS`.
 
-\### \*\*Observaciones sobre el OE6 - límite de 100MB por agente\*\*
+**Limitación:** no se verificaron explícitamente los valores de 104.857.600 y 104.857.601 bytes. La evidencia corresponde a pruebas unitarias con dependencias simuladas y no demuestra por sí sola el límite mediante una carga de extremo a extremo con almacenamiento real.
 
-\*\*Evidencia complementaria de límite:\*\* `src/core/internal/documents/model.go` define el máximo de 100 MiB; `src/core/internal/documents/service.go` valida el tamaño individual y el servicio vuelve a comprobar el límite acumulado bajo bloqueo. `src/core/internal/documents/service\_test.go` incluye pruebas de rechazo por exceso, acumulación y revalidación bajo bloqueo. La suite del paquete finalizó con `PASS`.
+**Estado de trazabilidad:** implementación y cobertura parcial verificadas; frontera exacta pendiente.
 
+## 4. Limitaciones de las evidencias de rendimiento
 
-
-\*\*Limitación:\*\* no se verificaron explícitamente los valores de 104.857.600 y 104.857.601 bytes. La evidencia corresponde a pruebas unitarias con dependencias simuladas y no demuestra por sí sola el límite mediante una carga de extremo a extremo con almacenamiento real.
-
-
-
-\*\*Estado de trazabilidad:\*\* implementación y cobertura parcial verificadas; frontera exacta pendiente.
-
-
-
-\## 4. Limitaciones de las evidencias de rendimiento
-
-
-
-Las pruebas de carga registradas se ejecutaron contra el endpoint `GET /health`. En el entorno inspeccionado, la configuración indicaba `environment=test`, `llm\_use\_double=True` y `embeddings\_use\_double=True`.
-
-
+Las pruebas de carga registradas se ejecutaron contra el endpoint `GET /health`. En el entorno inspeccionado, la configuración indicaba `environment=test`, `llm_use_double=True` y `embeddings_use_double=True`.
 
 Por lo tanto, los resultados obtenidos permiten describir el comportamiento del endpoint de salud bajo las cargas probadas, pero no deben extrapolarse al rendimiento del procesamiento de conversaciones, a la recuperación RAG ni a la integración con proveedores reales de modelos y embeddings.
 
-
-
-\## 5. Defectos y relación con los casos
-
-
+## 5. Defectos y relación con los casos
 
 El defecto QA-001 corresponde a variables de configuración vacías que impedían el arranque correcto de Brain y Worker en el entorno local. Se documentó la corrección y se verificó el estado posterior de los servicios.
 
-
-
 La actualización de las expectativas de las pruebas de migración se registra como mantenimiento de pruebas. No debe clasificarse como defecto funcional sin evidencia adicional.
-
-
 
 Para los próximos defectos se deberá registrar, como mínimo:
 
+- Identificador único.
 
+- Caso de prueba que lo detectó.
 
-\- Identificador único.
+- Requisito afectado.
 
-\- Caso de prueba que lo detectó.
+- Pasos para reproducirlo.
 
-\- Requisito afectado.
+- Resultado esperado y resultado observado.
 
-\- Pasos para reproducirlo.
+- Severidad, estado y evidencia.
 
-\- Resultado esperado y resultado observado.
+- Caso de regresión asociado cuando se corrija.
 
-\- Severidad, estado y evidencia.
+## 6. Actividades pendientes
 
-\- Caso de regresión asociado cuando se corrija.
+1. Desglosar los requisitos relevantes en casos de prueba identificados individualmente.
 
+2. Vincular cada caso con su resultado de ejecución y evidencia concreta.
 
+3. Completar la matriz de calidad ISO/IEC 25010 con criterios, métricas y evidencias.
 
-\## 6. Actividades pendientes
+4. Verificar qué pruebas de integración se ejecutan realmente en CI y cuáles se omiten por falta de servicios externos.
 
+5. Incorporar evidencia de análisis estático automatizado y criterios de calidad en el pipeline.
 
+6. Ejecutar pruebas de rendimiento sobre flujos conversacionales con dependencias y datos de prueba controlados.
 
-1\. Desglosar los requisitos relevantes en casos de prueba identificados individualmente.
+7. Definir protocolos reproducibles para medir la resolución autónoma y la consistencia del tono.
 
-2\. Vincular cada caso con su resultado de ejecución y evidencia concreta.
+## Adenda: trazabilidad de la revalidación
 
-3\. Completar la matriz de calidad ISO/IEC 25010 con criterios, métricas y evidencias.
+| Requisito de aceptación | Caso / implementación | Defecto | Evidencia |
+|---|---|---|---|
+| Configuración reproducible del despliegue | CP-06, ejemplo de entorno y test de Settings/Worker | QA-001 | `qa-001-red.txt`, `qa-001-green.txt`, suite Python de la campaña |
+| Integración externa controlada y sin omisiones | CP-07, migraciones, semilla y runner estricto | QA-002 | JUnit Python, JSON Go y smoke; workflow versionado |
+| F06, máximo documental | CP-08, fronteras individuales y acumuladas bajo bloqueo | Brecha de cobertura cerrada | Suite Go, casos con nombre ExactByteBoundaries |
+| Carga del flujo conversacional | CP-09, turno confirmado en base | Brecha de evaluación ampliada | `load.json` |
+| F15/F30, permisos sobre catálogo paginado | CP-02/CP-10, recorrido completo por rol | QA-003 | Regresión de dos páginas y smoke completo |
+| Cobertura nueva >=80 %, duplicación <=5 % | Gates y cinco regresiones del evaluador | Control preventivo | `quality-gate.json`, `gate-regressions.txt`, JSON jscpd |
 
-4\. Verificar qué pruebas de integración se ejecutan realmente en CI y cuáles se omiten por falta de servicios externos.
-
-5\. Incorporar evidencia de análisis estático automatizado y criterios de calidad en el pipeline.
-
-6\. Ejecutar pruebas de rendimiento sobre flujos conversacionales con dependencias y datos de prueba controlados.
-
-7\. Definir protocolos reproducibles para medir la resolución autónoma y la consistencia del tono.
+Los archivos de ejecución final se conservan en `docs/evidence/revalidation/final/`; `reports/` contiene la última ejecución de trabajo. Ver `revalidacion-calidad.md` para cifras y límites. CI remoto, calidad de respuestas y usabilidad continúan distinguiéndose de la evidencia local.

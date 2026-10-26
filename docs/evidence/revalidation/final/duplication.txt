@@ -1,0 +1,3 @@
+Using config from .jscpd.json
+[32mJSON report saved to reports/duplication\jscpd-report.json[39m
+[90mtime: 49.868ms[39m
